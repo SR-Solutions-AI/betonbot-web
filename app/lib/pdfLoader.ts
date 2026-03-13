@@ -41,8 +41,8 @@ export async function loadPdfJs() {
       // În loc de: pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
       // Pune asta:
       if (pdfjs.GlobalWorkerOptions) {
-        // Folosim versiunea din pachet ca să fim siguri că se potrivesc mereu
-        pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+        // Asta va trage MEREU versiunea potrivită direct din cloud, ignorând ce ai tu pe server
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
       }
       
       pdfjsModule = pdfjs
