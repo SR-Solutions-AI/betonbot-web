@@ -1,0 +1,569 @@
+/* Tailwind v4 style */
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+
+@layer base {
+  /* readuce checkbox-ul nativ pentru clasa ta */
+  input[type="checkbox"].sun-checkbox{
+    -webkit-appearance: auto !important;
+    appearance: auto !important;
+    background-image: none !important; /* oprește svg-ul pluginului */
+    accent-color: var(--color-sun);
+    inline-size: 14px;
+    block-size: 14px;
+    border: initial;              /* lasă sistemul să deseneze borderul */
+    border-radius: 4px;
+  }
+
+  /* focus vizibil */
+  input[type="checkbox"].sun-checkbox:focus-visible{
+    outline: 2px solid var(--color-sun);
+    outline-offset: 2px;
+  }
+}
+
+/* ======= Design tokens (Betonbot: gri foarte închis, gri închis, galben) ======= */
+@theme {
+  --color-coffee-900: #0D0D0D;
+  --color-coffee-850: #141414;
+  --color-coffee-800: #1A1A1A;
+  --color-coffee-750: #222222;
+  --color-coffee-700: #2A2A2A;
+  --color-coffee-650: #333333;
+  --color-coffee-600: #404040;
+  --color-coffee-500: #525252;
+  --color-coffee-400: #737373;
+  --color-coffee-300: #a3a3a3;
+
+  --color-caramel: #737373;
+  --color-sand:    #E5E7EB;
+  --color-panel:   #252525;
+  --color-wizard-area: #262626;  /* fundal zona step wizard + GIF, fără cadru mai închis */
+  --color-ink:     #080808;
+
+  --radius-xl2: 1.25rem;
+  --shadow-soft: 0 6px 20px rgba(0,0,0,.25);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,.06);
+  --blur-xs: 2px;
+}
+
+/* ====== Background ====== */
+:root {
+  --bg1: var(--color-coffee-900);
+  --bg2: var(--color-panel);
+  --grain: radial-gradient(60% 60% at 50% 40%, rgba(255,255,255,.045), transparent 60%);
+}
+html, body {
+  height: 100%;
+  background:
+    linear-gradient(180deg, var(--bg1), var(--bg2)),
+    var(--grain);
+  color: #F8F6F3;
+}
+
+/* ====== Card / panel look ====== */
+.bg-panel {
+  @apply bg-coffee-800/90 backdrop-blur-xs shadow-soft shadow-black/40;
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0) 60%),
+    radial-gradient(120% 140% at 10% 0%, rgba(255,255,255,.04), transparent 40%);
+}
+.bg-wizard-area {
+  background-color: var(--color-wizard-area);
+}
+
+:root { --wizard-nudge-y: -124px; }  /* ajustează între -6px și -16px după gust */
+
+.wizard-stage .wizard-card {
+  margin-top: var(--wizard-nudge-y);
+}
+
+/* Typography / layout safety */
+* { min-width: 0; }
+.themed-scroll, .themed-scroll * {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* ====== Inputs / buttons ====== */
+.input {
+  @apply bg-neutral-50/95 text-ink placeholder:text-neutral-400
+         border border-black/20 rounded-md px-3 py-2
+         focus:outline-none focus:ring-2 focus:ring-caramel focus:border-transparent;
+}
+.textarea {
+  @apply bg-neutral-50/95 text-ink placeholder:text-neutral-400
+         border border-black/20 rounded-md px-3 py-2
+         focus:outline-none focus:ring-2 focus:ring-caramel focus:border-transparent
+         min-h-[92px];
+}
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl2 font-medium transition
+         bg-caramel text-ink hover:brightness-95 active:translate-y-[1px] shadow-soft;
+}
+.btn-accent {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-white transition-all duration-200 ease-out shadow-lg;
+  background: linear-gradient(180deg, #CC9900, #E5B800);
+}
+.btn-accent:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(229,184,0,0.35); }
+.btn-accent:active { transform: translateY(1px) scale(.98); }
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl2 font-medium transition
+         bg-black/10 hover:bg-black/20 border border-white/10;
+}
+.list-btn { @apply w-full text-left px-4 py-3 rounded-md border shadow-soft bg-coffee-700 hover:bg-coffee-600 border-black/40 transition; }
+.list-btn--active { @apply ring-2 ring-caramel; }
+
+/* ====== Scrollbar tematic (global) – galben ====== */
+html .themed-scroll,
+.themed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229,184,0,.55) transparent;
+}
+html .themed-scroll::-webkit-scrollbar,
+.themed-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html .themed-scroll::-webkit-scrollbar-track,
+.themed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+html .themed-scroll::-webkit-scrollbar-thumb,
+.themed-scroll::-webkit-scrollbar-thumb {
+  background: rgba(229,184,0,.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 120ms ease, transform 120ms ease;
+}
+html .themed-scroll::-webkit-scrollbar-thumb:hover,
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(229,184,0,.75);
+  transform: translateX(-1px);
+}
+
+/* Preisdatenbank: scrollbar colorat (override) */
+.preisdatenbank-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229,184,0,.55) transparent;
+}
+.preisdatenbank-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.preisdatenbank-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.preisdatenbank-scroll::-webkit-scrollbar-thumb {
+  background: rgba(229,184,0,.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.preisdatenbank-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(229,184,0,.75);
+}
+
+/* KaTeX: permite wrap pe rânduri noi și aliniere la stânga */
+.katex { white-space: normal !important; }
+.katex-display > .katex { text-align: left !important; }
+.katex-display { overflow-wrap: anywhere; word-break: break-word; }
+.katex .mspace { display: inline !important; }
+
+/* ==== GALBEN (primary) ==== */
+:root {
+  --color-sun:     #E5B800;
+  --color-sun-600: #CC9900;
+  --color-sun-700: #F5C400;
+}
+
+/* ===== Wizard container ===== */
+.wizard-wrap{
+  position: relative;         /* IMPORTANT pentru overlay PDF */
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  background: var(--color-wizard-area);  /* același gri ca fundalul GIF-ului houseblueprint */
+}
+
+.wizard-steps--seps { gap: 20px; }
+.wizard-steps--seps .wizard-step { position: relative; margin-right: 10px; padding-right: 10px; }
+.wizard-steps--seps .wizard-step:not(:last-child)::after {
+  content: ""; position: absolute; top: 2px; bottom: 2px; right: -10px; width: 1px;
+  background: currentColor; opacity: 0.2; pointer-events: none;
+}
+@media (max-width: 640px) {
+  .wizard-steps--seps .wizard-step { margin-right: 0; padding-right: 0; }
+  .wizard-steps--seps .wizard-step::after { display: none; }
+}
+
+/* Pașii – reduse ușor pentru a fi totul mai compact */
+.wizard-step.v-start{ display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-width: 72px; max-width: 150px; }
+.wizard-label{ margin-top: 4px; font-size: 12px; font-weight: 600; line-height: 1.2; color: rgba(255,255,255,.84); text-align: center; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: opacity .25s ease, color .25s ease; }
+.wizard-dot{ height: 10px; width: 10px; border-radius: 9999px; background: rgba(255,255,255,.16); outline: 2px solid rgba(0,0,0,.28); box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset; transition: transform .2s ease, opacity .2s ease, background .2s ease, box-shadow .2s ease; }
+.wizard-dot.active{ background: var(--color-sun); box-shadow: 0 0 0 2px rgba(0,0,0,.32), 0 0 16px rgba(229,184,0,.42); }
+.wizard-dot.done{ background: linear-gradient(180deg, var(--color-sun), var(--color-sun-600)); box-shadow: 0 0 0 2px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.22); }
+.wizard-dot.skipped{ background: rgba(255,255,255,.08); opacity: .6; }
+.wizard-step.skipped .wizard-label{ opacity: .55; color: rgba(255,255,255,.5); }
+
+/* Stage */
+.wizard-stage{ min-height: 0; display: flex; align-items: center; justify-content: center; }
+
+/* Card – mai mic: lățime, padding, gap; max-height ca body-ul să poată face scroll */
+.wizard-card{
+  position: relative; width: min(720px, 100%); height: fit-content; min-height: 0; max-height: calc(100% - 8px);
+  display: grid; grid-template-rows: auto 1fr auto; gap: 10px;
+  border-radius: var(--radius-xl2);
+  border: 1px solid rgba(229,184,0,.22);
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(229,184,0,.10), transparent 45%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)),
+    rgba(38,38,38,.94);
+  box-shadow: 0 10px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(229,184,0,.08) inset;
+  backdrop-filter: blur(var(--blur-xs));
+  padding: 12px; overflow: hidden;
+}
+.wizard-title{ font-size: 18px; font-weight: 900; letter-spacing: -0.01em; color: var(--color-sun); }
+.wizard-body{ overflow-y: auto; overflow-x: hidden; min-height: 0; padding-right: 2px; }
+.wizard-footer{ display: flex; align-items: center; gap: 8px; }
+
+/* ===== Inputs – ușor mai mici ===== */
+.sun-input{
+  width: 100%; background: rgba(255,255,255,.96); color: var(--color-ink);
+  border: 1px solid rgba(229,184,0,.42); border-radius: 10px; padding: 8px 10px;
+  font-size: 0.9375rem;
+  outline: none; transition: box-shadow .12s ease, border-color .12s ease;
+}
+.sun-input:focus{ border-color: var(--color-sun); box-shadow: 0 0 0 2px rgba(229,184,0,.50); }
+.sun-textarea{
+  width: 100%; min-height: 80px; background: rgba(255,255,255,.96); color: var(--color-ink);
+  border: 1px solid rgba(229,184,0,.42); border-radius: 10px; padding: 8px 10px;
+  font-size: 0.9375rem;
+  outline: none; transition: box-shadow .12s ease, border-color .12s ease;
+}
+.sun-textarea:focus{ border-color: var(--color-sun); box-shadow: 0 0 0 2px rgba(229,184,0,.50); }
+.sun-checkbox{ width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(229,184,0,.42); background: rgba(255,255,255,.98); accent-color: var(--color-sun); }
+.wiz-label{ display:block; font-size: 12px; color: rgba(255,255,255,.9); margin-bottom: 4px; }
+
+/* ===== Butoane – ușor mai mici ===== */
+.btn-sun{
+  display:inline-flex; align-items:center; gap: 6px; padding: 8px 12px; border-radius: var(--radius-xl2);
+  font-size: 0.9rem;
+  background: linear-gradient(180deg, var(--color-sun), var(--color-sun-600)); color: #fff;
+  border: 1px solid rgba(0,0,0,.32); box-shadow: 0 4px 14px rgba(229,184,0,.32), inset 0 1px 0 rgba(255,255,255,.32);
+  transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
+}
+.btn-sun:hover{ filter: brightness(.985); box-shadow: 0 6px 18px rgba(229,184,0,.38), inset 0 1px 0 rgba(255,255,255,.5); }
+.btn-sun:active{ transform: translateY(1px); }
+.btn-sun-ghost{
+  display:inline-flex; align-items:center; gap: 6px; padding: 8px 12px; border-radius: var(--radius-xl2);
+  font-size: 0.9rem;
+  background: rgba(229,184,0,.10); border: 1px solid rgba(229,184,0,.32); color: var(--color-sun);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* ===== Select custom (portal) – ușor mai mic ===== */
+.sun-select{
+  width: 100%; display:flex; align-items:center; justify-content:space-between; gap: 6px;
+  background: rgba(255,255,255,.96); color: var(--color-ink);
+  border: 1px solid rgba(229,184,0,.42); border-radius: 10px; padding: 8px 10px;
+  font-size: 0.9375rem;
+  transition: box-shadow .12s ease, border-color .12s ease;
+}
+.sun-select:hover{ border-color: var(--color-sun); }
+.sun-select--open{ box-shadow: 0 0 0 2px rgba(229,184,0,.45); border-color: var(--color-sun); }
+.sun-menu{
+  background: rgba(37,37,37,.98); border: 1px solid rgba(229,184,0,.32);
+  border-radius: 10px; box-shadow: 0 14px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(229,184,0,.10) inset;
+  padding: 4px; max-height: 220px;
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #E5B800 transparent !important;
+}
+.sun-menu::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+.sun-menu::-webkit-scrollbar-track {
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+.sun-menu::-webkit-scrollbar-thumb {
+  background: #E5B800 !important;
+  border-radius: 9999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  -webkit-appearance: none !important;
+  min-height: 32px !important;
+}
+.sun-menu::-webkit-scrollbar-thumb:hover {
+  background: #F5D030 !important;
+}
+.sun-menu::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+.sun-menu-item{
+  width: 100%; display:flex; align-items:center; justify-content:space-between; gap: 8px;
+  text-align:left; color: #fff; background: transparent; border: 0; border-radius: 8px; padding: 6px 8px;
+  font-size: 0.9rem;
+}
+.sun-menu-item:hover{ background: rgba(229,184,0,.10); }
+.sun-menu-item.is-active{ background: rgba(229,184,0,.16); color: var(--color-sun); }
+
+/* ===== Saving toast ===== */
+.saving-toast-fixed{
+  position: fixed; left: 50%; bottom: 38px; transform: translateX(-50%);
+  display:flex; align-items:center; gap:8px; font-size: 12px; color: var(--color-sun);
+  background: rgba(229,184,0,.10); border: 1px solid rgba(229,184,0,.32);
+  padding: 8px 12px; border-radius: 12px; z-index: 10000;
+}
+.saving-dot{ width:10px; height:10px; border-radius:9999px; border:2px solid var(--color-sun); border-top-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin{ to { transform: rotate(360deg); } }
+
+/* ===== Animații card (discrete, cu gust) ===== */
+@keyframes cardEnterNext { 0% { opacity:0; transform: translate3d(14px,0,0) scale(.995);} 100% {opacity:1; transform:none;} }
+@keyframes cardEnterBack { 0% { opacity:0; transform: translate3d(-14px,0,0) scale(.995);} 100% {opacity:1; transform:none;} }
+@keyframes cardEnterInitial { 0% { opacity:0; transform: translateY(6px);} 100% {opacity:1; transform:none;} }
+.card-in-next{ animation: cardEnterNext .4s cubic-bezier(.25,.46,.45,.94) forwards; }
+.card-in-back{ animation: cardEnterBack .4s cubic-bezier(.25,.46,.45,.94) forwards; }
+.card-initial{ animation: cardEnterInitial .35s cubic-bezier(.25,.46,.45,.94) forwards; }
+
+/* ===== Page / view transition (dashboard, schimbare pagini) ===== */
+@keyframes pageEnter { 0% { opacity:0; transform: translateY(4px);} 100% { opacity:1; transform:none;} }
+.page-enter{ animation: pageEnter .3s cubic-bezier(.25,.46,.45,.94) forwards; }
+
+/* ===== File input ===== */
+.sun-file-input { font-size: 14px; color: #fff; background: transparent; border: 1px dashed rgba(229,184,0,.25); border-radius: 12px; padding: 6px 8px; }
+.sun-file-input::file-selector-button {
+  appearance: none; -webkit-appearance: none; margin-right: 12px; padding: 8px 12px;
+  border-radius: 10px; border: 1px solid rgba(55,55,55,.65);
+  background: linear-gradient(180deg,#2A2A2A,#222); color: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.08);
+  cursor: pointer; transition: filter .12s ease, transform .06s ease, box-shadow .12s ease;
+}
+.sun-file-input::file-selector-button:hover { filter: brightness(1.05); }
+.sun-file-input::file-selector-button:active { transform: translateY(1px); }
+
+/* ===== Scrollbar hiding utilities ===== */
+.scroll-invisible { scrollbar-width: none; }
+.scroll-invisible::-webkit-scrollbar { width: 0; height: 0; }
+.scroll-invisible, .scroll-invisible * { scrollbar-width: none !important; }
+.scroll-invisible::-webkit-scrollbar, .scroll-invisible *::-webkit-scrollbar { width: 0 !important; height: 0 !important; background: transparent !important; }
+.scroll-invisible.themed-scroll { scrollbar-width: none !important; }
+
+/* Toast states */
+.saving-toast-fixed.is-saved { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); }
+.saving-dot.ok { background: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.35); }
+
+/* ===== PDF viewer (opțional – shell clasic) ===== */
+.pdf-shell{
+  width: 100%;
+  border-radius: var(--radius-xl2);
+  border: 1px solid rgba(229,184,0,.22);
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(229,184,0,.10), transparent 45%),
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)),
+    var(--color-coffee-850);
+  box-shadow: 0 10px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(229,184,0,.08) inset;
+  overflow: auto;
+  padding: 8px;
+}
+.pdf-frame{
+  width: 100%;
+  height: calc(78vh - 16px);
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-coffee-900);
+  box-shadow: inset 0 6px 18px rgba(0,0,0,.35);
+}
+@media (min-width: 0px){
+  .wizard-stage .pdf-shell{ height: 75vh; }
+  .wizard-stage .pdf-shell .pdf-frame{ height: calc(75vh - 16px); }
+}
+
+/* Scrollbar dur */
+.scroll-brutal { scrollbar-width: thin; scrollbar-color: #9aa0a6 #1b1f24; }
+.scroll-brutal::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll-brutal::-webkit-scrollbar-track { background: #1b1f24; border-radius: 8px; }
+.scroll-brutal::-webkit-scrollbar-thumb { background: #9aa0a6; border-radius: 8px; border: 2px solid #1b1f24; }
+.scroll-brutal::-webkit-scrollbar-thumb:hover { background: #bfc5cc; }
+
+/* Hide scroll utilitare */
+.pretty-scroll { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+.pretty-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+.hide-scroll { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+.hide-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+
+/* Confetti */
+.congrats-ribbon {
+  position: absolute; inset: -20%;
+  background:
+    radial-gradient(ellipse at top left, color-mix(in oklab, var(--color-caramel) 22%, transparent), transparent 55%),
+    radial-gradient(ellipse at bottom right, color-mix(in oklab, var(--color-sun) 28%, transparent), transparent 55%);
+  pointer-events: none; animation: shimmer 3.2s ease-in-out infinite alternate;
+}
+@keyframes shimmer { from { transform: translate3d(-2%,-1%,0); opacity:.92; } to { transform: translate3d(2%,1%,0); opacity:1; } }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+.no-overscroll { overscroll-behavior: contain; }
+
+/* ===== IFRAME PDF — wrapper invizibil ===== */
+.pdf-clip{
+  position: relative; width: 100%; height: 100%; min-height: 0;
+  border-radius: 12px; overflow: hidden; padding: 0; border: 0; background: transparent; box-shadow: none;
+}
+.pdf-iframe{ display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; background: transparent; }
+
+/* ===== NEW: PDF OVERLAY pe toată componenta, minus 10px ===== */
+/* Părintele (.wizard-wrap) e relative. Overlay-ul se așază peste tot conținutul. */
+/* PDF peste toată componenta, cu 10px spațiu pe toate laturile */
+.pdf-overlay{
+  position: absolute;
+  inset: 0;                 /* ocupă tot StepWizard */
+  padding: 10px;            /* spațiul de 10px dorit */
+  box-sizing: border-box;   /* padding-ul scade din aria internă */
+  z-index: 10;
+
+  /* restul rămâne la fel */
+  background: transparent;
+}
+
+.pdf-overlay-frame{
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: var(--shadow-soft);
+  background: transparent;
+}
+
+.pdf-overlay-frame iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+
+
+/* Utilitar dacă preferi clasă în loc de Tailwind arbitrar */
+.inset-10px { position: absolute; top: 10px; right: 10px; bottom: 10px; left: 10px; }
+
+/* ===== Steps pe un singur rând, scroll orizontal fără scrollbar vizibil ===== */
+/* Spread: pașii sunt distanțați semnificativ, conținutul în plus e ascuns, la schimbarea pasului banda se mișcă */
+.wizard-steps--inline{
+  gap: 56px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+.wizard-steps--inline .wizard-step{
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.wizard-steps--spread .wizard-step {
+  min-width: 72px;
+}
+
+/* feedback subtil pe dot-uri (scale la active/done) */
+.wizard-dot.active{ transform: scale(1.08); }
+.wizard-dot.done{ transform: scale(1.02); }
+
+/* ===== Progress bar „galben” ===== */
+.wizard-progress{
+  position: relative;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(229,184,0,.18);
+  border: 1px solid rgba(229,184,0,.25);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.wizard-progress__bar{
+  height: 100%;
+  border-radius: inherit;
+  width: 0%;
+  will-change: width;
+  transition: width .45s cubic-bezier(.2,.8,.2,1);
+  background:
+    linear-gradient(90deg, rgba(100, 80, 0, 0.25), rgba(255,255,255,0) 35%),
+    linear-gradient(180deg, var(--color-sun), var(--color-sun-600));
+  box-shadow:
+    0 0 18px color-mix(in oklab, var(--color-sun) 45%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* === Math grid ("foaie de mate") pentru cadrele cu formule === */
+.math-note{
+  /* fundal cald, compatibil cu paleta coffee/sand */
+  --paper-warm: color-mix(in oklab, var(--color-sand) 28%, transparent);
+
+  /* grilă (pătrățele) – 26–30px e sweet spot pe desktop */
+  --grid: 28px;
+  --grid-line: rgba(255,255,255,.075);   /* linii discrete, albe translucide */
+  --grid-line-strong: rgba(255,255,255,.10);
+
+  position: relative;
+  border-radius: 12px;
+
+  /* straturi: peliculă caldă + grilă XY suprapusă */
+  background:
+    /* peliculă caldă */
+    linear-gradient(180deg, color-mix(in oklab, var(--paper-warm) 90%, transparent), color-mix(in oklab, var(--paper-warm) 65%, transparent)),
+    /* grid orizontal */
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px),
+    /* grid vertical */
+    linear-gradient(to right,  var(--grid-line) 1px, transparent 1px);
+  background-size:
+    auto,
+    var(--grid) var(--grid),
+    var(--grid) var(--grid);
+
+  /* umbre „foaie” + un ușor contur caramel pe interior */
+  box-shadow:
+    0 10px 24px rgba(0,0,0,.28),       /* shadow mare, moale */
+    0 4px 10px rgba(0,0,0,.20),        /* shadow secundar */
+    inset 0 0 0 1px rgba(229,184,0,.14), /* contur interior galben subtil */
+    inset 0 1px 0 rgba(255,255,255,.05);  /* highlight fin sus */
+}
+
+/* grain + vignette foarte fin pentru textură de hârtie */
+.math-note::before{
+  content:"";
+  position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(0,0,0,.08) 0, transparent 60%),
+    radial-gradient(1px 1px at 70% 60%, rgba(0,0,0,.06) 0, transparent 60%),
+    radial-gradient(1px 1px at 45% 80%, rgba(0,0,0,.05) 0, transparent 60%);
+  opacity:.25;
+  mix-blend-mode: overlay;
+}
+.math-note::after{
+  content:"";
+  position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+  box-shadow: inset 0 0 40px rgba(0,0,0,.14); /* vignette foarte fin */
+}
+
+/* un pic de „respirație” la interior */
+.math-note .katex-block{ padding: 10px 14px 12px 14px; }
+
+/* pe ecrane mici: pătrățele puțin mai dese și linii un strop mai vizibile */
+@media (max-width: 640px){
+  .math-note{
+    --grid: 24px;
+    --grid-line: rgba(255,255,255,.10);
+  }
+}

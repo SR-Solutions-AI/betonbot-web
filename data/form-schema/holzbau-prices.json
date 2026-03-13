@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1",
+  "tenant": "holzbau",
+  "steps": [
+    {
+      "stepKey": "fundament",
+      "title": "Fundament",
+      "subtitle": "Preise pro m² Fundament",
+      "variables": [
+        { "key": "unit_price_placa", "label": "Placă (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "unit_price_piloti", "label": "Piloți (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "unit_price_soclu", "label": "Soclu (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "system",
+      "title": "System & Rohbau",
+      "subtitle": "Systempreise (CLT, Holzrahmen, Massivholz)",
+      "variables": [
+        { "key": "clt_interior_price", "label": "CLT Innen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "clt_exterior_price", "label": "CLT Außen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "holzrahmen_interior_price", "label": "Holzrahmen Innen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "holzrahmen_exterior_price", "label": "Holzrahmen Außen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "massivholz_interior_price", "label": "Massivholz Innen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "massivholz_exterior_price", "label": "Massivholz Außen (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "prefab_modifier_santier", "label": "Schwierig (Faktor)", "unit": "", "value": 1.25 },
+        { "key": "acces_santier_leicht_factor", "label": "Leicht (Faktor)", "unit": "", "value": 1 },
+        { "key": "acces_santier_mittel_factor", "label": "Mittel (Faktor)", "unit": "", "value": 1.1 }
+      ]
+    },
+    {
+      "stepKey": "dach",
+      "title": "Dach",
+      "subtitle": "Dachdeckung, Dämmung",
+      "variables": [
+        { "key": "overhang_m", "label": "Dachüberstand (m)", "unit": "m", "value": 0.4 },
+        { "key": "sheet_metal_price_per_m", "label": "Blech (€/m)", "unit": "€/m", "value": 0 },
+        { "key": "insulation_price_per_m2", "label": "Dämmung (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "tile_price_per_m2", "label": "Ziegel (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "metal_price_per_m2", "label": "Metall (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "membrane_price_per_m2", "label": "Membran (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "finishes_innen",
+      "title": "Finishes Innen",
+      "subtitle": "Innenausbau pro m²",
+      "variables": [
+        { "key": "interior_tencuiala", "label": "Tencuială (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "interior_lemn", "label": "Lemn (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "interior_fibrociment", "label": "Fibrociment (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "interior_mix", "label": "Mix (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "finishes_aussen",
+      "title": "Finishes Fassade",
+      "subtitle": "Fassade pro m²",
+      "variables": [
+        { "key": "exterior_tencuiala", "label": "Tencuială (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "exterior_lemn", "label": "Lemn (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "exterior_fibrociment", "label": "Fibrociment (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "exterior_mix", "label": "Mix (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "fenster",
+      "title": "Fenster (€/m²)",
+      "subtitle": "Fensterart: 2-fach, 3-fach, 3-fach Passiv",
+      "variables": [
+        { "key": "window_2_fach_price", "label": "2-fach verglast (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "window_3_fach_price", "label": "3-fach verglast (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "window_3fach_passiv_price", "label": "3-fach Passiv (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "tueren",
+      "title": "Türen (€/m²)",
+      "subtitle": "Innen- und Außentüren",
+      "variables": [
+        { "key": "door_interior_price", "label": "Innentür (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "door_exterior_price", "label": "Außentür (€/m²)", "unit": "€/m²", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "flaeche_treppe",
+      "title": "Fläche & Treppe",
+      "subtitle": "Boden, Decke, Treppe",
+      "variables": [
+        { "key": "floor_coeff_per_m2", "label": "Boden (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "ceiling_coeff_per_m2", "label": "Decke (€/m²)", "unit": "€/m²", "value": 0 },
+        { "key": "price_per_stair_unit", "label": "Treppe pro Stufe (€)", "unit": "€", "value": 0 },
+        { "key": "railing_price_per_stair", "label": "Geländer pro Stufe (€)", "unit": "€", "value": 0 }
+      ]
+    },
+    {
+      "stepKey": "haustechnik",
+      "title": "Haustechnik",
+      "subtitle": "Strom, Heizung, Abwasser, Lüftung (€/m²)",
+      "variables": [
+        { "key": "electricity_base_price", "label": "Strom (€/m²)", "unit": "€/m²", "value": 60 },
+        { "key": "heating_base_price", "label": "Heizung (€/m²)", "unit": "€/m²", "value": 70 },
+        { "key": "sewage_base_price", "label": "Abwasser (€/m²)", "unit": "€/m²", "value": 45 },
+        { "key": "ventilation_base_price", "label": "Lüftung (€/m²)", "unit": "€/m²", "value": 55 }
+      ]
+    }
+  ]
+}
