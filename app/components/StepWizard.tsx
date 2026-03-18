@@ -1554,7 +1554,6 @@ export default function StepWizard() {
                 setReviewImages([])
               }}
               onCancel={() => setShowCancelConfirm(true)}
-              editable={false}
             />
           ) : (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 page-enter" style={{ minHeight: '68vh' }}>
