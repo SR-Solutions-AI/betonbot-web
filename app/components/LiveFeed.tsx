@@ -15,6 +15,7 @@ const STAGE_TO_SEQUENCE: Record<string, number[]> = {
   classification: [3],
   floor_classification: [4],
   detections: [5],
+  detections_review: [6], // editor verificare: input_resized + poligoane (nu afișăm alte detecții în LiveFeed)
   scale: [6],
   scale_flood: [6],
   count_objects: [7],
@@ -121,6 +122,11 @@ const STAGE_TITLES: Record<string, string[]> = {
     'Maßstabsberechnung und Kalibrierung',
     'Pixel-zu-Meter Konversion',
     'Referenzmessung und Skalierung'
+  ],
+  detections_review: [
+    'Erkennung prüfen',
+    'Blueprint-Editor',
+    'Detektionen bestätigen'
   ],
   scale_flood: [
     'Flood-Fill (Innen/Außen) – Strukturprüfung',
@@ -563,6 +569,9 @@ export default function LiveFeed() {
   const pendingCompletionRef = useRef<{ offerId: string; pdfUrl: string; adminPdfUrl?: string | null; canDownloadAdminPdf?: boolean; roofMeasurementsPdfUrl?: string | null } | null>(null)
   /** In history mode: first event created_at per stage (for correct timestamps) */
   const stageStartedAtRef = useRef<Record<string, string>>({})
+  /** Când primim detections_review, afișăm editorul (input_resized + poligoane); nu afișăm alte detecții în feed */
+  const reviewPendingRef = useRef<{ files: FeedFile[] } | null>(null)
+  const pendingStagesAfterReviewRef = useRef<string[]>([])
 
   const STORAGE_KEY_OFFER = 'holzbot_dashboard_offer'
   const STORAGE_KEY_RUNNING = 'holzbot_dashboard_running'
@@ -1002,6 +1011,23 @@ export default function LiveFeed() {
               }
             }
 
+            // Editor verificare: detections_review (input_resized + poligoane) → afișare în StepWizard, nu în feed
+            if (stage === 'detections_review' && ev.payload?.files?.length) {
+              const files = (ev.payload.files as FeedFile[]).filter(isDisplayable)
+              if (files.length > 0) {
+                reviewPendingRef.current = { files }
+                try {
+                  window.dispatchEvent(new CustomEvent('offer:detections-review', { detail: { files } }))
+                } catch (_) {}
+              }
+              continue
+            }
+
+            // Nu afișăm scale_flood, detections, exterior_doors, count_objects în LiveFeed
+            if (['scale_flood', 'detections', 'exterior_doors', 'count_objects'].includes(stage)) {
+              continue
+            }
+
             if(stage === 'computation_complete') {
               allStagesCompleted.current = true
               setProgress(100)
@@ -1086,6 +1112,28 @@ export default function LiveFeed() {
     
     return () => clearInterval(iv)
   }, [runId, offerId])
+
+  // După ce userul aprobă detecțiile în editor, eliberăm review-ul și procesăm eventualele etape bufferizate
+  useEffect(() => {
+    const onApproved = () => {
+      if (reviewPendingRef.current == null) return
+      reviewPendingRef.current = null
+      if (!queuedStages.current.has('detections_review')) {
+        queuedStages.current.add('detections_review')
+        stageQueue.current.push('detections_review')
+      }
+      for (const s of pendingStagesAfterReviewRef.current) {
+        if (!queuedStages.current.has(s)) {
+          queuedStages.current.add(s)
+          stageQueue.current.push(s)
+        }
+      }
+      pendingStagesAfterReviewRef.current = []
+      processQueue()
+    }
+    window.addEventListener('offer:detections-review-approved', onApproved)
+    return () => window.removeEventListener('offer:detections-review-approved', onApproved)
+  }, [])
 
   const processQueue = async () => {
     // ✅ CHECK RUN ID

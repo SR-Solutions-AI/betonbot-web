@@ -20,6 +20,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html lang="ro" translate="no" className="notranslate"> 
             <body className="min-h-screen">
+              <script dangerouslySetInnerHTML={{ __html: `
+  window.pdfjsLib = window.pdfjsLib || {};
+  window.pdfjsLib.GlobalWorkerOptions = window.pdfjsLib.GlobalWorkerOptions || {};
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+  console.log('Worker forțat local de Gemini la /pdf.worker.min.mjs');
+` }} />
                 <style
                   dangerouslySetInnerHTML={{
                     __html: `

@@ -1,11 +1,18 @@
 // apps/web/app/api/paraphrase/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { createServerSupabaseClient } from '@/app/lib/supabase-server'
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { text } = await req.json()
 
     const system =

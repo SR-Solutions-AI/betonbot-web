@@ -8,6 +8,7 @@ import { buildFormStepsFromJson, buildPriceSectionsFromFormStepsJson } from '../
 import holzbauFormStepsJson from '../../data/form-schema/holzbau-form-steps.json'
 import { type Field, formStepsDachstuhl } from '../dashboard/formConfig'
 import { CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Loader2, AlertTriangle, X } from 'lucide-react'
+import { DetectionsReviewEditor } from './DetectionsReviewEditor'
 
 const SimplePdfViewer = dynamic(() => import('./SimplePdfViewer.client'), {
   ssr: false,
@@ -547,6 +548,10 @@ export default function StepWizard() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
   const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | null>(null)
+  /** Editor verificare detecții: input_resized + poligoane – afișat în loc de GIF până la Approve */
+  const [showDetectionsReview, setShowDetectionsReview] = useState(false)
+  const [reviewImages, setReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
+  const [reviewTab, setReviewTab] = useState<'rooms' | 'doors'>('rooms')
 
   /** Opțiuni custom per tag (din Preisdatenbank) – cu price_key pentru mapare etichete. */
   const [customOptionsForm, setCustomOptionsForm] = useState<Record<string, Array<{ label: string; value: string; price_key: string }>>>({})
@@ -915,6 +920,27 @@ export default function StepWizard() {
     window.addEventListener('offer:compute-failed', onFailed as EventListener)
     return () => window.removeEventListener('offer:compute-failed', onFailed as EventListener)
   }, [])
+
+  // 4b2. Editor verificare detecții: când LiveFeed primește detections_review, afișăm input_resized + poligoane în loc de GIF
+  useEffect(() => {
+    const onReview = (e: Event) => {
+      const detail = (e as CustomEvent<{ files: Array<{ url: string; caption?: string }> }>).detail
+      const files = detail?.files ?? []
+      if (files.length > 0) {
+        setReviewImages(files)
+        setShowDetectionsReview(true)
+      }
+    }
+    window.addEventListener('offer:detections-review', onReview as EventListener)
+    return () => window.removeEventListener('offer:detections-review', onReview as EventListener)
+  }, [])
+  useEffect(() => {
+    if (!computing) {
+      setShowDetectionsReview(false)
+      setReviewImages([])
+      setReviewTab('rooms')
+    }
+  }, [computing])
 
   // 4c. Poll calc-events for error-level events
   const calcEventsSinceRef = useRef<number | undefined>(undefined)
@@ -1513,6 +1539,24 @@ export default function StepWizard() {
             </div>
           </div>
         ) : computing && !pdfUrl ? (
+          showDetectionsReview && reviewImages.length > 0 ? (
+            <DetectionsReviewEditor
+              offerId={offerId ?? undefined}
+              images={reviewImages}
+              onConfirm={async () => {
+                if (offerId) {
+                  try {
+                    await apiFetch(`/offers/${offerId}/compute/detections-review-approved`, { method: 'POST' })
+                  } catch (_) { /* engine continues on timeout; UI still closes */ }
+                }
+                window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
+                setShowDetectionsReview(false)
+                setReviewImages([])
+              }}
+              onCancel={() => setShowCancelConfirm(true)}
+              editable={false}
+            />
+          ) : (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 page-enter" style={{ minHeight: '68vh' }}>
             <img 
               src="/houseblueprint.gif" 
@@ -1527,6 +1571,7 @@ export default function StepWizard() {
               Abbrechen
             </button>
           </div>
+          )
         ) : pdfUrl ? (
           <div className="flex-1 w-full h-full p-[6px] box-border overflow-hidden page-enter">
             <SimplePdfViewer src={pdfUrl} className="w-full h-full rounded-xl" />

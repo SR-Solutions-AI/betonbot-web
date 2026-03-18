@@ -4,6 +4,14 @@ import path from 'path'
 
 export const dynamic = 'force-dynamic'
 
+/** Allowed tenant slug: alphanumeric, hyphen, underscore only (no path traversal). */
+const SAFE_TENANT_REGEX = /^[a-zA-Z0-9_-]{1,64}$/
+
+function sanitizeTenant(value: string | null): string {
+  const raw = (value || 'holzbau').trim()
+  return SAFE_TENANT_REGEX.test(raw) ? raw : 'holzbau'
+}
+
 /**
  * GET /api/form-schema?tenant=holzbau
  * Citește JSON-ul de pe disc la fiecare request (fără cache).
@@ -11,7 +19,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(req: NextRequest) {
   try {
-    const tenant = req.nextUrl.searchParams.get('tenant') || 'holzbau'
+    const tenant = sanitizeTenant(req.nextUrl.searchParams.get('tenant'))
     const filePath = path.join(process.cwd(), 'data', 'form-schema', `${tenant}-form-steps.json`)
     const content = await readFile(filePath, 'utf-8')
     const data = JSON.parse(content)
