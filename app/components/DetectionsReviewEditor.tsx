@@ -1,4 +1,10 @@
 'use client'
+/**
+ * Editor verificare detecții: camere (poligoane + etichete) și uși/geamuri.
+ * Datele vin din detections_review_data.json (API compute/detections-review-data):
+ * - Etichete camere = room_scales.json (pipeline per-crop Gemini, OCR exact).
+ * - Tipuri uși/geamuri = doors_types.json (Gemini) + euristică aspect – aceeași clasificare ca în LiveFeed.
+ */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -16,6 +22,15 @@ import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } 
 import { apiFetch } from '../lib/supabaseClient'
 
 const ACCENT = '#E5B800'
+
+/** Tip canonic pentru uși/ferestre: door | window | garage_door | stairs (culori distincte în editor). */
+function normalizeDoorType(type: string | undefined): 'door' | 'window' | 'garage_door' | 'stairs' {
+  const t = (type || 'door').toLowerCase().trim()
+  if (t === 'window' || t === 'fenster' || t === 'geam') return 'window'
+  if (t === 'garage_door' || t === 'garagentor') return 'garage_door'
+  if (t === 'stairs' || t === 'treppe') return 'stairs'
+  return 'door'
+}
 
 /** Unire vârfuri consecutive foarte apropiate (px imagine) – la randarea poligoanelor prima dată. */
 const MERGE_VERTEX_DIST_PX = 14
@@ -65,7 +80,7 @@ export function DetectionsReviewEditor({
   const [loading, setLoading] = useState(true)
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null)
   const [newPolygonPoints, setNewPolygonPoints] = useState<Point[] | null>(null)
-  const [newDoorType, setNewDoorType] = useState<'door' | 'window'>('door')
+  const [newDoorType, setNewDoorType] = useState<'door' | 'window' | 'garage_door' | 'stairs'>('door')
   const [pendingNewRoomPoints, setPendingNewRoomPoints] = useState<Point[] | null>(null)
   const [roomTypePopoverIndex, setRoomTypePopoverIndex] = useState<number | null>(null)
   const [history, setHistory] = useState<PlanData[][]>([])
@@ -124,10 +139,16 @@ export function DetectionsReviewEditor({
         const plans = Array.isArray(res?.plans) ? res.plans : []
         const normalized = plans.map((p) => ({
           ...p,
-          rooms: (p.rooms || []).map((r: RoomPolygon) => ({
+          rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => ({
             ...r,
             roomType: r.roomType ?? 'Raum',
+            roomName: (r.roomName ?? r.room_name ?? r.roomType ?? 'Raum').trim() || 'Raum',
             points: mergeClosePolygonPoints(r.points || [], MERGE_VERTEX_DIST_PX),
+          })),
+          // Tipuri uși/geamuri = aceeași clasificare ca LiveFeed (detections_review_doors.png): backend doors_types.json + euristică
+          doors: (p.doors || []).map((d: DoorRect) => ({
+            ...d,
+            type: normalizeDoorType(d.type),
           })),
         }))
         setPlansData(normalized)
@@ -209,7 +230,8 @@ export function DetectionsReviewEditor({
   const handlePickNewRoomType = useCallback((roomType: RoomTypeOption) => {
     if (!pendingNewRoomPoints || pendingNewRoomPoints.length < 3 || !currentPlan) return
     pushHistory()
-    const next = [...currentPlan.rooms, { points: pendingNewRoomPoints, roomType }]
+    const typeStr = roomType as string
+    const next = [...currentPlan.rooms, { points: pendingNewRoomPoints, roomType: typeStr, roomName: typeStr }]
     setRooms(planIndexClamped, next)
     setPendingNewRoomPoints(null)
   }, [pendingNewRoomPoints, currentPlan, planIndexClamped, setRooms, pushHistory])
@@ -223,7 +245,8 @@ export function DetectionsReviewEditor({
     const plan = plansData[planIndexClamped]
     if (!plan || roomTypePopoverIndex >= plan.rooms.length) return
     pushHistory()
-    const next = plan.rooms.map((r, i) => i !== roomTypePopoverIndex ? r : { ...r, roomType: roomType as string })
+    const typeStr = roomType as string
+    const next = plan.rooms.map((r, i) => i !== roomTypePopoverIndex ? r : { ...r, roomType: typeStr, roomName: typeStr })
     setRooms(planIndexClamped, next)
     setRoomTypePopoverIndex(null)
   }, [roomTypePopoverIndex, planIndexClamped, plansData, setRooms, pushHistory])
@@ -248,6 +271,14 @@ export function DetectionsReviewEditor({
     setDoors(planIndexClamped, [...plan.doors, { bbox, type: newDoorType }])
     setNewPolygonPoints(null)
   }, [newPolygonPoints, planIndexClamped, newDoorType, getTabForPlan, setDoors, plansData, pushHistory])
+
+  const handlePickDoorType = useCallback((doorType: 'door' | 'window' | 'garage_door' | 'stairs') => {
+    const plan = plansData[planIndexClamped]
+    if (!plan || selectedPolygonIndex == null || selectedPolygonIndex >= plan.doors.length) return
+    pushHistory()
+    const next = plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType })
+    setDoors(planIndexClamped, next)
+  }, [planIndexClamped, plansData, selectedPolygonIndex, setDoors, pushHistory])
 
   const handleInsertVertex = useCallback((planIdx: number, polyIndex: number, afterVertexIndex: number, x: number, y: number) => {
     const plan = plansData[planIdx]
@@ -365,10 +396,38 @@ export function DetectionsReviewEditor({
       </div>
 
       {tool === 'add' && activeTab === 'doors' && (
-        <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5">
-          <span className="text-sand/70 text-xs">Tür oder Fenster:</span>
+        <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
+          <span className="text-sand/70 text-xs w-full text-center sm:w-auto">Tür, Fenster, Treppe:</span>
           <button type="button" onClick={() => setNewDoorType('door')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'door' ? 'bg-[#22c55e]/30 text-green-300 border border-green-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Tür</button>
           <button type="button" onClick={() => setNewDoorType('window')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'window' ? 'bg-blue-500/30 text-blue-200 border border-blue-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Fenster</button>
+          <button type="button" onClick={() => setNewDoorType('garage_door')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'garage_door' ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Garagentor</button>
+          <button type="button" onClick={() => setNewDoorType('stairs')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'stairs' ? 'bg-orange-600/30 text-orange-200 border border-orange-500/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Treppe</button>
+        </div>
+      )}
+      {tool === 'select' && activeTab === 'doors' && selectedPolygonIndex !== null && plansData[planIndexClamped]?.doors[selectedPolygonIndex] && (
+        <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5">
+          <span className="text-sand/70 text-xs">Typ:</span>
+          {(['door', 'window', 'garage_door', 'stairs'] as const).map((doorType) => {
+            const labels = { door: 'Tür', window: 'Fenster', garage_door: 'Garagentor', stairs: 'Treppe' }
+            const current = plansData[planIndexClamped]?.doors[selectedPolygonIndex]?.type ?? 'door'
+            const isActive = normalizeDoorType(current) === doorType
+            const activeClasses: Record<string, string> = {
+              door: 'bg-[#22c55e]/30 text-green-300 border border-green-400/50',
+              window: 'bg-blue-500/30 text-blue-200 border border-blue-400/50',
+              garage_door: 'bg-purple-500/30 text-purple-200 border border-purple-400/50',
+              stairs: 'bg-orange-600/30 text-orange-200 border border-orange-500/50',
+            }
+            return (
+              <button
+                key={doorType}
+                type="button"
+                onClick={() => handlePickDoorType(doorType)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive ? activeClasses[doorType] : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+              >
+                {labels[doorType]}
+              </button>
+            )
+          })}
         </div>
       )}
 

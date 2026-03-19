@@ -4,7 +4,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 
 export type Point = [number, number]
 
-export type RoomPolygon = { points: Point[]; roomType?: string }
+export type RoomPolygon = { points: Point[]; roomType?: string; roomName?: string }
 export type DoorRect = { bbox: [number, number, number, number]; type?: string }
 
 type PolygonCanvasProps = {
@@ -17,7 +17,7 @@ type PolygonCanvasProps = {
   tool: 'select' | 'add' | 'remove' | 'edit'
   selectedIndex: number | null
   newPoints: Point[] | null
-  newDoorType?: 'door' | 'window'
+  newDoorType?: 'door' | 'window' | 'garage_door' | 'stairs'
   onSelect: (index: number | null) => void
   onAddPoint: (x: number, y: number) => void
   onCloseNewPolygon: () => void
@@ -204,8 +204,17 @@ export function DetectionsPolygonCanvas({
     ctx.drawImage(img, effective.offX, effective.offY, imageWidth * effective.scale, imageHeight * effective.scale)
 
     const roomColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
-    const doorColor = '#22c55e'
-    const windowColor = '#3b82f6'
+    // Clasificare identică cu LiveFeed (detections_review_doors.png): doors_types.json (Gemini) + euristică aspect în backend.
+    // Culori: ușă = verde, geam = albastru, garaj = portocaliu, scări = gri (ca în raster_api.py _COLOR_DOOR_* / _COLOR_WINDOW_*).
+    const doorColors: Record<string, string> = { door: '#22c55e', window: '#3b82f6', garage_door: '#9333ea', stairs: '#ea580c' }
+    const doorStrokeColors: Record<string, string> = { door: '#16a34a', window: '#2563eb', garage_door: '#7e22ce', stairs: '#c2410c' }
+    const getDoorStyle = (type: string | undefined) => {
+      const t = (type || 'door').toLowerCase().trim()
+      if (t === 'window' || t === 'fenster' || t === 'geam') return { fill: doorColors.window, stroke: doorStrokeColors.window }
+      if (t === 'garage_door' || t === 'garagentor') return { fill: doorColors.garage_door, stroke: doorStrokeColors.garage_door }
+      if (t === 'stairs' || t === 'treppe') return { fill: doorColors.stairs, stroke: doorStrokeColors.stairs }
+      return { fill: doorColors.door, stroke: doorStrokeColors.door }
+    }
 
     const s = effective.scale
     const ox = effective.offX
@@ -228,7 +237,7 @@ export function DetectionsPolygonCanvas({
         ctx.strokeStyle = selected ? ACCENT : ctx.fillStyle
         ctx.lineWidth = selected ? 3 : 2
         ctx.stroke()
-        const label = room.roomType ?? `R${i}`
+        const label = (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? `R${i}`).trim() || `R${i}`
         if (pts.length > 0 && label) {
           let cx = 0, cy = 0
           pts.forEach((p) => { cx += p[0]; cy += p[1] })
@@ -288,12 +297,12 @@ export function DetectionsPolygonCanvas({
       doors.forEach((door, i) => {
         const [x1, y1, x2, y2] = door.bbox
         const selected = selectedIndex === i
-        const isWindow = door.type === 'window'
-        ctx.fillStyle = isWindow ? windowColor : doorColor
+        const style = getDoorStyle(door.type)
+        ctx.fillStyle = style.fill
         ctx.globalAlpha = selected ? 0.5 : 0.35
         ctx.fillRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
         ctx.globalAlpha = 1
-        ctx.strokeStyle = selected ? ACCENT : (isWindow ? '#2563eb' : '#16a34a')
+        ctx.strokeStyle = selected ? ACCENT : style.stroke
         ctx.lineWidth = selected ? 3 : 2
         ctx.strokeRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
         if (tool === 'edit' && selected) {
@@ -310,18 +319,18 @@ export function DetectionsPolygonCanvas({
         }
       })
       if (newPoints && newPoints.length >= 1) {
-        const isWindow = newDoorType === 'window'
+        const style = getDoorStyle(newDoorType)
         const endPt = newPoints.length === 2 ? newPoints[1] : previewEndPoint
         const x1 = endPt != null ? Math.min(newPoints[0][0], endPt[0]) : newPoints[0][0]
         const y1 = endPt != null ? Math.min(newPoints[0][1], endPt[1]) : newPoints[0][1]
         const x2 = endPt != null ? Math.max(newPoints[0][0], endPt[0]) : newPoints[0][0]
         const y2 = endPt != null ? Math.max(newPoints[0][1], endPt[1]) : newPoints[0][1]
         if (endPt != null && (x2 - x1) > 0 && (y2 - y1) > 0) {
-          ctx.fillStyle = isWindow ? windowColor : doorColor
+          ctx.fillStyle = style.fill
           ctx.globalAlpha = 0.35
           ctx.fillRect(ox + x1 * s, oy + y1 * s, (x2 - x1) * s, (y2 - y1) * s)
           ctx.globalAlpha = 1
-          ctx.strokeStyle = isWindow ? '#2563eb' : '#16a34a'
+          ctx.strokeStyle = style.stroke
           ctx.setLineDash([4, 4])
           ctx.strokeRect(ox + x1 * s, oy + y1 * s, (x2 - x1) * s, (y2 - y1) * s)
           ctx.setLineDash([])
