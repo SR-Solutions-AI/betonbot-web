@@ -5,7 +5,13 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 export type Point = [number, number]
 
 export type RoomPolygon = { points: Point[]; roomType?: string; roomName?: string }
-export type DoorRect = { bbox: [number, number, number, number]; type?: string }
+export type DoorRect = {
+  bbox: [number, number, number, number]
+  type?: string
+  width_m?: number
+  height_m?: number
+  dimensionsEdited?: boolean
+}
 
 type PolygonCanvasProps = {
   imageUrl: string
@@ -26,6 +32,8 @@ type PolygonCanvasProps = {
   onRemoveSelected: (index?: number) => void
   onRoomsChange: (rooms: RoomPolygon[]) => void
   onDoorsChange: (doors: DoorRect[]) => void
+  onDoorHover?: (payload: { index: number; x: number; y: number } | null) => void
+  onDoorActivate?: (index: number) => void
   onRoomTypeLabelClick?: (roomIndex: number) => void
   onEditStart?: () => void
   className?: string
@@ -101,6 +109,8 @@ export function DetectionsPolygonCanvas({
   onRemoveSelected,
   onRoomsChange,
   onDoorsChange,
+  onDoorHover,
+  onDoorActivate,
   onRoomTypeLabelClick,
   onEditStart,
   newDoorType = 'door',
@@ -477,6 +487,9 @@ export function DetectionsPolygonCanvas({
     }
 
     if (hit?.kind === 'poly') {
+      if (tab === 'doors' && (tool === 'select' || tool === 'edit')) {
+        onDoorActivate?.(hit.index)
+      }
       if (tab === 'rooms' && pt && onRoomTypeLabelClick) {
         const r = rooms[hit.index]
         if (r?.points?.length) {
@@ -524,6 +537,12 @@ export function DetectionsPolygonCanvas({
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
     const pt = toImage(cx, cy)
+    const hoverHit = hitTest(cx, cy)
+    if (tab === 'doors' && hoverHit?.kind === 'poly') {
+      onDoorHover?.({ index: hoverHit.index, x: cx, y: cy })
+    } else {
+      onDoorHover?.(null)
+    }
 
     if (panning && panStart) {
       setUserPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y })
@@ -627,7 +646,7 @@ export function DetectionsPolygonCanvas({
         }
       }
     }
-  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, onRoomsChange, onDoorsChange])
+  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, hitTest, onDoorHover, onRoomsChange, onDoorsChange])
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     try { (e.target as Element).releasePointerCapture(e.pointerId) } catch (_) {}
@@ -651,7 +670,8 @@ export function DetectionsPolygonCanvas({
       edgeDragTimeoutRef.current = null
     }
     pendingEdgeDragRef.current = null
-  }, [])
+    onDoorHover?.(null)
+  }, [onDoorHover])
 
   const handleWheel = useCallback((e: WheelEvent) => {
     if (!effective || !fit) return
