@@ -33,6 +33,18 @@ function normalizeDoorType(type: string | undefined): string {
   return 'door'
 }
 
+function enforceMaxOneStair(doors: DoorRect[], preferredStairIndex?: number): DoorRect[] {
+  let kept = false
+  return doors.map((d, i) => {
+    if (normalizeDoorType(d.type) !== 'stairs') return d
+    if (!kept && (preferredStairIndex == null || i === preferredStairIndex)) {
+      kept = true
+      return { ...d, type: 'stairs' }
+    }
+    return { ...d, type: 'door' }
+  })
+}
+
 function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   if (!points?.length || points.length < 3) return points ?? []
   const out: Point[] = [points[0]]
@@ -257,7 +269,7 @@ export function DetectionsReviewEditor({
       const next = [...prev]
       if (planIdx >= next.length) return next
       const plan = next[planIdx]
-      next[planIdx] = { ...plan, doors: withAutoDoorDimensions(doors, plan?.metersPerPixel) }
+      next[planIdx] = { ...plan, doors: withAutoDoorDimensions(enforceMaxOneStair(doors), plan?.metersPerPixel) }
       return next
     })
   }, [])
@@ -358,7 +370,10 @@ export function DetectionsReviewEditor({
     const plan = plansData[planIndexClamped]
     if (!plan || getTabForPlan(planIndexClamped) !== 'doors' || selectedPolygonIndex >= plan.doors.length) return
     pushHistory()
-    const next = plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType })
+    const next = enforceMaxOneStair(
+      plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType }),
+      doorType === 'stairs' ? selectedPolygonIndex : undefined,
+    )
     setDoors(planIndexClamped, next)
   }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors, pushHistory])
 
@@ -414,12 +429,14 @@ export function DetectionsReviewEditor({
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
     const plan = plansData[planIndexClamped]
     if (!plan) return
+    const alreadyHasStair = plan.doors.some((d) => normalizeDoorType(d.type) === 'stairs')
+    const safeNewType: DoorType = newDoorType === 'stairs' && alreadyHasStair ? 'door' : newDoorType
     pushHistory()
     setDoors(planIndexClamped, [
       ...plan.doors,
       {
         bbox: pendingNewDoorBbox,
-        type: newDoorType,
+        type: safeNewType,
         width_m: width,
         height_m: height,
         dimensionsEdited: true,
