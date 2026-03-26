@@ -4,7 +4,7 @@ export type Field =
   | { type: 'textarea'; name: string; label: string; placeholder?: string }
   | { type: 'number'; name: string; label: string; min?: number; max?: number }
   | { type: 'bool'; name: string; label: string }
-  | { type: 'select'; name: string; label: string; options: string[] }
+  | { type: 'select'; name: string; label: string; options: string[]; tag?: string }
   | { type: 'upload'; name: string; label: string; accept?: string; optional?: boolean; multiple?: boolean }
   | { type: 'price'; name: string; label: string; unit: string; default: number };
 
@@ -107,7 +107,6 @@ export const formSteps: Step[] = [
     key: 'ferestreUsi',
     label: 'Fenster & Türen',
     fields: [
-      { type: 'select', name: 'bodentiefeFenster', label: 'Bodentiefe Fenster / Glasflächen vorhanden', options: ['Nein', 'Ja – einzelne', 'Ja – mehrere / große Glasflächen'] },
       { type: 'select', name: 'windowQuality', label: 'Fensterart (Preis 2-/3-fach)', options: ['2-fach verglast', '3-fach verglast', '3-fach verglast, Passiv'] },
       { type: 'select', name: 'doorMaterialInterior', label: 'Material Innentüren', options: ['Standard', 'Holz', 'Glas', 'Weiß lackiert'] },
       { type: 'select', name: 'doorMaterialExterior', label: 'Material Außentüren', options: ['Standard', 'Holz', 'Aluminium', 'Kunststoff'] },
@@ -161,7 +160,7 @@ export const formSteps: Step[] = [
       {
         type: 'upload',
         name: 'planArhitectural',
-        label: 'Architekturplan',
+        label: 'Einreichplan',
         accept: '.pdf,.jpg,.jpeg,.png,.dwg',
         multiple: true, // 👈 AICI
       },
@@ -197,30 +196,25 @@ export const formStepsDachstuhl: Step[] = [
     fields: [
       { type: 'select', name: 'projektumfang', label: 'Projektumfang', options: ['Dachstuhl', 'Dachdeckung', 'Dachstuhl + Dachdeckung'] },
       { type: 'select', name: 'nutzungDachraum', label: 'Nutzung des Dachraums', options: ['Nicht ausgebaut', 'Wohnraum / ausgebaut'] },
-      { type: 'bool', name: 'leistungAbbund', label: 'Abbund' },
-      { type: 'bool', name: 'leistungLieferung', label: 'Lieferung' },
-      { type: 'bool', name: 'leistungMontage', label: 'Montage' },
-      { type: 'bool', name: 'leistungKranarbeiten', label: 'Kranarbeiten' },
-      { type: 'bool', name: 'leistungGeruest', label: 'Gerüst' },
-      { type: 'bool', name: 'leistungEntsorgung', label: 'Entsorgung' },
+      { type: 'select', name: 'deckenInnenausbau', label: 'Decken-Innenausbau', options: ['Standard', 'Premium', 'Exklusiv'], tag: 'decke_innenausbau' },
     ],
   },
   {
     key: 'daemmungDachdeckung',
     label: 'Dämmung & Dachdeckung',
     fields: [
-      { type: 'select', name: 'daemmung', label: 'Dämmung', options: ['Keine', 'Zwischensparren', 'Aufsparren', 'Kombination'] },
-      { type: 'select', name: 'unterdach', label: 'Unterdach', options: ['Folie', 'Schalung + Folie'] },
-      { type: 'select', name: 'dachstuhlTyp', label: 'Dachstuhl-Typ', options: ['Sparrendach', 'Pfettendach', 'Kehlbalkendach', 'Sonderkonstruktion'] },
+      { type: 'select', name: 'daemmung', label: 'Dämmung', options: ['Keine', 'Zwischensparren', 'Aufsparren', 'Kombination'], tag: 'roof_insulation' },
+      { type: 'select', name: 'unterdach', label: 'Unterdach', options: ['Folie', 'Schalung + Folie'], tag: 'under_roof' },
+      { type: 'select', name: 'dachstuhlTyp', label: 'Dachstuhl-Typ', options: ['Sparrendach', 'Pfettendach', 'Kehlbalkendach', 'Sonderkonstruktion'], tag: 'roof_structure_type' },
       { type: 'bool',   name: 'sichtdachstuhl', label: 'Sichtdachstuhl' },
-      { type: 'select', name: 'dachdeckung', label: 'Dachdeckung', options: ['Ziegel', 'Betonstein', 'Blech', 'Schindel', 'Sonstiges'] },
+      { type: 'select', name: 'dachdeckung', label: 'Dachdeckung', options: ['Ziegel', 'Betonstein', 'Blech', 'Schindel', 'Sonstiges'], tag: 'roof_covering' },
     ],
   },
   {
     key: 'upload',
     label: 'Datei-Upload',
     fields: [
-      { type: 'upload', name: 'planArhitectural', label: 'Architekturplan', accept: '.pdf,.jpg,.jpeg,.png,.dwg', multiple: true },
+      { type: 'upload', name: 'planArhitectural', label: 'Einreichplan', accept: '.pdf,.jpg,.jpeg,.png,.dwg', multiple: true },
       { type: 'upload', name: 'fotografii',   label: 'Fotos / Renderings', accept: '.pdf,.jpg,.jpeg,.png', optional: true },
       { type: 'upload', name: 'documentatie', label: 'Zusätzliche Dokumentation', accept: '.pdf,.jpg,.jpeg,.png,.zip', optional: true },
     ],
@@ -292,7 +286,35 @@ export const preisdatenbankSteps: Step[] = [
     label: 'Dachzubehör',
     priceSectionKey: 'quadratmeter_dach',
     fields: [
-      { type: 'price', name: 'dachrinne', label: 'Dachrinne (laufend)', unit: '€/m', default: 55 },
+      { type: 'price', name: 'dachrinne', label: 'Dachrinne (lfm)', unit: '€/m', default: 55 },
+    ],
+  },
+  {
+    key: 'preis_dachfenster_neubau',
+    label: 'Dachfenster (Neubau)',
+    priceSectionKey: 'stueck_dachfenster_neubau',
+    priceSectionTitle: 'Stückpreise – Dachfenster (Hausbau)',
+    priceSectionSubtitle: 'Entspricht Formular „Dachfenster-Ausführung“; Anzahl aus Dach-Editor',
+    fields: [
+      { type: 'price', name: 'dachfenster_stueck_standard', label: 'Standard', unit: '€/Stück', default: 650 },
+      { type: 'price', name: 'dachfenster_stueck_velux', label: 'Velux', unit: '€/Stück', default: 890 },
+      { type: 'price', name: 'dachfenster_stueck_roto', label: 'Roto', unit: '€/Stück', default: 820 },
+      { type: 'price', name: 'dachfenster_stueck_fakro', label: 'Fakro', unit: '€/Stück', default: 850 },
+      { type: 'price', name: 'dachfenster_stueck_sonstiges', label: 'Sonstiges', unit: '€/Stück', default: 750 },
+    ],
+  },
+  {
+    key: 'preis_dachfenster_roofonly',
+    label: 'Dachfenster (nur Dach)',
+    priceSectionKey: 'stueck_dachfenster_roofonly',
+    priceSectionTitle: 'Stückpreise – Dachfenster (nur Dach)',
+    priceSectionSubtitle: 'Gleiche Logik wie Neubau, eigene Keys für Dachstuhl-Paket',
+    fields: [
+      { type: 'price', name: 'roofonly_dachfenster_stueck_standard', label: 'Standard', unit: '€/Stück', default: 650 },
+      { type: 'price', name: 'roofonly_dachfenster_stueck_velux', label: 'Velux', unit: '€/Stück', default: 890 },
+      { type: 'price', name: 'roofonly_dachfenster_stueck_roto', label: 'Roto', unit: '€/Stück', default: 820 },
+      { type: 'price', name: 'roofonly_dachfenster_stueck_fakro', label: 'Fakro', unit: '€/Stück', default: 850 },
+      { type: 'price', name: 'roofonly_dachfenster_stueck_sonstiges', label: 'Sonstiges', unit: '€/Stück', default: 750 },
     ],
   },
   {
@@ -393,7 +415,7 @@ export const preisdatenbankSteps: Step[] = [
   },
   {
     key: 'preis_zusatz_prozent',
-    label: 'Prozente',
+    label: 'Aufschläge',
     priceSectionKey: 'zusatz_prozent_fahrt',
     priceSectionTitle: 'Zusatzkosten – Prozente & Fahrt',
     priceSectionSubtitle: 'Bauleitung, Risiko, Fahrtkosten',
@@ -405,7 +427,7 @@ export const preisdatenbankSteps: Step[] = [
   },
   {
     key: 'preis_zusatz_fahrt',
-    label: 'Fahrt',
+    label: 'Anfahrt',
     priceSectionKey: 'zusatz_prozent_fahrt',
     fields: [
       { type: 'price', name: 'fahrtkosten', label: 'Fahrtkosten (pro km)', unit: '€', default: 0.85 },
@@ -428,7 +450,7 @@ export const preisdatenbankSteps: Step[] = [
     label: 'Sonstiges',
     priceSectionKey: 'sonderpositionen',
     fields: [
-      { type: 'price', name: 'treppe', label: 'Treppe (pro Stufe)', unit: '€', default: 120 },
+      { type: 'price', name: 'treppe', label: 'Treppe (pro Stück)', unit: '€', default: 4500 },
       { type: 'price', name: 'kamin', label: 'Kaminanschluss', unit: '€', default: 420 },
       { type: 'price', name: 'sockel', label: 'Sockelarbeiten (laufend)', unit: '€/m', default: 35 },
       { type: 'price', name: 'abdichtung', label: 'Abdichtung (z. B. Keller)', unit: '€/m²', default: 75 },
@@ -608,8 +630,13 @@ export const PRICING_VARIABLES_SECTIONS: PricingVariablesSectionDef[] = [
       {
         title: 'Treppe',
         variables: [
-          { key: 'price_per_stair_unit', label: 'Pro Stufe (€)', unit: '€', default: 0 },
-          { key: 'railing_price_per_stair', label: 'Geländer pro Stufe (€)', unit: '€', default: 0 },
+          { key: 'price_per_stair_unit', label: 'Pro Stück (€)', unit: '€', default: 0 },
+          { key: 'railing_price_per_stair', label: 'Geländer pro Stück (€)', unit: '€', default: 0 },
+          { key: 'stairs_type_standard_piece_price', label: 'Treppentyp Standard (€/Stück)', unit: '€/Stück', default: 0 },
+          { key: 'stairs_type_holz_piece_price', label: 'Treppentyp Holz (€/Stück)', unit: '€/Stück', default: 0 },
+          { key: 'stairs_type_beton_piece_price', label: 'Treppentyp Beton (€/Stück)', unit: '€/Stück', default: 0 },
+          { key: 'stairs_type_metall_piece_price', label: 'Treppentyp Metall (€/Stück)', unit: '€/Stück', default: 0 },
+          { key: 'stairs_type_sonder_piece_price', label: 'Treppentyp Sonder (€/Stück)', unit: '€/Stück', default: 0 },
         ],
       },
     ],

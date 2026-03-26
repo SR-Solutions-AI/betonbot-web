@@ -9,6 +9,7 @@ import holzbauFormStepsJson from '../../data/form-schema/holzbau-form-steps.json
 import { type Field, formStepsDachstuhl } from '../dashboard/formConfig'
 import { CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Loader2, AlertTriangle, X } from 'lucide-react'
 import { DetectionsReviewEditor } from './DetectionsReviewEditor'
+import { RoofReviewEditor } from './RoofReviewEditor'
 
 const SimplePdfViewer = dynamic(() => import('./SimplePdfViewer.client'), {
   ssr: false,
@@ -48,12 +49,6 @@ const ROOF_TYPES = [
   { name_de: 'Zeltdach', img: '/roof_types/23.png' },
   { name_de: 'Zwerchdach', img: '/roof_types/24.png' },
 ] as const
-
-// Betonbot: oferta doar acoperiș (Dachstuhl) este ascunsă la crearea ofertei noi
-const SHOW_DACHSTUHL_PACKAGE = false
-// Betonbot: filtre pe imaginile din pasul Gebäudestruktur și pe iconița de upload – portocaliu → galben aprins
-const BUILDING_STRUCTURE_ORANGE_TO_YELLOW_FILTER = true
-const ORANGE_TO_YELLOW_CSS_FILTER = 'hue-rotate(18deg) saturate(1.08) brightness(1.04)'
 
 /* ===================== UI DICTIONAR (AFIȘARE) ===================== */
 const DE = {
@@ -119,7 +114,7 @@ const DE = {
     'Teren plat sau pantă?': 'Gelände: eben oder Hang?',
     'Acces curent electric / apă': 'Strom-/Wasseranschluss vorhanden',
 
-    'Plan arhitectural': 'Architekturplan',
+    'Plan arhitectural': 'Einreichplan',
     'Fotografii / randări': 'Fotos / Renderings',
     'Documentație suplimentară': 'Zusätzliche Dokumentation',
     'Choose File': 'Datei auswählen',
@@ -203,8 +198,8 @@ const DE = {
     'KfW 40': 'KfW 40',
     'KfW 40+': 'KfW 40+',
 
-    'Plan arhitectură': 'Architekturplan',
-    'Plan arhitectural': 'Architekturplan',
+    'Plan arhitectură': 'Einreichplan',
+    'Plan arhitectural': 'Einreichplan',
     'Plan structură': 'Tragwerksplan',
     'Caiet de sarcini': 'Leistungsverzeichnis',
     'Documentație urbanism': 'B-Plan / Bau-Doku',
@@ -262,6 +257,15 @@ function tOption(stepKey: string, fieldName: string, value: string) {
   return (DE.optionsGlobal as any)?.[value] ?? value
 }
 
+function asBool(v: any): boolean {
+  if (v === true || v === 1) return true
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    return s === 'true' || s === '1' || s === 'yes' || s === 'ja' || s === 'on'
+  }
+  return false
+}
+
 /* ================= VALIDATORS ================= */
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i
 const phoneRe = /^[0-9+\s().-]{6,}$/
@@ -281,9 +285,16 @@ function validateGeneric(stepKey: string, fields: Field[], form: Record<string, 
   const nivelOferta = sistemConstructivData.nivelOferta || ''
 
   const shouldHideField = (fieldName: string): boolean => {
+    const listaEtaje = Array.isArray(form.listaEtaje) ? form.listaEtaje : []
+    const hasFloorAboveGround = listaEtaje.some((e: string) => e !== 'parter')
+    if (stepKey === 'projektdaten' && fieldName === 'deckenInnenausbau') {
+      return (form.nutzungDachraum ?? '') !== 'Wohnraum / ausgebaut'
+    }
+    if (stepKey === 'structuraCladirii' && fieldName === 'treppeTyp' && !hasFloorAboveGround) return true
+    if (stepKey === 'daemmungDachdeckung' && fieldName === 'dachfensterTyp' && !asBool(form.dachfensterImDach)) return true
     if (stepKey === 'wintergaertenBalkone') {
-      if (fieldName === 'wintergartenTyp' && !form.hasWintergarden) return true
-      if (fieldName === 'balkonTyp' && !form.hasBalkone) return true
+      if (fieldName === 'wintergartenTyp' && !asBool(form.hasWintergarden)) return true
+      if (fieldName === 'balkonTyp' && !asBool(form.hasBalkone)) return true
     }
     if ((stepKey === 'sistemConstructiv' || stepKey === 'structuraCladirii' || stepKey === 'materialeFinisaj') && fieldName === 'tipAcoperis') return true
     if (stepKey === 'structuraCladirii' && fieldName === 'floorsNumber') return true
@@ -349,6 +360,16 @@ function optValue(opt: string | { value?: string; label?: string }): string {
   if (opt == null) return ''
   if (typeof opt === 'object' && 'value' in opt) return String((opt as any).value ?? '')
   return String(opt)
+}
+
+const FIELD_TAG_FALLBACK_BY_NAME: Record<string, string> = {
+  daemmung: 'roof_insulation',
+  unterdach: 'under_roof',
+  dachstuhlTyp: 'roof_structure_type',
+  dachdeckung: 'roof_covering',
+  sichtdachstuhl: 'visible_roof_structure',
+  dachfensterTyp: 'roof_skylight_type',
+  deckenInnenausbau: 'decke_innenausbau',
 }
 
 /* =============== Select custom (PORTAL) =============== */
@@ -464,17 +485,17 @@ function RoofGridSelect({ value, onChange }:{ value?: string; onChange: (v: stri
               onClick={() => onChange(r.name_de)}
               className={[
                 'group relative rounded-lg p-2 text-center transition-transform duration-150 ease-out will-change-transform',
-                'bg-[#404040]/70 border border-white/10 hover:border-white/20',
-                active ? 'ring-2 ring-[#E5B800]/60 shadow-soft scale-[1.02] bg-[#404040]/50' : 'hover:scale-[1.02] hover:shadow-soft hover:ring-1 hover:ring-[#E5B800]/35',
+                'bg-[#6a4b39]/70 border border-[#e3c7ab22] hover:border-[#e3c7ab55]',
+                active ? 'ring-2 ring-caramel/60 shadow-soft scale-[1.02] bg-[#6a4b39]/50' : 'hover:scale-[1.02] hover:shadow-soft hover:ring-1 hover:ring-caramel/35',
               ].join(' ')}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={r.img} alt={r.name_de} className="w-full h-26 object-contain rounded-md mx-auto bg-white/10" loading="lazy" decoding="async" />
+              <img src={r.img} alt={r.name_de} className="w-full h-26 object-contain rounded-md mx-auto bg-[#f1e6d3]/15" loading="lazy" decoding="async" />
               <div className="mt-1 text-center text-[12px] font-semibold leading-tight text-sand line-clamp-2">{r.name_de}</div>
               {active && (
-                <div className="absolute top-1 right-1 bg-[#E5B800] text-ink rounded-full p-[2px] shadow"><CheckCircle2 size={13} /></div>
+                <div className="absolute top-1 right-1 bg-caramel text-ink rounded-full p-[2px] shadow"><CheckCircle2 size={13} /></div>
               )}
-              <span className="pointer-events-none absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition ring-0 group-hover:ring-1 group-hover:ring-[#E5B800]/30" />
+              <span className="pointer-events-none absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition ring-0 group-hover:ring-1 group-hover:ring-caramel/30" />
             </button>
           )
         })}
@@ -548,9 +569,12 @@ export default function StepWizard() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
   const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | null>(null)
-  /** Editor verificare detecții: input_resized + poligoane – afișat în loc de GIF până la Approve */
+  /** Editor verificare detecții: blueprint + overlay (camere, uși) – afișat în loc de GIF până la Approve */
   const [showDetectionsReview, setShowDetectionsReview] = useState(false)
   const [reviewImages, setReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
+  const [planReviewImages, setPlanReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
+  const [showRoofReview, setShowRoofReview] = useState(false)
+  const [roofReviewImages, setRoofReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
   const [reviewTab, setReviewTab] = useState<'rooms' | 'doors'>('rooms')
 
   /** Opțiuni custom per tag (din Preisdatenbank) – cu price_key pentru mapare etichete. */
@@ -563,6 +587,13 @@ export default function StepWizard() {
   const lastProcessedCreationId = useRef<number>(0)
   const activeCreationPromise = useRef<Promise<string> | null>(null)
   const pendingOfferTypeIdRef = useRef<string | null>(null)
+  /** Card „Dachstuhl“: ofertă doar acoperiș (meta + tip ofertă) */
+  const roofOnlyOfferRef = useRef(false)
+  /** Prevent reopening detections editor after it was approved in current run. */
+  const detectionsReviewApprovedRef = useRef(false)
+  /** Prevent reopening roof editor after it was approved in current run. */
+  const roofReviewApprovedRef = useRef(false)
+  const [offerTypesBySlug, setOfferTypesBySlug] = useState<Record<string, string>>({})
   /** Ultima stare a checkbox-urilor Wintergarten/Balkone pe pasul Gebäudestruktur – ca debifarea să nu fie suprascrisă de effect. */
   const structuraWinterBalkoneRef = useRef<{ hasWintergarden?: boolean; hasBalkone?: boolean }>({})
   const stepsScrollContainerRef = useRef<HTMLDivElement>(null)
@@ -582,6 +613,19 @@ export default function StepWizard() {
   }, [])
 
   useEffect(() => { offerIdRef.current = offerId }, [offerId])
+
+  useEffect(() => {
+    apiFetch('/offers/types')
+      .then((r: unknown) => {
+        const items = (r as { items?: Array<{ slug?: string; id?: string }> })?.items ?? []
+        const m: Record<string, string> = {}
+        for (const t of items) {
+          if (t?.slug && t?.id) m[t.slug] = t.id
+        }
+        setOfferTypesBySlug(m)
+      })
+      .catch(() => {})
+  }, [])
 
   // Dacă URL-ul conține offerId/runId, pornește automat aceeași ofertă/rulare (sharing între utilizatori)
   useEffect(() => {
@@ -685,6 +729,7 @@ export default function StepWizard() {
     return label
       .replace(/\s*\(\s*€\/m²\s*\)\s*$/i, '')
       .replace(/\s*\(\s*€\s*\)\s*$/i, '')
+      .replace(/\s*\(\s*€\/Stück\s*\)\s*$/i, '')
       .replace(/\s*\(\s*Faktor\s*\)\s*$/i, '')
       .replace(/\s*\(\s*€\/m\s*\)\s*$/i, '')
       .trim() || label
@@ -700,7 +745,7 @@ export default function StepWizard() {
         for (const sub of subs) {
           const tag = sub?.fieldTag
           if (!tag) continue
-          const options: string[] = []
+          const options: string[] = Array.isArray(out[tag]) ? [...out[tag]] : []
           const vars = Array.isArray(sub?.variables) ? sub.variables : []
           for (const v of vars) {
             if (hiddenKeysForm?.has?.(v?.id)) continue
@@ -849,6 +894,7 @@ export default function StepWizard() {
       setComputeStartTime(null)
       setSaveStatus('idle')
       setSelectedPackage(null)
+      roofOnlyOfferRef.current = false
       creatingRef.current = false
       activeCreationPromise.current = null
     }
@@ -862,6 +908,8 @@ export default function StepWizard() {
     const onComputeStarted = (e: any) => {
       const detail = e?.detail as { offerId?: string; runId?: string }
       if (!detail?.offerId || !detail?.runId) return
+      detectionsReviewApprovedRef.current = false
+      roofReviewApprovedRef.current = false
       setOfferId(detail.offerId)
       offerIdRef.current = detail.offerId
       setComputing(true)
@@ -869,6 +917,12 @@ export default function StepWizard() {
       setComputeStartTime(Date.now())
       setPdfUrl(null)
       setComputeFailed(false)
+      void apiFetch(`/offers/${detail.offerId}`)
+        .then((o: unknown) => {
+          const m = (o as { meta?: { roof_only_offer?: boolean } })?.meta
+          roofOnlyOfferRef.current = m?.roof_only_offer === true
+        })
+        .catch(() => {})
     }
     window.addEventListener('offer:compute-started', onComputeStarted as EventListener)
     return () => window.removeEventListener('offer:compute-started', onComputeStarted as EventListener)
@@ -891,6 +945,13 @@ export default function StepWizard() {
       const detail = (e as CustomEvent).detail as { offerId?: string; pdfUrl?: string }
       if (!detail?.pdfUrl) return
       if (offerId && detail.offerId && offerId !== detail.offerId) return
+
+      // Close editors immediately once final PDF is ready (avoid brief "editor flash" before viewer).
+      setShowDetectionsReview(false)
+      setShowRoofReview(false)
+      setReviewImages([])
+      setRoofReviewImages([])
+      roofReviewApprovedRef.current = true
 
       const now = Date.now()
       const elapsed = computeStartTime ? now - computeStartTime : MIN_ANIMATION_TIME
@@ -921,13 +982,23 @@ export default function StepWizard() {
     return () => window.removeEventListener('offer:compute-failed', onFailed as EventListener)
   }, [])
 
-  // 4b2. Editor verificare detecții: când LiveFeed primește detections_review, afișăm input_resized + poligoane în loc de GIF
+  // 4b2. Editor verificare detecții: când LiveFeed primește detections_review, afișăm overlay-urile în loc de GIF
+  useEffect(() => {
+    const onDetectionsReviewStart = () => {
+      if (detectionsReviewApprovedRef.current || roofOnlyOfferRef.current) return
+      setShowDetectionsReview(true)
+    }
+    window.addEventListener('offer:detections-review-start', onDetectionsReviewStart as EventListener)
+    return () => window.removeEventListener('offer:detections-review-start', onDetectionsReviewStart as EventListener)
+  }, [])
   useEffect(() => {
     const onReview = (e: Event) => {
+      if (detectionsReviewApprovedRef.current) return
       const detail = (e as CustomEvent<{ files: Array<{ url: string; caption?: string }> }>).detail
       const files = detail?.files ?? []
-      if (files.length > 0) {
+      if (files.length > 0 && !roofOnlyOfferRef.current) {
         setReviewImages(files)
+        setPlanReviewImages(files)
         setShowDetectionsReview(true)
       }
     }
@@ -935,29 +1006,106 @@ export default function StepWizard() {
     return () => window.removeEventListener('offer:detections-review', onReview as EventListener)
   }, [])
   useEffect(() => {
-    if (!computing) {
+    const onRoofReviewStart = () => {
+      if (roofReviewApprovedRef.current) return
+      setShowRoofReview(true)
+    }
+    window.addEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
+    return () => window.removeEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
+  }, [])
+  useEffect(() => {
+    const onRoofReview = (e: Event) => {
+      if (roofReviewApprovedRef.current) return
+      const detail = (e as CustomEvent<{ files: Array<{ url: string; caption?: string }> }>).detail
+      const files = detail?.files ?? []
+      if (files.length === 0) return
+      setRoofReviewImages(files)
+      setShowRoofReview(true)
+    }
+    window.addEventListener('offer:roof-review', onRoofReview as EventListener)
+    return () => window.removeEventListener('offer:roof-review', onRoofReview as EventListener)
+  }, [])
+  useEffect(() => {
+    const onDetectionsReviewApproved = () => {
+      detectionsReviewApprovedRef.current = true
       setShowDetectionsReview(false)
       setReviewImages([])
+    }
+    window.addEventListener('offer:detections-review-approved', onDetectionsReviewApproved as EventListener)
+    return () => window.removeEventListener('offer:detections-review-approved', onDetectionsReviewApproved as EventListener)
+  }, [])
+  useEffect(() => {
+    const onRoofReviewApproved = () => {
+      roofReviewApprovedRef.current = true
+      setShowRoofReview(false)
+      setRoofReviewImages([])
+    }
+    window.addEventListener('offer:roof-review-approved', onRoofReviewApproved as EventListener)
+    return () => window.removeEventListener('offer:roof-review-approved', onRoofReviewApproved as EventListener)
+  }, [])
+  useEffect(() => {
+    if (!computing) {
+      setShowDetectionsReview(false)
+      setShowRoofReview(false)
+      setReviewImages([])
+      setRoofReviewImages([])
       setReviewTab('rooms')
     }
   }, [computing])
 
-  // 4c. Poll calc-events for error-level events
+  // 4c. Poll calc-events direct în StepWizard (erori + trigger editoare), independent de LiveFeed
   const calcEventsSinceRef = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (!computing || !computeRunId || computeFailed) return
     calcEventsSinceRef.current = undefined
-    const POLL_INTERVAL = 2000
+    const POLL_INTERVAL = 250
     const iv = setInterval(async () => {
       try {
         const since = calcEventsSinceRef.current
         const url = since != null
           ? `/calc-events?run_id=${encodeURIComponent(computeRunId)}&sinceId=${since}`
           : `/calc-events?run_id=${encodeURIComponent(computeRunId)}`
-        const res = (await apiFetch(url)) as { items?: Array<{ id: number; level?: string }> }
+        const res = (await apiFetch(url)) as {
+          items?: Array<{
+            id: number
+            level?: string
+            message?: string
+            payload?: { files?: Array<{ url?: string; caption?: string }> }
+          }>
+        }
         const items = res?.items ?? []
         for (const ev of items) {
           if (ev.id != null) calcEventsSinceRef.current = ev.id
+          const match = ev.message?.match(/^\s*\[([^\]]+)\]/)
+          const stage = match?.[1]?.trim()
+          const files = (ev.payload?.files ?? []).filter((f) => typeof f?.url === 'string' && f.url.length > 0) as Array<{ url: string; caption?: string }>
+
+          if (stage === 'detections_review' && !roofOnlyOfferRef.current) {
+            if (detectionsReviewApprovedRef.current) continue
+            window.dispatchEvent(new CustomEvent('offer:detections-review-start'))
+            if (files.length > 0) {
+              setReviewImages(files)
+              setPlanReviewImages(files)
+            }
+            const hasFallback = planReviewImages.length > 0 || reviewImages.length > 0
+            if (files.length > 0 || hasFallback) {
+              setShowDetectionsReview(true)
+            }
+          }
+          if (stage === 'roof') {
+            if (roofReviewApprovedRef.current) continue
+            window.dispatchEvent(new CustomEvent('offer:roof-review-start'))
+            // Some backend runs emit [roof] without files first; switch instantly from GIF to editor
+            // and fallback to already known plan images until roof-specific files arrive.
+            if (files.length > 0) {
+              setRoofReviewImages(files)
+            }
+            const hasFallback = planReviewImages.length > 0 || reviewImages.length > 0
+            if (files.length > 0 || hasFallback) {
+              setShowRoofReview(true)
+            }
+          }
+
           if (ev.level === 'error') {
             setComputeFailed(true)
             setComputing(false)
@@ -968,7 +1116,7 @@ export default function StepWizard() {
       } catch (_) {}
     }, POLL_INTERVAL)
     return () => clearInterval(iv)
-  }, [computing, computeRunId, computeFailed])
+  }, [computing, computeRunId, computeFailed, planReviewImages.length, reviewImages.length])
 
   // 4d. Fallback: poll offer status (failed or ready without PDF)
   // La restaurare după refresh nu rulăm check() imediat, ca să nu afișăm PDF-ul unei rulări anterioare dacă offer.status e încă 'ready'.
@@ -1042,6 +1190,13 @@ export default function StepWizard() {
 
       setOfferId(id)
       offerIdRef.current = id
+      try {
+        const offerRow = (await apiFetch(`/offers/${id}`)) as { meta?: { roof_only_offer?: boolean }; offer?: { meta?: { roof_only_offer?: boolean } } }
+        const offerMeta = offerRow?.meta ?? offerRow?.offer?.meta
+        roofOnlyOfferRef.current = offerMeta?.roof_only_offer === true
+      } catch {
+        roofOnlyOfferRef.current = false
+      }
       try {
         const fresh = await fetchFreshPdfUrl(id)
         if (fresh) {
@@ -1152,7 +1307,9 @@ export default function StepWizard() {
     creatingRef.current = true
     const promise = (async () => {
       try {
-        const offer_type_id = pendingOfferTypeIdRef.current
+        const offer_type_id =
+          pendingOfferTypeIdRef.current ||
+          (roofOnlyOfferRef.current && offerTypesBySlug['dachstuhl'] ? offerTypesBySlug['dachstuhl'] : null)
         const created = await apiFetch('/offers', {
           method: 'POST',
           body: JSON.stringify(
@@ -1161,6 +1318,14 @@ export default function StepWizard() {
               : { title: 'Ofertă nouă' }
           )
         })
+        if (roofOnlyOfferRef.current) {
+          try {
+            await apiFetch(`/offers/${created.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ meta: { roof_only_offer: true, wizard_package: 'dachstuhl' } }),
+            })
+          } catch (_) {}
+        }
         offerIdRef.current = created.id
         setOfferId(created.id)
         window.dispatchEvent(new CustomEvent('offer:selected', { detail: { offerId: created.id } }))
@@ -1355,6 +1520,14 @@ export default function StepWizard() {
         }
       }
 
+      const roofOnly = roofOnlyOfferRef.current || selectedPackage === 'dachstuhl'
+      try {
+        const cur = (await apiFetch(`/offers/${id}`)) as { meta?: Record<string, unknown>; offer?: { meta?: Record<string, unknown> } }
+        const currentMeta = cur?.meta ?? cur?.offer?.meta ?? {}
+        const meta = { ...currentMeta, roof_only_offer: roofOnly, ...(roofOnly ? { wizard_package: 'dachstuhl' } : {}) }
+        await apiFetch(`/offers/${id}`, { method: 'PATCH', body: JSON.stringify({ meta }) })
+      } catch (_) { /* meta merge best-effort */ }
+
       const { run_id } = await apiFetch(`/offers/${id}/compute`, { method: 'POST', body: JSON.stringify({ payload: {} }), timeoutMs: 180_000 })
       setPdfUrl(null)
       setComputeFailed(false)
@@ -1368,7 +1541,7 @@ export default function StepWizard() {
       console.error('Finalize failed:', err)
       const isNetwork = err?.message === 'Failed to fetch' || err?.name === 'TypeError'
       const msg = isNetwork
-        ? 'API nicht erreichbar. Bitte Backend starten: cd betonbot-api && npm run start:dev'
+        ? 'API nicht erreichbar. Bitte Backend starten: cd holzbot-api && npm run start:dev'
         : `${DE.common.finalizeErrorPrefix}: ${err?.message ?? err}`
       alert(msg)
     } finally {
@@ -1408,6 +1581,7 @@ export default function StepWizard() {
     setProcessStatus('')
     setSaveStatus('idle')
     setSelectedPackage(null)
+    roofOnlyOfferRef.current = false
     creatingRef.current = false
     activeCreationPromise.current = null
     updateRunUrl(null, null)
@@ -1449,7 +1623,7 @@ export default function StepWizard() {
       }
       if (dg && (dg.referinta?.trim() || dg.beci !== undefined)) {
         const currentOffer = (await apiFetch(`/offers/${id}`)) as any
-        const currentMeta = currentOffer?.meta || {}
+        const currentMeta = currentOffer?.meta || currentOffer?.offer?.meta || {}
         const updatedMeta: any = { ...currentMeta }
         if (dg.referinta?.trim()) updatedMeta.referinta = dg.referinta.trim()
         if (dg.beci !== undefined) updatedMeta.beci = dg.beci === true || dg.beci === 'true' || dg.beci === 1
@@ -1485,6 +1659,7 @@ export default function StepWizard() {
   // 3. Main Wizard UI — direct Paket auswählen; după Haus-Angebot starten → wizard
   const showPackagePicker = !computing && !pdfUrl && !offerId && selectedPackage === null
   const showForm = (selectedPackage === 'neubau' || selectedPackage === 'dachstuhl' || selectedPackage === 'mengen' || offerId) && !computing && !pdfUrl
+  const centerWizardSteps = progressBarSteps.length > 0 && progressBarSteps.length <= 5
 
   return (
     <div className="wizard-wrap" style={{ height: '100%', minHeight: 0, maxHeight: '100%' }}>
@@ -1492,7 +1667,7 @@ export default function StepWizard() {
       <div className="px-2 mt-1 page-enter">
         <div
           ref={stepsScrollContainerRef}
-          className="wizard-steps wizard-steps--inline wizard-steps--spread relative flex items-start justify-start text-center hide-scroll w-full max-w-[96vw] mx-auto px-5"
+          className={`wizard-steps wizard-steps--inline wizard-steps--spread relative flex items-start text-center hide-scroll w-full max-w-[96vw] mx-auto px-5 ${centerWizardSteps ? 'justify-center' : 'justify-start'}`}
         >
           {progressBarSteps.map((step, i) => {
             const dotClass = step.isSkipped ? 'skipped' : step.isDone ? 'done' : step.isActive ? 'active' : ''
@@ -1523,16 +1698,16 @@ export default function StepWizard() {
         {computeFailed && !pdfUrl ? (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 px-4" style={{ minHeight: '68vh' }}>
             <div className="wizard-card wizard-sunny max-w-lg w-full flex flex-col items-center gap-4 animate-fade-in">
-              <div className="p-3 bg-yellow-900/30 border border-yellow-500/50 rounded-xl flex items-start gap-2 w-full">
-                <AlertTriangle className="shrink-0 text-yellow-400 h-6 w-6 mt-0.5" />
+              <div className="p-3 bg-orange-900/30 border border-orange-500/50 rounded-xl flex items-start gap-2 w-full">
+                <AlertTriangle className="shrink-0 text-orange-400 h-6 w-6 mt-0.5" />
                 <div>
-                  <div className="font-bold text-yellow-200 text-lg">{DE.common.computeErrorTitle}</div>
-                  <div className="text-sm text-yellow-100/80 mt-2">{DE.common.computeErrorMessage}</div>
+                  <div className="font-bold text-orange-200 text-lg">{DE.common.computeErrorTitle}</div>
+                  <div className="text-sm text-orange-100/80 mt-2">{DE.common.computeErrorMessage}</div>
                 </div>
               </div>
               <button
                 onClick={() => handleResetToNewProject()}
-                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
               >
                 {DE.common.computeErrorRetry}
               </button>
@@ -1544,17 +1719,34 @@ export default function StepWizard() {
               offerId={offerId ?? undefined}
               images={reviewImages}
               onConfirm={async () => {
-                if (offerId) {
-                  try {
-                    await apiFetch(`/offers/${offerId}/compute/detections-review-approved`, { method: 'POST' })
-                  } catch (_) { /* engine continues on timeout; UI still closes */ }
-                }
-                window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
+                detectionsReviewApprovedRef.current = true
                 setShowDetectionsReview(false)
                 setReviewImages([])
+                window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
+                if (offerId) {
+                  // Nu blocăm UI; aprobarea e best-effort în background.
+                  void apiFetch(`/offers/${offerId}/compute/detections-review-approved`, { method: 'POST', timeoutMs: 6000 }).catch(() => {})
+                }
               }}
               onCancel={() => setShowCancelConfirm(true)}
             />
+          ) : showRoofReview && (roofReviewImages.length > 0 || planReviewImages.length > 0) ? (
+            <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden self-stretch">
+              <RoofReviewEditor
+                offerId={offerId ?? undefined}
+                images={roofReviewImages.length > 0 ? roofReviewImages : planReviewImages}
+                onConfirm={async () => {
+                  setShowRoofReview(false)
+                  setRoofReviewImages([])
+                  window.dispatchEvent(new CustomEvent('offer:roof-review-approved'))
+                  if (offerId) {
+                    // Nu blocăm UI; aprobarea e best-effort în background.
+                    void apiFetch(`/offers/${offerId}/compute/roof-review-approved`, { method: 'POST', timeoutMs: 6000 }).catch(() => {})
+                  }
+                }}
+                onCancel={() => setShowCancelConfirm(true)}
+              />
+            </div>
           ) : (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 page-enter" style={{ minHeight: '68vh' }}>
             <img 
@@ -1565,7 +1757,7 @@ export default function StepWizard() {
             <button
               type="button"
               onClick={() => setShowCancelConfirm(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
             >
               Abbrechen
             </button>
@@ -1577,58 +1769,56 @@ export default function StepWizard() {
           </div>
         ) : showPackagePicker ? (
           <div className="w-full flex justify-center px-2 page-enter">
-          <div className={`w-full mx-auto pt-6 px-1 ${SHOW_DACHSTUHL_PACKAGE ? 'max-w-5xl' : 'max-w-[680px]'}`} style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}>
-              <div className={`grid grid-cols-1 gap-3 justify-items-center items-stretch ${SHOW_DACHSTUHL_PACKAGE ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 sm:gap-4'}`}>
+          <div className="w-full max-w-5xl mx-auto pt-6 px-1" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 justify-items-center items-stretch">
                 {/* 1) Mengenermittlung */}
-                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.2)]">
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
                   <div className="flex items-center justify-center mb-3">
-                    <img src="/images/blueprint.png" alt="Mengenermittlung" className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30" />
+                    <img src="/images/blueprint.png" alt="Mengenermittlung" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
                   </div>
                   <div className="text-white font-extrabold text-lg text-center">Mengenermittlung</div>
                   <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Ermittlung von Maßen für Hauspläne</div>
                   <div className="flex-1" />
                   <button
                     type="button"
-                    onClick={() => { setSelectedPackage('mengen') }}
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                    onClick={() => { roofOnlyOfferRef.current = false; setSelectedPackage('mengen') }}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
                   >
                     Kalkulation starten
                     <ChevronRight size={18} className="opacity-85" />
                   </button>
                 </div>
 
-                {/* 2) Dachstuhl – ascuns pe Betonbot */}
-                {SHOW_DACHSTUHL_PACKAGE && (
-                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.2)]">
+                {/* 2) Dachstuhl */}
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
                   <div className="flex items-center justify-center mb-3">
-                    <img src="/images/roof.png" alt="Dachstuhl" className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30" />
+                    <img src="/images/roof.png" alt="Dachstuhl" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
                   </div>
                   <div className="text-white font-extrabold text-lg text-center">Dachstuhl</div>
                   <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Dachstühle</div>
                   <div className="flex-1" />
                   <button
                     type="button"
-                    onClick={() => { setSelectedPackage('dachstuhl') }}
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                    onClick={() => { roofOnlyOfferRef.current = true; setSelectedPackage('dachstuhl') }}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
                   >
                     Kalkulation starten
                     <ChevronRight size={18} className="opacity-85" />
                   </button>
                 </div>
-                )}
 
                 {/* 3) Neubau */}
-                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.2)]">
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
                   <div className="flex items-center justify-center mb-3">
-                    <img src="/images/house.png" alt="Neubau" className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30" />
+                    <img src="/images/house.png" alt="Neubau" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
                   </div>
                   <div className="text-white font-extrabold text-lg text-center">Neubau</div>
                   <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Neubauten</div>
                   <div className="flex-1" />
                   <button
                     type="button"
-                    onClick={() => { setSelectedPackage('neubau') }}
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                    onClick={() => { roofOnlyOfferRef.current = false; setSelectedPackage('neubau') }}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
                   >
                     Kalkulation starten
                     <ChevronRight size={18} className="opacity-85" />
@@ -1653,11 +1843,11 @@ export default function StepWizard() {
               )}
 
               {validationError && (
-                <div className="mb-3 p-3 bg-yellow-900/30 border border-yellow-500/50 rounded-lg flex items-start gap-2 animate-fade-in">
-                  <AlertTriangle className="shrink-0 text-yellow-400 h-5 w-5 mt-0.5" />
+                <div className="mb-3 p-3 bg-orange-900/30 border border-orange-500/50 rounded-lg flex items-start gap-2 animate-fade-in">
+                  <AlertTriangle className="shrink-0 text-orange-400 h-5 w-5 mt-0.5" />
                   <div>
-                    <div className="font-semibold text-yellow-200">{DE.common.planInvalidTitle}</div>
-                    <div className="text-sm text-yellow-100/80 mt-1">{validationError}</div>
+                    <div className="font-semibold text-orange-200">{DE.common.planInvalidTitle}</div>
+                    <div className="text-sm text-orange-100/80 mt-1">{validationError}</div>
                   </div>
                 </div>
               )}
@@ -1782,6 +1972,25 @@ export default function StepWizard() {
                   setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave('projektdaten', v) }}
                   errors={visibleErrors}
                   onEnter={onContinue}
+                  preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
+                  optionValueToPriceKey={optionValueToPriceKey}
+                  paramLabelOverrides={paramLabelOverrides}
+                />
+              ) : step.key === 'daemmungDachdeckung' && selectedPackage === 'dachstuhl' ? (
+                <DachOnlyDaemmungStepContent
+                  form={form}
+                  drafts={drafts}
+                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  fields={step.fields}
+                  onUpload={onUpload}
+                  ensureOffer={ensureOffer}
+                  errors={visibleErrors}
+                  onEnter={onContinue}
+                  customOptionsForm={customOptionsForm}
+                  paramLabelOverrides={paramLabelOverrides}
+                  optionValueToPriceKey={optionValueToPriceKey}
+                  hiddenKeysForm={hiddenKeysForm}
+                  preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
                 />
               ) : step.key !== 'upload' ? (
                 <div className="space-y-4">
@@ -1828,8 +2037,8 @@ export default function StepWizard() {
                 disabled={isFirst || saving}
                 className={`
                   flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ease-in-out
-                  border border-[#E5B800]/30 text-[#E5B800] bg-transparent
-                  hover:bg-[#E5B800]/10 hover:border-[#E5B800]/60
+                  border border-[#D8A25E]/30 text-[#D8A25E] bg-transparent
+                  hover:bg-[#D8A25E]/10 hover:border-[#D8A25E]/60
                   disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent
                 `}
               >
@@ -1844,8 +2053,8 @@ export default function StepWizard() {
                 disabled={saving}
                 className={`
                   flex items-center gap-2 px-8 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out
-                  bg-gradient-to-b from-[#CC9900] to-[#E5B800]
-                  hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)]
+                  bg-gradient-to-b from-[#e08414] to-[#f79116]
+                  hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)]
                   active:translate-y-[1px] active:scale-95
                   disabled:opacity-70 disabled:cursor-wait disabled:transform-none disabled:shadow-none
                 `}
@@ -1906,7 +2115,7 @@ export default function StepWizard() {
                   setShowCancelConfirm(false)
                   handleResetToNewProject()
                 }}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
               >
                 Ja
               </button>
@@ -1935,7 +2144,7 @@ function ClientStep({ form, setForm, errors, onEnter }:{ form: Record<string, an
           <label key={f.key} className="flex flex-col gap-1" data-field={f.key}>
             <span className="wiz-label text-sun/90">{f.label}</span>
             <input
-              className={`sun-input w-full ${fieldErr ? 'ring-2 ring-yellow-400/60 focus:ring-yellow-400/60' : ''}`}
+              className={`sun-input w-full ${fieldErr ? 'ring-2 ring-orange-400/60 focus:ring-orange-400/60' : ''}`}
               value={inputVal}
               placeholder={f.placeholder}
               onChange={(e) => {
@@ -1945,7 +2154,7 @@ function ClientStep({ form, setForm, errors, onEnter }:{ form: Record<string, an
               }}
               onKeyDown={(e) => handleInputEnter(e, onEnter)}
             />
-            {fieldErr && <span className="text-xs text-yellow-400">{fieldErr}</span>}
+            {fieldErr && <span className="text-xs text-orange-400">{fieldErr}</span>}
           </label>
         )
       })}
@@ -1953,31 +2162,33 @@ function ClientStep({ form, setForm, errors, onEnter }:{ form: Record<string, an
   )
 }
 
-const LEISTUNGEN_OPTIONS = [
-  { name: 'leistungAbbund', label: 'Abbund' },
-  { name: 'leistungLieferung', label: 'Lieferung' },
-  { name: 'leistungMontage', label: 'Montage' },
-  { name: 'leistungKranarbeiten', label: 'Kranarbeiten' },
-  { name: 'leistungGeruest', label: 'Gerüst' },
-  { name: 'leistungEntsorgung', label: 'Entsorgung' },
-] as const
 
 function ProjektdatenStepContent({
   form,
   setForm,
   errors,
   onEnter,
+  preisdatenbankOptionsByTag = {},
+  optionValueToPriceKey = {},
+  paramLabelOverrides = {},
 }: {
   form: Record<string, any>
   setForm: (v: Record<string, any>) => void
   errors: Errors
   onEnter: () => void
+  preisdatenbankOptionsByTag?: Record<string, string[]>
+  optionValueToPriceKey?: Record<string, Record<string, string>>
+  paramLabelOverrides?: Record<string, string>
 }) {
+  const deckenInnenausbauOptions = preisdatenbankOptionsByTag['decke_innenausbau'] ?? ['Standard', 'Premium', 'Exklusiv']
+  const displayDeckenInnenausbau = (opt: string) =>
+    paramLabelOverrides[optionValueToPriceKey['decke_innenausbau']?.[opt] ?? ''] ?? opt
+
   return (
     <div className="space-y-5">
       <label className="flex flex-col gap-1" data-field="projektumfang">
         <span className="wiz-label text-sun/90">Projektumfang</span>
-        <div className={errors.projektumfang ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+        <div className={errors.projektumfang ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
           <SelectSun
             value={form.projektumfang ?? ''}
             onChange={(v) => setForm({ ...form, projektumfang: v })}
@@ -1985,11 +2196,11 @@ function ProjektdatenStepContent({
             placeholder="Wählen Sie eine Option"
           />
         </div>
-        {errors.projektumfang && <span className="text-xs text-yellow-400">{errors.projektumfang}</span>}
+        {errors.projektumfang && <span className="text-xs text-orange-400">{errors.projektumfang}</span>}
       </label>
       <label className="flex flex-col gap-1" data-field="nutzungDachraum">
         <span className="wiz-label text-sun/90">Nutzung des Dachraums</span>
-        <div className={errors.nutzungDachraum ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+        <div className={errors.nutzungDachraum ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
           <SelectSun
             value={form.nutzungDachraum ?? ''}
             onChange={(v) => setForm({ ...form, nutzungDachraum: v })}
@@ -1997,32 +2208,93 @@ function ProjektdatenStepContent({
             placeholder="Wählen Sie eine Option"
           />
         </div>
-        {errors.nutzungDachraum && <span className="text-xs text-yellow-400">{errors.nutzungDachraum}</span>}
+        {errors.nutzungDachraum && <span className="text-xs text-orange-400">{errors.nutzungDachraum}</span>}
       </label>
-
-      <div className="pt-2 border-t border-white/10">
-        <div className="wiz-label text-sun/90 mb-3">Leistungen enthalten</div>
-        <div className="grid grid-cols-2 gap-3">
-          {LEISTUNGEN_OPTIONS.map(({ name, label }) => (
-            <label
-              key={name}
-              className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-white/10 hover:border-[#E5B800]/30 transition-colors cursor-pointer"
-              data-field={name}
-            >
-              <input
-                type="checkbox"
-                className="sun-checkbox shrink-0"
-                checked={!!form[name]}
-                onChange={(e) => setForm({ ...form, [name]: e.target.checked })}
-                onKeyDown={(e) => handleInputEnter(e, onEnter)}
-              />
-              <span className="text-sm font-medium text-sand/90">{label}</span>
-              {errors[name] && <span className="ml-auto text-xs text-yellow-400">{errors[name]}</span>}
-            </label>
-          ))}
-        </div>
-      </div>
+      {form.nutzungDachraum === 'Wohnraum / ausgebaut' && (
+        <label className="flex flex-col gap-1" data-field="deckenInnenausbau">
+          <span className="wiz-label text-sun/90">Decken-Innenausbau</span>
+          <div className={errors.deckenInnenausbau ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
+            <SelectSun
+              value={form.deckenInnenausbau ?? ''}
+              onChange={(v) => setForm({ ...form, deckenInnenausbau: v })}
+              options={deckenInnenausbauOptions}
+              displayFor={displayDeckenInnenausbau}
+              placeholder="Wählen Sie eine Option"
+            />
+          </div>
+          {errors.deckenInnenausbau && <span className="text-xs text-orange-400">{errors.deckenInnenausbau}</span>}
+        </label>
+      )}
     </div>
+  )
+}
+
+function DachOnlyDaemmungStepContent({
+  form,
+  drafts,
+  setForm,
+  fields,
+  onUpload,
+  ensureOffer,
+  errors,
+  onEnter,
+  customOptionsForm,
+  paramLabelOverrides,
+  optionValueToPriceKey,
+  hiddenKeysForm,
+  preisdatenbankOptionsByTag,
+}: {
+  form: Record<string, any>
+  drafts: Drafts
+  setForm: (v: Record<string, any>) => void
+  fields: Field[]
+  onUpload: (name: string, file: File | null) => void
+  ensureOffer: () => Promise<string>
+  errors: Errors
+  onEnter: () => void
+  customOptionsForm?: Record<string, Array<{ label: string; value: string; price_key?: string }>>
+  paramLabelOverrides?: Record<string, string>
+  optionValueToPriceKey?: Record<string, Record<string, string>>
+  hiddenKeysForm?: Set<string>
+  preisdatenbankOptionsByTag?: Record<string, string[]>
+}) {
+  const projektumfang = (form.projektumfang || drafts?.projektdaten?.projektumfang || '').toString().trim()
+  const includeDachstuhl = projektumfang === '' || projektumfang === 'Dachstuhl' || projektumfang === 'Dachstuhl + Dachdeckung'
+  const includeDachdeckung = projektumfang === '' || projektumfang === 'Dachdeckung' || projektumfang === 'Dachstuhl + Dachdeckung'
+  const allowed = new Set<string>(['daemmung', 'unterdach', 'sichtdachstuhl', 'dachfensterImDach', 'dachfensterTyp'])
+  if (includeDachstuhl) allowed.add('dachstuhlTyp')
+  if (includeDachdeckung) allowed.add('dachdeckung')
+  const tagByFieldName: Record<string, string> = {
+    daemmung: 'roof_insulation',
+    unterdach: 'under_roof',
+    dachstuhlTyp: 'roof_structure_type',
+    dachdeckung: 'roof_covering',
+    sichtdachstuhl: 'visible_roof_structure',
+    dachfensterTyp: 'roof_skylight_type',
+  }
+  const filtered = fields
+    .filter((f) => allowed.has(f.name))
+    .map((f) => {
+      const tag = tagByFieldName[f.name]
+      if (!tag) return f
+      return { ...(f as any), tag }
+    })
+  return (
+    <DynamicFields
+      stepKey="daemmungDachdeckung"
+      fields={filtered}
+      form={form}
+      setForm={setForm}
+      onUpload={onUpload}
+      ensureOffer={ensureOffer}
+      errors={errors}
+      onEnter={onEnter}
+      customOptionsForm={customOptionsForm}
+      paramLabelOverrides={paramLabelOverrides}
+      optionValueToPriceKey={optionValueToPriceKey}
+      hiddenKeysForm={hiddenKeysForm}
+      preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
+    />
   )
 }
 
@@ -2407,7 +2679,7 @@ function MaterialeFinisajStep({ form, setForm, errors, drafts, customOptionsForm
       {hasBasement && basementLivable && (
         <label className="flex flex-col gap-1" data-field="finisajInteriorBeci">
           <span className="wiz-label text-sun/90">Innenausbau (Keller)</span>
-          <div className={errors.finisajInteriorBeci ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+          <div className={errors.finisajInteriorBeci ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
             <SelectSun value={form.finisajInteriorBeci || ''} onChange={(v) => setForm({ ...form, finisajInteriorBeci: v })} options={finishOptionsInterior} displayFor={(opt) => displayFinish('finisajInteriorBeci', opt)} />
           </div>
         </label>
@@ -2454,6 +2726,7 @@ const FLOOR_TYPE_OPTIONS = [
 
 const FOUNDATION_OPTIONS = ['Kein Keller (nur Bodenplatte)', 'Keller (unbeheizt / Nutzkeller)', 'Keller (mit einfachem Ausbau)'] as const
 const FLOOR_HEIGHT_OPTIONS = ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] as const
+const STAIR_TYPE_OPTIONS = ['Standard', 'Holz', 'Beton', 'Metall', 'Sonder'] as const
 
 function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm = new Set<string>(), optionValueToPriceKey = {}, customOptionsForm = {}, paramLabelOverrides = {}, preisdatenbankOptionsByTag = {} }: { form: Record<string, any>; setForm: (v: Record<string, any>, shouldAutosave?: boolean) => void; errors: Errors; onBlur?: () => void; hiddenKeysForm?: Set<string>; optionValueToPriceKey?: Record<string, Record<string, string>>; customOptionsForm?: Record<string, Array<{ label: string; value: string; price_key?: string }>>; paramLabelOverrides?: Record<string, string>; preisdatenbankOptionsByTag?: Record<string, string[]> }) {
   const [showAddFloorDropdown, setShowAddFloorDropdown] = useState(false)
@@ -2466,6 +2739,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
   const listaEtaje = Array.isArray(form.listaEtaje) ? form.listaEtaje : []
   const foundationOptions = preisdatenbankOptionsByTag['foundation_type'] ?? []
   const floorHeightOptions = preisdatenbankOptionsByTag['floor_height'] ?? []
+  const stairTypeOptions = preisdatenbankOptionsByTag['stairs_type'] ?? []
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
   const hasBase = true
   const basementUse = tipFundatieBeci.includes('mit einfachem Ausbau')
@@ -2482,6 +2756,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when hidden options change
   }, [floorHeightOptions.length, floorHeightOptions.join(','), inaltimeEtaje])
   const etajeIntermediare = listaEtaje.filter((e: string) => e === 'intermediar').length
+  const hasFloorAboveGround = listaEtaje.length > 0
   const hasPod = listaEtaje.some((e: string) => e === 'pod')
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const mansardaType = listaEtaje.find((e: string) => e.startsWith('mansarda'))?.split('_')[1] ?? null
@@ -2610,15 +2885,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
       <div className="flex flex-col gap-4 !pb-0 w-full max-w-full">
         <div className="flex gap-10 items-center w-full">
         <div className="relative flex-shrink-0 border-2 border-white/20 rounded-xl overflow-hidden bg-panel/50" style={{ width: `${containerWidth}px`, height: `${frameHeight}px` }}>
-          <div
-            className="relative w-full h-full"
-            style={{
-              paddingTop: `${paddingTopValue}px`,
-              ...(BUILDING_STRUCTURE_ORANGE_TO_YELLOW_FILTER
-                ? { filter: ORANGE_TO_YELLOW_CSS_FILTER }
-                : {}),
-            }}
-          >
+          <div className="relative w-full h-full" style={{ paddingTop: `${paddingTopValue}px` }}>
             {/* Ground și etaje la spate; piloni, fundație, beci desenate în față (z-index mai mare) */}
             <img src="/builder/ground.png" alt="Ground" className="absolute" style={{ width: `${getScaledWidth('ground')}px`, height: 'auto', bottom: `${groundBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('ground', img.naturalWidth, img.naturalHeight) }} />
             <img src={downImage} alt="Down" className="absolute" style={{ width: `${getScaledWidth('down')}px`, height: 'auto', bottom: `${downBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 25 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('down', img.naturalWidth, img.naturalHeight) }} />
@@ -2637,7 +2904,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
       <div className="flex-1 min-w-0 relative z-10 space-y-4 !pb-0 !mb-0">
         <label className="flex flex-col gap-1" data-field="inaltimeEtaje">
           <span className="wiz-label text-sun/90">Geschosshöhe</span>
-          <div className={errors.inaltimeEtaje ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+          <div className={errors.inaltimeEtaje ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
             <SelectSun
               value={inaltimeEtaje}
               onChange={(v) => setForm({ ...form, inaltimeEtaje: v })}
@@ -2646,12 +2913,12 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
               displayFor={(opt) => paramLabelOverrides[optionValueToPriceKey['floor_height']?.[opt] ?? ''] ?? opt}
             />
           </div>
-          {errors.inaltimeEtaje && <span className="text-xs text-yellow-400">{errors.inaltimeEtaje}</span>}
+          {errors.inaltimeEtaje && <span className="text-xs text-orange-400">{errors.inaltimeEtaje}</span>}
         </label>
 
         <label className="flex flex-col gap-1" data-field="tipFundatieBeci">
           <span className="wiz-label text-sun/90">Untergeschoss / Fundament</span>
-          <div className={errors.tipFundatieBeci ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+          <div className={errors.tipFundatieBeci ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
             <SelectSun
               value={foundationOptions.includes(tipFundatieBeci) ? tipFundatieBeci : (foundationOptions[0] ?? '')}
               onChange={(v) => setForm({ ...form, tipFundatieBeci: v })}
@@ -2660,7 +2927,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
               displayFor={(opt) => paramLabelOverrides[optionValueToPriceKey['foundation_type']?.[opt] ?? ''] ?? opt}
             />
           </div>
-          {errors.tipFundatieBeci && <span className="text-xs text-yellow-400">{errors.tipFundatieBeci}</span>}
+          {errors.tipFundatieBeci && <span className="text-xs text-orange-400">{errors.tipFundatieBeci}</span>}
         </label>
 
         <label className="flex items-center gap-2 mt-1" data-field="pilons">
@@ -2671,11 +2938,11 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
             onChange={(e) => setForm({ ...form, pilons: e.target.checked })}
           />
           <span className="text-sm font-medium text-sun/90">Pfahlgründung erforderlich</span>
-          {errors.pilons && <span className="ml-2 text-xs text-yellow-400">{errors.pilons}</span>}
+          {errors.pilons && <span className="ml-2 text-xs text-orange-400">{errors.pilons}</span>}
         </label>
 
         <div className="space-y-2 pt-2 border-t border-[#e3c7ab22]">
-          {errors.listaEtaje && <span className="text-xs text-yellow-400">{errors.listaEtaje}</span>}
+          {errors.listaEtaje && <span className="text-xs text-orange-400">{errors.listaEtaje}</span>}
           {listaEtaje.length === 0 && <p className="text-sand/60 text-sm">Keine Elemente hinzugefügt</p>}
           {listaEtaje.map((etaj: string, idx: number) => (
             <div key={idx} className="flex flex-col gap-2 p-2 bg-panel/50 rounded-lg border border-white/10">
@@ -2707,7 +2974,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, listaEtaje: listaEtaje.filter((_: any, i: number) => i !== idx) })}
-                  className="px-2 py-1 text-yellow-400 hover:text-yellow-300 text-sm font-bold"
+                  className="px-2 py-1 text-orange-400 hover:text-orange-300 text-sm font-bold"
                 >
                   ×
                 </button>
@@ -2735,7 +3002,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
                 ref={addFloorBtnRef}
                 type="button"
                 onClick={() => setShowAddFloorDropdown(!showAddFloorDropdown)}
-                className="px-3 py-1.5 bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 text-white rounded-lg text-sm font-medium transition-all"
+                className="px-3 py-1.5 bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 text-white rounded-lg text-sm font-medium transition-all"
               >
                 + Neues Geschoss
               </button>
@@ -2762,6 +3029,25 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
             </>
           )}
         </div>
+
+        {hasFloorAboveGround && (
+          <label className="flex flex-col gap-1" data-field="treppeTyp">
+            <span className="wiz-label text-sun/90">Treppentyp (Preis pro Stück)</span>
+            <div className={errors.treppeTyp ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
+              <SelectSun
+                value={String(form.treppeTyp || (stairTypeOptions[0] ?? STAIR_TYPE_OPTIONS[0]))}
+                onChange={(v) => setForm({ ...form, treppeTyp: v })}
+                options={stairTypeOptions.length > 0 ? stairTypeOptions : Array.from(STAIR_TYPE_OPTIONS)}
+                placeholder="Wählen Sie eine Option"
+                displayFor={(opt) => {
+                  const key = optionValueToPriceKey['stairs_type']?.[opt]
+                  return key ? (paramLabelOverrides[key] ?? opt) : opt
+                }}
+              />
+            </div>
+            {errors.treppeTyp && <span className="text-xs text-orange-400">{errors.treppeTyp}</span>}
+          </label>
+        )}
 
         <div className="space-y-2 pt-3 mt-3 border-t border-[#e3c7ab22]">
           <label className="flex items-center gap-2 cursor-pointer select-none" htmlFor="struct-has-wintergarden" data-field="hasWintergarden">
@@ -2822,6 +3108,14 @@ function DynamicFields({
   return (
     <div className="grid grid-cols-1 gap-3">
       {currentFields.map(f => {
+        if (stepKey === 'structuraCladirii' && f.name === 'treppeTyp') {
+          const listaEtaje = Array.isArray(form.listaEtaje) ? form.listaEtaje : []
+          const hasFloorAboveGround = listaEtaje.some((e: string) => e !== 'parter')
+          if (!hasFloorAboveGround) return null
+        }
+        if (stepKey === 'daemmungDachdeckung' && f.name === 'dachfensterTyp' && !asBool(form.dachfensterImDach)) {
+          return null
+        }
         if (f.type === 'upload') {
              return (
                  <SimpleUploadField 
@@ -2855,7 +3149,7 @@ function DynamicFields({
           return (
             <label key={f.name} className="flex flex-col gap-1" data-field={f.name}>
               <span className="wiz-label text-sun/90">{displayLabel}</span>
-              <div className={hasErr ? 'ring-2 ring-yellow-400/60 rounded-lg' : ''}>
+              <div className={hasErr ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
                 <SelectSun
                   value={selectValue}
                   onChange={async v => {
@@ -2867,7 +3161,7 @@ function DynamicFields({
                   }}
                   options={
                     (() => {
-                      const tag = (f as any).tag
+                      const tag = (f as any).tag || FIELD_TAG_FALLBACK_BY_NAME[f.name]
                       const fromPreisdatenbank = tag && preisdatenbankOptionsByTag[tag]
                       if (fromPreisdatenbank && fromPreisdatenbank.length > 0) return fromPreisdatenbank
                       return [
@@ -2882,7 +3176,7 @@ function DynamicFields({
                   placeholder={displayPlaceholder ?? DE.common.selectPlaceholder}
                   displayFor={(opt) => {
                     const val = typeof opt === 'string' ? opt : optValue(opt)
-                    const tag = (f as any).tag
+                    const tag = (f as any).tag || FIELD_TAG_FALLBACK_BY_NAME[f.name]
                     const priceKey = tag && optionValueToPriceKey[tag]?.[val]
                     const override = priceKey && paramLabelOverrides[priceKey]
                     if (override) return override
@@ -2892,7 +3186,7 @@ function DynamicFields({
                   }}
                 />
               </div>
-              {hasErr && <span className="text-xs text-yellow-400">{errors[f.name]}</span>}
+              {hasErr && <span className="text-xs text-orange-400">{errors[f.name]}</span>}
               {isFireplaceField && form[f.name] && form[f.name] !== 'Kein Kamin' && (
                 <span className="text-xs text-sand/70 mt-1">
                   *Schornstein wird dazugerechnet mit Anzahl der Stockwerke (4.500 € Standardpreis + 1.500 € pro Geschoss)
@@ -2909,9 +3203,14 @@ function DynamicFields({
               <input
                 type="checkbox"
                 className="sun-checkbox"
-                checked={!!form[f.name]}
+                checked={asBool(form[f.name])}
                 onChange={async e => {
-                  const next = { ...form, [f.name]: e.target.checked }
+                  const checked = e.target.checked
+                  const next: Record<string, any> = { ...form, [f.name]: checked }
+                  if (f.name === 'dachfensterImDach') {
+                    if (!checked) next.dachfensterTyp = ''
+                    else if (!form.dachfensterTyp) next.dachfensterTyp = 'Standard'
+                  }
                   setForm(next)
                   const id = await ensureOffer()
                   await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: next }) })
@@ -2919,7 +3218,7 @@ function DynamicFields({
                 onKeyDown={(e) => handleInputEnter(e, onEnter)}
               />
               <span className="text-sm font-medium">{displayLabel}</span>
-              {errors[f.name] && <span className="ml-2 text-xs text-yellow-400">{errors[f.name]}</span>}
+              {errors[f.name] && <span className="ml-2 text-xs text-orange-400">{errors[f.name]}</span>}
             </label>
           )
         }
@@ -2931,7 +3230,7 @@ function DynamicFields({
         const rawFieldVal = form[f.name]
         const inputValue = (typeof rawFieldVal === 'string' || typeof rawFieldVal === 'number') ? String(rawFieldVal) : ''
         const common: any = {
-          className: `sun-input ${errors[f.name] ? 'ring-2 ring-yellow-400/60 focus:ring-yellow-400/60' : ''}`,
+          className: `sun-input ${errors[f.name] ? 'ring-2 ring-orange-400/60 focus:ring-orange-400/60' : ''}`,
           value: inputValue,
           placeholder: displayPlaceholder,
           onChange: (e: any) => {
@@ -2947,14 +3246,14 @@ function DynamicFields({
           <label key={f.name} className="flex flex-col gap-1" data-field={f.name}>
             <span className="wiz-label text-sun/90">{displayLabel}</span>
             {f.type === 'textarea'
-              ? <textarea {...common} className={`sun-textarea ${errors[f.name] ? 'ring-2 ring-yellow-400/60 focus:ring-yellow-400/60' : ''}`} />
+              ? <textarea {...common} className={`sun-textarea ${errors[f.name] ? 'ring-2 ring-orange-400/60 focus:ring-orange-400/60' : ''}`} />
               : <input
                   type={f.type === 'number' ? 'number' : 'text'}
                   {...common}
                   {...(f.type === 'number' && 'min' in f && f.min != null ? { min: f.min } : {})}
                   {...(f.type === 'number' && 'max' in f && f.max != null ? { max: f.max } : {})}
                 />}
-            {errors[f.name] && <span className="text-xs text-yellow-400">{errors[f.name]}</span>}
+            {errors[f.name] && <span className="text-xs text-orange-400">{errors[f.name]}</span>}
           </label>
         )
       })}
@@ -3016,7 +3315,7 @@ function SimpleUploadField({ stepKey, field, files, onChange }: { stepKey: strin
           {files.map((f, i) => (
               <div key={i} className="flex items-center justify-between bg-coffee-800/40 px-2 py-1 rounded text-sm text-sand/90 border border-white/5">
                   <span className="truncate max-w-[200px]">{f.name}</span>
-                  <button type="button" onClick={() => removeFile(i)} className="text-yellow-400 hover:text-yellow-300 px-2 font-bold">×</button>
+                  <button type="button" onClick={() => removeFile(i)} className="text-orange-400 hover:text-orange-300 px-2 font-bold">×</button>
               </div>
           ))}
 
@@ -3044,7 +3343,6 @@ function SimpleUploadField({ stepKey, field, files, onChange }: { stepKey: strin
                 className={`h-16 w-16 object-contain transition-all duration-300
                   ${isDragging ? 'scale-110 opacity-100' : 'opacity-80 group-hover:opacity-100 group-hover:scale-110'}
                 `}
-                style={BUILDING_STRUCTURE_ORANGE_TO_YELLOW_FILTER ? { filter: ORANGE_TO_YELLOW_CSS_FILTER } : undefined}
             />
             
             <span className={`mt-3 text-sm font-medium transition-colors ${isDragging ? 'text-sun' : 'text-sun/70 group-hover:text-sun'}`}>

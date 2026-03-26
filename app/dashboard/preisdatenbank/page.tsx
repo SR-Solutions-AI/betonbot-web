@@ -45,6 +45,24 @@ function labelWithoutUnit(label: string): string {
   return label.replace(/\s*\((?:€\/m²|€\/m|€|Faktor!?|Stufe)\)\s*$/i, '').trim() || label
 }
 
+function canAddOptionsForFieldTag(fieldTag?: string): boolean {
+  return !!fieldTag && fieldTag !== 'foundation_type' && fieldTag !== 'visible_roof_structure_fixed' && fieldTag !== 'haustechnik_basis'
+}
+
+function isValueOnlyFieldTag(fieldTag?: string): boolean {
+  return fieldTag === 'haustechnik_basis'
+}
+
+function isProtectedVariable(id: string): boolean {
+  return id === 'tinichigerie_percent' || id === 'roofonly_tinichigerie_percent'
+}
+
+function isBlockedOption(variable: { id: string; label: string }): boolean {
+  const id = String(variable.id || '').toLowerCase()
+  const label = String(variable.label || '').trim().toLowerCase()
+  return id.includes('testr') || label === 'testr'
+}
+
 /**
  * Subtitluri unice per card (titlul secțiunii).
  * Preisdatenbank = baza de prețuri pentru oferte: utilizatorul setează €/m², factori, pauschal etc. pentru fiecare variantă din formular.
@@ -56,25 +74,27 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Strom-/Wasseranschluss': 'Pauschalpreis für Anschlusskosten',
   'Untergeschoss / Fundament': 'Bodenplatte, Keller Nutzkeller oder Ausbau – €/m²',
   'Pfahlgründung': 'Preis €/m² bei Pfahlgründung',
-  'Fläche & Treppe': 'Treppe, Geländer – €/m² bzw. €/Stufe',
-  'Treppe': 'Treppe, Geländer – €/m² bzw. €/Stufe',
-  'Geschosshöhe': 'Höhe (m) je nach Option',
-  'Dämmung': 'Keine, Zwischensparren, Aufsparren, Kombination – €/m²',
-  'Unterdach': 'Folie oder Schalung + Folie – €/m²',
-  'Dachstuhl-Typ': 'Sparrendach, Pfettendach, Kehlbalkendach, Sonderkonstruktion – €/m²',
+  'Fläche & Treppe': 'Preis pro Stück',
+  'Treppe': 'Preis pro Stück',
+  'Geschosshöhe': 'Geschosshöhen die Ihr Unternehmen anbietet.',
+  'Dämmung': 'Welche Dämmungsarten bieten Sie an?',
+  'Unterdach': 'Welche Arten Unterdach bieten Sie an?',
+  'Dachstuhl-Typ': 'Welche Dachstuhl-Konstruktionen bieten Sie an?',
   'Sichtdachstuhl': 'Aufschlag €/m² bei Sichtdachstuhl',
-  'Dachdeckung': 'Ziegel, Betonstein, Blech, Schindel, Sonstiges – €/m² bzw. €/m',
-  'Bodentiefe Fenster / Glasflächen': 'Nein, Einzelne oder Mehrere – Aufschlag €/m²',
+  'Dachdeckung': 'Welche Dachdeckungen bieten Sie an?',
   'Fensterart': '3-fach verglast oder Passiv – €/m² Glasfläche',
   'Türhöhe': 'Standard 2 m oder Erhöht 2,2+ m – €/m²',
   'Innenausbau': 'Putz, Holz, Faserzement, Mix – €/m²',
   'Fassade': 'Putz, Holz, Faserzement, Mix – €/m²',
-  'Energieniveau': 'Standard, KfW 55, KfW 40, KfW 40+ – Zuschlag €/m²',
-  'Heizungssystem': 'Gas, Wärmepumpe, Elektrisch – €/m²',
-  'Lüftung / Wärmerückgewinnung': 'Lüftung mit Wärmerückgewinnung – €/m²',
-  'Kamin / Ofen': 'Holzofen, Design, Pelletofen, Einbaukamin, Kachel – Pauschal €',
-  'Kaminabzug': 'Schornstein: Aufschlag pro Geschoss',
-  'Haustechnik (Basis)': 'Strom und Abwasser – €/m²',
+  'Energieniveau': 'Preisaufschläge je nach gewähltem Energiestandard.',
+  'Heizungssystem': 'Preisaufschläge je nach ausgewähltem Heizungssystem.',
+  'Lüftung / Wärmerückgewinnung': 'Zusatzkosten, wenn eine Lüftungsanlage mit Wärmerückgewinnung gewünscht ist.',
+  'Kamin / Ofen': 'Pauschalpreise je nach gewünschter Kamin- oder Ofenlösung.',
+  'Kaminabzug': 'Aufpreis für Schornstein je zusätzlichem Stockwerk.',
+  'Haustechnik (Basis)': 'Nur Werte anpassen (fixe Positionen: Strom, Abwasser).',
+  'Wintergarten': 'Wandpreise anpassen',
+  'Balkone': 'Allgemeiner Quadratmeterpreis, Balkonboden + Geländer',
+  'Klempnerarbeiten': 'Aufschlag der Klempnerarbeiten zum Dachpreis anpassen',
 }
 
 function cardSubtitle(cardTitle: string, _rawSubtitle?: string | null): string {
@@ -88,10 +108,12 @@ const STEP_SUBTITLES: Record<string, string> = {
   daemmungDachdeckung: 'Dämmung, Unterdach, Dachstuhl und Dachdeckung',
   ferestreUsi: 'Fenster, Türen und Glasflächen',
   materialeFinisaj: 'Innenausbau und Fassade',
-  performantaEnergetica: 'Energieniveau, Heizung, Lüftung und Kamin',
+  performantaEnergetica: 'Preisaufschläge für Energiestandard, Heizung und Haustechnik.',
+  projektdaten: 'Parameter für Dachstuhl-Angebote (roof-only)',
 }
 
 export default function PreisdatenbankPage() {
+  const [activeCatalog, setActiveCatalog] = useState<'neubau' | 'dachstuhl'>('neubau')
   const [ready, setReady] = useState(false)
   const [sections, setSections] = useState<PreisdatenbankSection[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -203,18 +225,20 @@ export default function PreisdatenbankPage() {
                 value: typeof pricesMap[v.id] === 'number' ? pricesMap[v.id] : v.value,
                 label: paramLabelOverrides[v.id] ?? v.label,
               }))
+              .filter((v) => !isBlockedOption(v))
             const tag = sub.fieldTag
             const customVars =
               tag && customOptions[tag]
                 ? customOptions[tag]
                     .filter((o) => !hiddenKeysSet.has(o.price_key))
-                    .map((o) => ({
+                  .map((o) => ({
                       id: o.price_key,
                       label: o.label,
                       unit: sub.variables[0]?.unit ?? '€',
                       value: typeof pricesMap[o.price_key] === 'number' ? pricesMap[o.price_key] : 0,
                       isCustomOption: true,
                     }))
+                    .filter((v) => !isBlockedOption(v))
                 : []
             return {
               ...sub,
@@ -444,6 +468,7 @@ export default function PreisdatenbankPage() {
   }
 
   const handleDelete = (sectionIndex: number, subsectionIndex: number, id: string) => {
+    if (isProtectedVariable(id)) return
     setHasUnsavedChanges(true)
     setSections((prev) =>
       prev.map((sec, i) => {
@@ -498,6 +523,7 @@ export default function PreisdatenbankPage() {
   }
 
   const handleEditLabel = (sectionIndex: number, subsectionIndex: number, id: string, newLabel: string) => {
+    if (isProtectedVariable(id)) return
     if (!newLabel.trim()) return
     setHasUnsavedChanges(true)
     const trimmed = newLabel.trim()
@@ -597,8 +623,27 @@ export default function PreisdatenbankPage() {
           </div>
         </div>
       </div>
+      <div className="flex items-center gap-2 mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveCatalog('neubau')}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
+        >
+          Neubau
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveCatalog('dachstuhl')}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
+        >
+          Dachstuhl
+        </button>
+      </div>
       <div className="flex flex-col gap-10 md:gap-12">
-        {sections.map((section, sectionIndex) => {
+        {sections
+          .map((section, originalIndex) => ({ section, originalIndex }))
+          .filter(({ section }) => (activeCatalog === 'dachstuhl' ? section.stepKey === 'projektdaten' : section.stepKey !== 'projektdaten'))
+          .map(({ section, originalIndex: sectionIndex }) => {
           // Grupăm cardurile cu un singur element (unu sub altul)
           const items: Array<
             | { type: 'card'; sub: (typeof section.subsections)[0]; subsectionIndex: number }
@@ -693,8 +738,8 @@ export default function PreisdatenbankPage() {
                                   ) : (
                                     <>
                                       <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                      <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>
-                                      <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>
+                                      {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                      {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                     </>
                                   )}
                                 </div>
@@ -721,7 +766,7 @@ export default function PreisdatenbankPage() {
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
                             )}
-                            {sub.fieldTag && sub.fieldTag !== 'foundation_type' && !(addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex) && (
+                            {canAddOptionsForFieldTag(sub.fieldTag) && !(addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex) && (
                               <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left w-full justify-start">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
@@ -763,8 +808,8 @@ export default function PreisdatenbankPage() {
                                     ) : (
                                       <>
                                         <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                        <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>
-                                        <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>
+                                        {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                        {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                       </>
                                     )}
                                   </div>
@@ -783,7 +828,7 @@ export default function PreisdatenbankPage() {
                                 </div>
                               ))}
                             </div>
-                            {sub.fieldTag && sub.fieldTag !== 'foundation_type' && addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex ? (
+                            {canAddOptionsForFieldTag(sub.fieldTag) && addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex ? (
                               <div className="flex flex-wrap items-center gap-2 text-left text-sm">
                                 <input type="text" placeholder="Bezeichnung" className="sun-input w-32 text-sm" id={`add-label-${sectionIndex}-${subsectionIndex}`} />
                                 <input type="number" min={0} step={0.01} placeholder="Preis" className="sun-input w-20 text-sm" id={`add-value-${sectionIndex}-${subsectionIndex}`} />
@@ -791,7 +836,7 @@ export default function PreisdatenbankPage() {
                                 <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#E5B800] text-white text-sm">Übernehmen</button>
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
-                            ) : sub.fieldTag && sub.fieldTag !== 'foundation_type' ? (
+                            ) : canAddOptionsForFieldTag(sub.fieldTag) ? (
                               <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
@@ -837,7 +882,7 @@ export default function PreisdatenbankPage() {
                             ) : (
                               <>
                                 <span className="flex-1 min-w-0">{labelWithoutUnit(v.label)}</span>
-                                <button
+                                {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => setEditingLabelId(v.id)}
                                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]"
@@ -845,8 +890,8 @@ export default function PreisdatenbankPage() {
                                   aria-label="Bezeichnung bearbeiten"
                                 >
                                   <Pencil size={14} />
-                                </button>
-                                <button
+                                </button>}
+                                {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => handleDelete(sectionIndex, item.subsectionIndex, v.id)}
                                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400"
@@ -854,7 +899,7 @@ export default function PreisdatenbankPage() {
                                   aria-label="Option entfernen"
                                 >
                                   <Trash2 size={14} />
-                                </button>
+                                </button>}
                               </>
                             )}
                           </div>
@@ -918,7 +963,7 @@ export default function PreisdatenbankPage() {
                             Abbrechen
                           </button>
                         </div>
-                      ) : item.sub.fieldTag && item.sub.fieldTag !== 'foundation_type' ? (
+                      ) : canAddOptionsForFieldTag(item.sub.fieldTag) ? (
                         <button
                           type="button"
                           onClick={() => setAddingAt({ sectionIndex, subsectionIndex: item.subsectionIndex })}

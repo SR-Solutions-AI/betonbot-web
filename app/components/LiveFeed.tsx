@@ -344,13 +344,22 @@ async function paraphrase(text: string) {
   }
 }
 
-async function downloadPdfWithRefresh(offerId: string, currentUrl: string) {
+async function downloadPdfWithRefresh(
+  offerId: string,
+  currentUrl: string,
+  kind: 'offer' | 'roofMeasurements' | 'admin' = 'offer',
+) {
   let urlToUse = currentUrl
   
   if (!currentUrl || currentUrl.startsWith('/') || !currentUrl.startsWith('http')) {
     try {
       const fresh = await apiFetch(`/offers/${offerId}/export-url`)
-      const freshUrl = fresh?.url || fresh?.download_url || fresh?.pdf
+      const freshUrl =
+        kind === 'roofMeasurements'
+          ? (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
+          : kind === 'admin'
+            ? (fresh?.adminPdf?.download_url || fresh?.adminPdf?.url)
+            : (fresh?.url || fresh?.download_url || fresh?.pdf)
       if (freshUrl) urlToUse = freshUrl
     } catch {}
   }
@@ -382,7 +391,12 @@ async function downloadPdfWithRefresh(offerId: string, currentUrl: string) {
   } catch {
     try {
         const fresh = await apiFetch(`/offers/${offerId}/export-url`)
-        const freshUrl = fresh?.url || fresh?.download_url || fresh?.pdf
+        const freshUrl =
+          kind === 'roofMeasurements'
+            ? (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
+            : kind === 'admin'
+              ? (fresh?.adminPdf?.download_url || fresh?.adminPdf?.url)
+              : (fresh?.url || fresh?.download_url || fresh?.pdf)
         if (freshUrl) { 
             try { 
                 await tryBlobDownload(freshUrl); 
@@ -572,6 +586,8 @@ export default function LiveFeed() {
   /** Când primim detections_review, afișăm editorul (input_resized + poligoane); nu afișăm alte detecții în feed */
   const reviewPendingRef = useRef<{ files: FeedFile[] } | null>(null)
   const pendingStagesAfterReviewRef = useRef<string[]>([])
+  const roofReviewPendingRef = useRef<{ files: FeedFile[] } | null>(null)
+  const pendingStagesAfterRoofReviewRef = useRef<string[]>([])
 
   const STORAGE_KEY_OFFER = 'holzbot_dashboard_offer'
   const STORAGE_KEY_RUNNING = 'holzbot_dashboard_running'
@@ -705,6 +721,11 @@ export default function LiveFeed() {
       const runId = e.detail.runId
       setOfferId(offerId); 
       setComputing(true) // Activează progress bar-ul
+      // Pornește polling-ul live imediat (nu mai așteptăm history hydrate).
+      setRunId(runId)
+      activeRunIdRef.current = runId
+      isHistoryMode.current = false
+      allStagesCompleted.current = false
       persistOfferState(offerId, runId, true)
       // Hydrate instant from history so spectators see everything immediately, then continue live.
       ;(async () => {
@@ -755,11 +776,6 @@ export default function LiveFeed() {
           }
         } catch (_) {
           // ignore hydrate errors; live polling will still populate
-        } finally {
-          setRunId(runId);
-          activeRunIdRef.current = runId; // Actualizăm și ref-ul manual pentru siguranță
-          isHistoryMode.current = false;
-          allStagesCompleted.current = false;
         }
       })()
     }
@@ -771,10 +787,30 @@ export default function LiveFeed() {
 
     window.addEventListener('offer:compute-started', onComputeStarted)
     window.addEventListener('offer:new', onOfferNew)
+    // Fallback: if the wizard signals PDF ready but stage queue never reaches computation_complete,
+    // inject the final download card anyway.
+    const onPdfReady = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as { offerId?: string; pdfUrl?: string }
+        const oid = String(detail?.offerId || '').trim()
+        const url = String(detail?.pdfUrl || '').trim()
+        if (!oid || !url) return
+        // Only for the currently selected offer (avoid cross-offer bleed).
+        if (offerId && oid !== offerId) return
+        pendingCompletionRef.current = { offerId: oid, pdfUrl: url, canDownloadAdminPdf }
+        if (!queuedStages.current.has('computation_complete')) {
+          queuedStages.current.add('computation_complete')
+          stageQueue.current.push('computation_complete')
+          void processQueue()
+        }
+      } catch (_) {}
+    }
+    window.addEventListener('offer:pdf-ready', onPdfReady as EventListener)
     
     return () => {
       window.removeEventListener('offer:compute-started', onComputeStarted)
       window.removeEventListener('offer:new', onOfferNew)
+      window.removeEventListener('offer:pdf-ready', onPdfReady as EventListener)
     }
   }, [])
 
@@ -1023,6 +1059,37 @@ export default function LiveFeed() {
               continue
             }
 
+            // Roof editor is handled in StepWizard (direct calc-events poll). LiveFeed must ignore roof stage completely.
+            if (stage === 'roof') continue
+
+            const stagesBufferedDuringRoofReview = ['pricing', 'offer_generation', 'pdf_generation', 'computation_complete']
+            if (roofReviewPendingRef.current != null && stagesBufferedDuringRoofReview.includes(stage)) {
+              // If completion arrives while roof review is open, persist export URLs now.
+              // Otherwise, when buffered stage is replayed after approval, we can miss the final card.
+              if (stage === 'computation_complete' && offerId && pendingCompletionRef.current == null) {
+                let realPdfUrl: string | null = finalPdfUrlRef.current || null
+                let adminPdfUrl: string | null = null
+                let roofMeasurementsPdfUrl: string | null = null
+                try {
+                  const exportRes = await apiFetch(`/offers/${offerId}/export-url`)
+                  realPdfUrl = exportRes?.url || exportRes?.download_url || exportRes?.pdf || realPdfUrl
+                  adminPdfUrl = exportRes?.adminPdf?.download_url || exportRes?.adminPdf?.url || null
+                  roofMeasurementsPdfUrl = exportRes?.roofMeasurementsPdf?.download_url || exportRes?.roofMeasurementsPdf?.url || null
+                } catch (_) {}
+                pendingCompletionRef.current = {
+                  offerId,
+                  pdfUrl: realPdfUrl || '',
+                  adminPdfUrl,
+                  canDownloadAdminPdf,
+                  roofMeasurementsPdfUrl,
+                }
+              }
+              if (STAGE_TO_SEQUENCE[stage] && !pendingStagesAfterRoofReviewRef.current.includes(stage)) {
+                pendingStagesAfterRoofReviewRef.current.push(stage)
+              }
+              continue
+            }
+
             // Nu afișăm scale_flood, detections, exterior_doors, count_objects în LiveFeed
             if (['scale_flood', 'detections', 'exterior_doors', 'count_objects'].includes(stage)) {
               continue
@@ -1054,10 +1121,10 @@ export default function LiveFeed() {
                 realPdfUrl = finalPdfUrlRef.current
               }
 
-              if (realPdfUrl && offerId) {
+              if (offerId) {
                 pendingCompletionRef.current = { 
                   offerId, 
-                  pdfUrl: realPdfUrl,
+                  pdfUrl: realPdfUrl || '',
                   adminPdfUrl: adminPdfUrl,
                   canDownloadAdminPdf: canDownloadAdminPdf,
                   roofMeasurementsPdfUrl: roofMeasurementsPdfUrl
@@ -1108,7 +1175,7 @@ export default function LiveFeed() {
           }
         }
       } catch {}
-    }, 1000)
+    }, 250)
     
     return () => clearInterval(iv)
   }, [runId, offerId])
@@ -1133,6 +1200,27 @@ export default function LiveFeed() {
     }
     window.addEventListener('offer:detections-review-approved', onApproved)
     return () => window.removeEventListener('offer:detections-review-approved', onApproved)
+  }, [])
+
+  useEffect(() => {
+    const onApproved = () => {
+      if (roofReviewPendingRef.current == null) return
+      roofReviewPendingRef.current = null
+      if (!queuedStages.current.has('roof')) {
+        queuedStages.current.add('roof')
+        stageQueue.current.push('roof')
+      }
+      for (const s of pendingStagesAfterRoofReviewRef.current) {
+        if (!queuedStages.current.has(s)) {
+          queuedStages.current.add(s)
+          stageQueue.current.push(s)
+        }
+      }
+      pendingStagesAfterRoofReviewRef.current = []
+      processQueue()
+    }
+    window.addEventListener('offer:roof-review-approved', onApproved)
+    return () => window.removeEventListener('offer:roof-review-approved', onApproved)
   }, [])
 
   const processQueue = async () => {
@@ -1549,7 +1637,18 @@ export default function LiveFeed() {
                                        </div>
                                        <div className="mt-3 flex flex-col gap-2">
                                         <button
-                                          onClick={() => downloadPdfWithRefresh(it.offerId, it.pdfUrl)}
+                                          onClick={async () => {
+                                            let url: string | null = it.pdfUrl || null
+                                            if (!url) {
+                                              try {
+                                                const res = await apiFetch(`/offers/${it.offerId}/export-url`) as { download_url?: string; url?: string; pdf?: string }
+                                                url = res?.url || res?.download_url || res?.pdf || null
+                                              } catch {
+                                                url = null
+                                              }
+                                            }
+                                            if (url) downloadPdfWithRefresh(it.offerId, url, 'offer')
+                                          }}
                                           className="btn-sun"
                                         >
                                           <Download className="h-4 w-4" /> Angebot herunterladen (PDF)
@@ -1565,7 +1664,7 @@ export default function LiveFeed() {
                                                 url = null
                                               }
                                             }
-                                            if (url) downloadPdfWithRefresh(it.offerId, url)
+                                            if (url) downloadPdfWithRefresh(it.offerId, url, 'roofMeasurements')
                                           }}
                                           className="btn-sun-secondary"
                                         >

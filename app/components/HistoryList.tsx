@@ -11,7 +11,7 @@ type OfferListItem = {
   id: string
   title?: string | null
   status?: string | null
-  meta?: { referinta?: string | null } | null
+  meta?: { referinta?: string | null; roof_only_offer?: boolean | null; wizard_package?: string | null } | null
   created_at: string
   created_by?: string | null
   offer_type_slug?: string | null
@@ -49,6 +49,12 @@ const SLUG_TO_LABEL: Record<string, string> = {
 function offerTypeLabel(slug: string | null | undefined): string {
   if (!slug) return ''
   return SLUG_TO_LABEL[slug] ?? slug
+}
+
+function getOfferTypeBadgeLabel(item: OfferListItem): string {
+  const wizardPkg = (item.meta?.wizard_package || '').toString().toLowerCase()
+  if (item.meta?.roof_only_offer === true || wizardPkg === 'dachstuhl') return 'Dachstuhl'
+  return offerTypeLabel(item.offer_type_slug)
 }
 
 function statusLabelAndColor(status?: string | null): { label: string; className: string } | null {
@@ -580,9 +586,9 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
                   <span className="text-xs text-sand/60">
                     {new Date(it.created_at).toLocaleString(DE.locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  {it.offer_type_slug && (
+                  {(it.offer_type_slug || it.meta?.roof_only_offer === true || it.meta?.wizard_package) && (
                     <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-sand/80">
-                      {offerTypeLabel(it.offer_type_slug)}
+                      {getOfferTypeBadgeLabel(it)}
                     </span>
                   )}
                   {(() => {

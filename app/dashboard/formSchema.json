@@ -336,10 +336,38 @@
             "en": "Insulation"
           },
           "options": [
-            { "value": "Keine", "labels": { "ro": "Keine", "de": "Keine", "en": "None" } },
-            { "value": "Zwischensparren", "labels": { "ro": "Zwischensparren", "de": "Zwischensparren", "en": "Between rafters" } },
-            { "value": "Aufsparren", "labels": { "ro": "Aufsparren", "de": "Aufsparren", "en": "On rafters" } },
-            { "value": "Kombination", "labels": { "ro": "Kombination", "de": "Kombination", "en": "Combination" } }
+            {
+              "value": "Keine",
+              "labels": {
+                "ro": "Keine",
+                "de": "Keine",
+                "en": "None"
+              }
+            },
+            {
+              "value": "Zwischensparren",
+              "labels": {
+                "ro": "Zwischensparren",
+                "de": "Zwischensparren",
+                "en": "Between rafters"
+              }
+            },
+            {
+              "value": "Aufsparren",
+              "labels": {
+                "ro": "Aufsparren",
+                "de": "Aufsparren",
+                "en": "On rafters"
+              }
+            },
+            {
+              "value": "Kombination",
+              "labels": {
+                "ro": "Kombination",
+                "de": "Kombination",
+                "en": "Combination"
+              }
+            }
           ]
         },
         {
@@ -351,8 +379,22 @@
             "en": "Under-roof"
           },
           "options": [
-            { "value": "Folie", "labels": { "ro": "Folie", "de": "Folie", "en": "Membrane" } },
-            { "value": "Schalung + Folie", "labels": { "ro": "Schalung + Folie", "de": "Schalung + Folie", "en": "Decking + membrane" } }
+            {
+              "value": "Folie",
+              "labels": {
+                "ro": "Folie",
+                "de": "Folie",
+                "en": "Membrane"
+              }
+            },
+            {
+              "value": "Schalung + Folie",
+              "labels": {
+                "ro": "Schalung + Folie",
+                "de": "Schalung + Folie",
+                "en": "Decking + membrane"
+              }
+            }
           ]
         },
         {
@@ -364,10 +406,38 @@
             "en": "Roof truss type"
           },
           "options": [
-            { "value": "Sparrendach", "labels": { "ro": "Sparrendach", "de": "Sparrendach", "en": "Rafter roof" } },
-            { "value": "Pfettendach", "labels": { "ro": "Pfettendach", "de": "Pfettendach", "en": "Purlin roof" } },
-            { "value": "Kehlbalkendach", "labels": { "ro": "Kehlbalkendach", "de": "Kehlbalkendach", "en": "Collar beam roof" } },
-            { "value": "Sonderkonstruktion", "labels": { "ro": "Sonderkonstruktion", "de": "Sonderkonstruktion", "en": "Special construction" } }
+            {
+              "value": "Sparrendach",
+              "labels": {
+                "ro": "Sparrendach",
+                "de": "Sparrendach",
+                "en": "Rafter roof"
+              }
+            },
+            {
+              "value": "Pfettendach",
+              "labels": {
+                "ro": "Pfettendach",
+                "de": "Pfettendach",
+                "en": "Purlin roof"
+              }
+            },
+            {
+              "value": "Kehlbalkendach",
+              "labels": {
+                "ro": "Kehlbalkendach",
+                "de": "Kehlbalkendach",
+                "en": "Collar beam roof"
+              }
+            },
+            {
+              "value": "Sonderkonstruktion",
+              "labels": {
+                "ro": "Sonderkonstruktion",
+                "de": "Sonderkonstruktion",
+                "en": "Special construction"
+              }
+            }
           ]
         },
         {
@@ -388,11 +458,46 @@
             "en": "Roof covering"
           },
           "options": [
-            { "value": "Ziegel", "labels": { "ro": "Ziegel", "de": "Ziegel", "en": "Tiles" } },
-            { "value": "Betonstein", "labels": { "ro": "Betonstein", "de": "Betonstein", "en": "Concrete tiles" } },
-            { "value": "Blech", "labels": { "ro": "Blech", "de": "Blech", "en": "Metal sheet" } },
-            { "value": "Schindel", "labels": { "ro": "Schindel", "de": "Schindel", "en": "Shingles" } },
-            { "value": "Sonstiges", "labels": { "ro": "Sonstiges", "de": "Sonstiges", "en": "Other" } }
+            {
+              "value": "Ziegel",
+              "labels": {
+                "ro": "Ziegel",
+                "de": "Ziegel",
+                "en": "Tiles"
+              }
+            },
+            {
+              "value": "Betonstein",
+              "labels": {
+                "ro": "Betonstein",
+                "de": "Betonstein",
+                "en": "Concrete tiles"
+              }
+            },
+            {
+              "value": "Blech",
+              "labels": {
+                "ro": "Blech",
+                "de": "Blech",
+                "en": "Metal sheet"
+              }
+            },
+            {
+              "value": "Schindel",
+              "labels": {
+                "ro": "Schindel",
+                "de": "Schindel",
+                "en": "Shingles"
+              }
+            },
+            {
+              "value": "Sonstiges",
+              "labels": {
+                "ro": "Sonstiges",
+                "de": "Sonstiges",
+                "en": "Other"
+              }
+            }
           ]
         }
       ]
@@ -405,41 +510,6 @@
         "en": "Windows & Doors"
       },
       "fields": [
-        {
-          "name": "bodentiefeFenster",
-          "type": "select",
-          "labels": {
-            "ro": "Bodentiefe Fenster / Glasflächen vorhanden",
-            "de": "Bodentiefe Fenster / Glasflächen vorhanden",
-            "en": "Floor-to-ceiling windows / glass surfaces available"
-          },
-          "options": [
-            {
-              "value": "Nein",
-              "labels": {
-                "ro": "Nein",
-                "de": "Nein",
-                "en": "No"
-              }
-            },
-            {
-              "value": "Ja – einzelne",
-              "labels": {
-                "ro": "Ja – einzelne",
-                "de": "Ja – einzelne",
-                "en": "Yes – individual"
-              }
-            },
-            {
-              "value": "Ja – mehrere / große Glasflächen",
-              "labels": {
-                "ro": "Ja – mehrere / große Glasflächen",
-                "de": "Ja – mehrere / große Glasflächen",
-                "en": "Yes – multiple / large glass surfaces"
-              }
-            }
-          ]
-        },
         {
           "name": "windowQuality",
           "type": "select",
@@ -880,6 +950,24 @@
               "price": 18000
             }
           ]
+        },
+        {
+          "name": "includeElectricity",
+          "type": "bool",
+          "labels": {
+            "ro": "Include electricitate",
+            "de": "Elektroinstallation hinzufügen",
+            "en": "Include electricity"
+          }
+        },
+        {
+          "name": "includeSewage",
+          "type": "bool",
+          "labels": {
+            "ro": "Include canalizare",
+            "de": "Abwasser hinzufügen",
+            "en": "Include sewage"
+          }
         }
       ]
     },
@@ -896,7 +984,7 @@
           "type": "upload",
           "labels": {
             "ro": "Plan arhitectural",
-            "de": "Architekturplan",
+            "de": "Einreichplan",
             "en": "Architectural plan"
           },
           "accept": ".pdf,.jpg,.jpeg,.png,.dwg",
@@ -928,7 +1016,3 @@
     }
   ]
 }
-
-
-
-

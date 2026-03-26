@@ -21,19 +21,17 @@ import {
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
 import { apiFetch } from '../lib/supabaseClient'
 
-const ACCENT = '#E5B800'
+/** Unire vârfuri consecutive foarte apropiate (în px imagine) – la randarea poligoanelor prima dată. */
+const MERGE_VERTEX_DIST_PX = 14
 
-/** Tip canonic pentru uși/ferestre: door | window | garage_door | stairs (culori distincte în editor). */
-function normalizeDoorType(type: string | undefined): 'door' | 'window' | 'garage_door' | 'stairs' {
+/** Tip canonic pentru uși/ferestre: door | window | garage_door | stairs (pentru culori distincte în editor). */
+function normalizeDoorType(type: string | undefined): string {
   const t = (type || 'door').toLowerCase().trim()
   if (t === 'window' || t === 'fenster' || t === 'geam') return 'window'
   if (t === 'garage_door' || t === 'garagentor') return 'garage_door'
   if (t === 'stairs' || t === 'treppe') return 'stairs'
   return 'door'
 }
-
-/** Unire vârfuri consecutive foarte apropiate (px imagine) – la randarea poligoanelor prima dată. */
-const MERGE_VERTEX_DIST_PX = 14
 
 function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   if (!points?.length || points.length < 3) return points ?? []
@@ -71,7 +69,7 @@ function computeOpeningWidthMeters(door: DoorRect, metersPerPixel: number | null
   const [x1, y1, x2, y2] = door.bbox
   const widthPx = Math.abs(x2 - x1)
   const heightPx = Math.abs(y2 - y1)
-  const normalizedType = normalizeDoorType(door.type)
+  const normalizedType = normalizeDoorType(door.type) as DoorType
   const pxValue = normalizedType === 'window' ? Math.max(widthPx, heightPx) : Math.min(widthPx, heightPx)
   if (!metersPerPixel || metersPerPixel <= 0) return null
   return round2(pxValue * metersPerPixel)
@@ -85,7 +83,8 @@ function computeWindowHeightMeters(widthMeters: number): number {
 
 function computeOpeningHeightMeters(door: DoorRect, widthMeters: number | null): number | null {
   if (widthMeters == null) return null
-  return round2(normalizeDoorType(door.type) === 'window' ? computeWindowHeightMeters(widthMeters) : 2.0)
+  const normalizedType = normalizeDoorType(door.type) as DoorType
+  return round2(normalizedType === 'window' ? computeWindowHeightMeters(widthMeters) : 2.0)
 }
 
 function withAutoDoorDimensions(
@@ -93,7 +92,9 @@ function withAutoDoorDimensions(
   metersPerPixel: number | null | undefined
 ): DoorRect[] {
   return doors.map((door) => {
-    if (door.dimensionsEdited && typeof door.width_m === 'number' && typeof door.height_m === 'number') return door
+    if (door.dimensionsEdited && typeof door.width_m === 'number' && typeof door.height_m === 'number') {
+      return door
+    }
     const width_m = computeOpeningWidthMeters(door, metersPerPixel)
     const height_m = computeOpeningHeightMeters(door, width_m)
     return {
@@ -131,8 +132,8 @@ export function DetectionsReviewEditor({
   const [pendingNewDoorBbox, setPendingNewDoorBbox] = useState<[number, number, number, number] | null>(null)
   const [roomTypePopoverIndex, setRoomTypePopoverIndex] = useState<number | null>(null)
   const [hoverDoorInfo, setHoverDoorInfo] = useState<{ index: number; x: number; y: number } | null>(null)
-  const [doorEditDialog, setDoorEditDialog] = useState<{ index: number; width: string; height: string } | null>(null)
   const [newDoorDims, setNewDoorDims] = useState<{ width: string; height: string }>({ width: '', height: '' })
+  const [isConfirming, setIsConfirming] = useState(false)
   const [history, setHistory] = useState<PlanData[][]>([])
   const historyLimit = 50
   const skipNextPushRef = useRef(false)
@@ -178,6 +179,7 @@ export function DetectionsReviewEditor({
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
   const currentPlan = plansData[planIndexClamped]
+  // O imagine de bază per plan (fără poligoane); canvas-ul desenează rooms/doors din API
   const getBaseImageUrl = (planIdx: number) => images[planIdx]?.url ?? images[0]?.url
   const getTabForPlan = (planIdx: number) => tabPerPlan[planIdx] ?? 'rooms'
   const setTabForPlan = (planIdx: number, t: ReviewTab) =>
@@ -194,30 +196,50 @@ export function DetectionsReviewEditor({
     }
     let cancelled = false
     setLoading(true)
-    apiFetch(`/offers/${offerId}/compute/detections-review-data`)
-      .then((res: { plans?: PlanData[]; floorLabels?: string[] }) => {
-        if (cancelled) return
-        const plans = Array.isArray(res?.plans) ? res.plans : []
-        const normalized = plans.map((p) => ({
-          ...p,
-          metersPerPixel: typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null,
-          rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => ({
-            ...r,
-            roomType: r.roomType ?? 'Raum',
-            roomName: (r.roomName ?? r.room_name ?? r.roomType ?? 'Raum').trim() || 'Raum',
-            points: mergeClosePolygonPoints(r.points || [], MERGE_VERTEX_DIST_PX),
-          })),
-          // Tipuri uși/geamuri = aceeași clasificare ca LiveFeed (detections_review_doors.png): backend doors_types.json + euristică
-          doors: withAutoDoorDimensions((p.doors || []).map((d: DoorRect) => ({
-            ...d,
-            type: normalizeDoorType(d.type),
-          })), typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null),
-        }))
-        setPlansData(normalized)
-        setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
-      })
-      .catch(() => { if (!cancelled) setPlansData([]) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+    const fetchWithRetry = async () => {
+      let lastPlans: PlanData[] = []
+      for (let attempt = 0; attempt < 12 && !cancelled; attempt++) {
+        try {
+          const res = (await apiFetch(`/offers/${offerId}/compute/detections-review-data?ts=${Date.now()}`)) as {
+            plans?: PlanData[]
+            floorLabels?: string[]
+          }
+          const plans = Array.isArray(res?.plans) ? res.plans : []
+          const normalized = plans.map((p) => ({
+            ...p,
+            metersPerPixel: typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null,
+            rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => ({
+              ...r,
+              roomType: r.roomType ?? 'Raum',
+              roomName: (r.roomName ?? r.room_name ?? r.roomType ?? 'Raum').trim() || 'Raum',
+              points: mergeClosePolygonPoints(r.points || [], MERGE_VERTEX_DIST_PX),
+            })),
+            // Tipuri uși/geamuri = aceeași clasificare ca LiveFeed (detections_review_doors.png): backend doors_types.json + euristică
+            doors: withAutoDoorDimensions((p.doors || []).map((d: DoorRect) => ({
+              ...d,
+              type: normalizeDoorType(d.type),
+            })), typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null),
+          }))
+          lastPlans = normalized
+          if (cancelled) return
+          setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
+          if (normalized.length > 0 || attempt === 11) {
+            setPlansData(normalized)
+            setLoading(false)
+            return
+          }
+        } catch (_) {
+          if (attempt === 11 && !cancelled) {
+            setPlansData(lastPlans)
+            setLoading(false)
+            return
+          }
+        }
+        await new Promise((r) => setTimeout(r, 450))
+      }
+      if (!cancelled) setLoading(false)
+    }
+    void fetchWithRetry()
     return () => { cancelled = true }
   }, [offerId, images.length])
 
@@ -241,15 +263,25 @@ export function DetectionsReviewEditor({
   }, [])
 
   const handleConfirm = useCallback(async () => {
+    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race<T | null>([
+        p,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+      ])
+
     if (offerId && plansData.length > 0) {
       try {
-        await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            plans: plansData.map((p) => ({ rooms: p.rooms, doors: p.doors })),
+        // Nu blocăm UI pe rețea lentă: dăm un timeout scurt, iar salvarea poate continua best-effort.
+        void withTimeout(
+          apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              plans: plansData.map((p) => ({ rooms: p.rooms, doors: p.doors })),
+            }),
           }),
-        })
+          2500,
+        )
       } catch (_) {}
     }
     await onConfirm()
@@ -321,6 +353,27 @@ export function DetectionsReviewEditor({
     setRoomTypePopoverIndex(roomIndex)
   }, [])
 
+  const handlePickDoorType = useCallback((doorType: 'door' | 'window' | 'garage_door' | 'stairs') => {
+    if (selectedPolygonIndex === null || planIndexClamped >= plansData.length) return
+    const plan = plansData[planIndexClamped]
+    if (!plan || getTabForPlan(planIndexClamped) !== 'doors' || selectedPolygonIndex >= plan.doors.length) return
+    pushHistory()
+    const next = plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType })
+    setDoors(planIndexClamped, next)
+  }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors, pushHistory])
+
+  const handleSetSelectedDoorDimension = useCallback((axis: 'width_m' | 'height_m', raw: string) => {
+    if (selectedPolygonIndex === null || planIndexClamped >= plansData.length) return
+    const val = round2(Number(raw))
+    if (!Number.isFinite(val) || val <= 0) return
+    const plan = plansData[planIndexClamped]
+    if (!plan || selectedPolygonIndex < 0 || selectedPolygonIndex >= plan.doors.length) return
+    const next = plan.doors.map((d, i) =>
+      i !== selectedPolygonIndex ? d : { ...d, [axis]: val, dimensionsEdited: true }
+    )
+    setDoors(planIndexClamped, next)
+  }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors])
+
   const handlePickEditRoomType = useCallback((roomType: RoomTypeOption) => {
     if (roomTypePopoverIndex === null || planIndexClamped >= plansData.length) return
     const plan = plansData[planIndexClamped]
@@ -336,7 +389,6 @@ export function DetectionsReviewEditor({
     setSelectedPolygonIndex(null)
     setNewPolygonPoints(null)
     setHoverDoorInfo(null)
-    setDoorEditDialog(null)
     setPendingNewDoorBbox(null)
   }, [planIndex])
 
@@ -354,38 +406,7 @@ export function DetectionsReviewEditor({
     setNewPolygonPoints(null)
   }, [newPolygonPoints, planIndexClamped, getTabForPlan])
 
-  const handlePickDoorType = useCallback((doorType: 'door' | 'window' | 'garage_door' | 'stairs') => {
-    const plan = plansData[planIndexClamped]
-    if (!plan || selectedPolygonIndex == null || selectedPolygonIndex >= plan.doors.length) return
-    pushHistory()
-    const next = plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType })
-    setDoors(planIndexClamped, next)
-  }, [planIndexClamped, plansData, selectedPolygonIndex, setDoors, pushHistory])
-
-  const handleSaveDoorDimensions = useCallback(() => {
-    if (!doorEditDialog || planIndexClamped >= plansData.length) return
-    const width = round2(Number(doorEditDialog.width))
-    const height = round2(Number(doorEditDialog.height))
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
-    const plan = plansData[planIndexClamped]
-    if (!plan || doorEditDialog.index < 0 || doorEditDialog.index >= plan.doors.length) return
-    pushHistory()
-    const next = plan.doors.map((d, i) =>
-      i !== doorEditDialog.index ? d : { ...d, width_m: width, height_m: height, dimensionsEdited: true }
-    )
-    setDoors(planIndexClamped, next)
-    setDoorEditDialog(null)
-  }, [doorEditDialog, planIndexClamped, plansData, pushHistory, setDoors])
-
-  const handleInsertVertex = useCallback((planIdx: number, polyIndex: number, afterVertexIndex: number, x: number, y: number) => {
-    const plan = plansData[planIdx]
-    if (!plan || polyIndex >= plan.rooms.length || afterVertexIndex < 0) return
-    pushHistory()
-    const pts = plan.rooms[polyIndex].points
-    const newPts = [...pts.slice(0, afterVertexIndex + 1), [x, y] as Point, ...pts.slice(afterVertexIndex + 1)]
-    setRooms(planIdx, plan.rooms.map((r, i) => i !== polyIndex ? r : { ...r, points: newPts }))
-  }, [plansData, setRooms, pushHistory])
-
+  const activeTab = getTabForPlan(planIndexClamped)
   const handleCreateNewDoorWithDimensions = useCallback(() => {
     if (!pendingNewDoorBbox || planIndexClamped >= plansData.length) return
     const width = round2(Number(newDoorDims.width))
@@ -396,15 +417,22 @@ export function DetectionsReviewEditor({
     pushHistory()
     setDoors(planIndexClamped, [
       ...plan.doors,
-      { bbox: pendingNewDoorBbox, type: newDoorType, width_m: width, height_m: height, dimensionsEdited: true },
+      {
+        bbox: pendingNewDoorBbox,
+        type: newDoorType,
+        width_m: width,
+        height_m: height,
+        dimensionsEdited: true,
+      },
     ])
     setPendingNewDoorBbox(null)
     setNewDoorDims({ width: '', height: '' })
   }, [pendingNewDoorBbox, planIndexClamped, plansData, newDoorDims, newDoorType, pushHistory, setDoors])
 
-  const activeTab = getTabForPlan(planIndexClamped)
   const toolHint =
-    tool === 'select'
+    tool === 'select' && activeTab === 'doors'
+      ? 'Element wählen und ziehen zum Verschieben'
+      : tool === 'select'
       ? 'Auf Element klicken und ziehen zum Verschieben'
       : tool === 'add' && activeTab === 'rooms'
         ? 'Klicken Sie um Punkte zu setzen – ersten Punkt erneut klicken zum Schließen'
@@ -416,46 +444,31 @@ export function DetectionsReviewEditor({
               ? 'Eckpunkte ziehen; auf Kante klicken = neuer Punkt; Kante ziehen = Segment verschieben'
               : ''
 
+  const handleInsertVertex = useCallback((planIdx: number, polyIndex: number, afterVertexIndex: number, x: number, y: number) => {
+    const plan = plansData[planIdx]
+    if (!plan || polyIndex >= plan.rooms.length || afterVertexIndex < 0) return
+    pushHistory()
+    const pts = plan.rooms[polyIndex].points
+    const newPts = [...pts.slice(0, afterVertexIndex + 1), [x, y] as Point, ...pts.slice(afterVertexIndex + 1)]
+    setRooms(planIdx, plan.rooms.map((r, i) => i !== polyIndex ? r : { points: newPts }))
+  }, [plansData, setRooms, pushHistory])
+
   return (
     <div className="relative w-full flex flex-col items-stretch gap-3 flex-1 min-h-0">
       <div className="shrink-0 px-2 pt-1 pb-1">
         <h2 className="text-white font-semibold text-base text-center">
           Erkennung prüfen – Räume und Fenster/Türen
         </h2>
-        <p className="text-sand/80 text-xs max-w-xl text-center mx-auto mt-0.5">
-          Etagen als Tabs. Rad zum Zoomen, Ziehen zum Schwenken.
-        </p>
       </div>
 
-      {/* Tab-uri etaj: Beci, Parter, Etaj 1, etc. */}
-      {!loading && plansData.length > 0 && n > 1 && (
-        <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
-          {Array.from({ length: n }).map((_, i) => {
-            const label = floorLabels[i] ?? `Plan ${i + 1}`
-            const isActive = planIndexClamped === i
-            return (
-              <button
-                key={`floor-tab-${i}`}
-                type="button"
-                onClick={() => { setPlanIndex(i); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Tools */}
-      <div className="shrink-0 flex flex-wrap items-center justify-center gap-3 px-4 py-2">
+      <div className="shrink-0 flex flex-wrap items-center justify-center gap-3 px-2 py-1">
         <span className="text-sand/60 text-xs">Werkzeuge:</span>
         <div className="flex flex-col items-center gap-0.5">
           <button
             type="button"
             onClick={() => { setTool('select'); setNewPolygonPoints(null) }}
             title="Auswählen & Verschieben"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'select' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'select' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <MousePointer2 size={18} />
           </button>
@@ -466,7 +479,7 @@ export function DetectionsReviewEditor({
             type="button"
             onClick={() => { setTool('add'); setSelectedPolygonIndex(null); setNewPolygonPoints([]) }}
             title={activeTab === 'rooms' ? 'Polygon (Zimmer) hinzufügen' : 'Tür oder Fenster hinzufügen'}
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'add' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'add' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Plus size={18} />
           </button>
@@ -477,7 +490,7 @@ export function DetectionsReviewEditor({
             type="button"
             onClick={() => setTool('remove')}
             title="Klicken Sie auf ein Element zum Entfernen"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'remove' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'remove' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Trash2 size={18} />
           </button>
@@ -488,7 +501,7 @@ export function DetectionsReviewEditor({
             type="button"
             onClick={() => setTool('edit')}
             title="Bearbeiten: auf Element klicken, Ecken/Kanten ziehen"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'edit' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'edit' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Pencil size={18} />
           </button>
@@ -508,17 +521,41 @@ export function DetectionsReviewEditor({
         </div>
       </div>
 
-      {tool === 'add' && activeTab === 'doors' && (
+      {(tool === 'add' && activeTab === 'doors') && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
-          <span className="text-sand/70 text-xs w-full text-center sm:w-auto">Tür, Fenster, Treppe:</span>
-          <button type="button" onClick={() => setNewDoorType('door')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'door' ? 'bg-[#22c55e]/30 text-green-300 border border-green-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Tür</button>
-          <button type="button" onClick={() => setNewDoorType('window')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'window' ? 'bg-blue-500/30 text-blue-200 border border-blue-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Fenster</button>
-          <button type="button" onClick={() => setNewDoorType('garage_door')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'garage_door' ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Garagentor</button>
-          <button type="button" onClick={() => setNewDoorType('stairs')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'stairs' ? 'bg-orange-600/30 text-orange-200 border border-orange-500/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}>Treppe</button>
+          <span className="text-sand/70 text-xs w-full text-center sm:w-auto">Element:</span>
+          <button
+            type="button"
+            onClick={() => setNewDoorType('door')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'door' ? 'bg-[#22c55e]/30 text-green-300 border border-green-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          >
+            Tür
+          </button>
+          <button
+            type="button"
+            onClick={() => setNewDoorType('window')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'window' ? 'bg-blue-500/30 text-blue-200 border border-blue-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          >
+            Fenster
+          </button>
+          <button
+            type="button"
+            onClick={() => setNewDoorType('garage_door')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'garage_door' ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          >
+            Garagentor
+          </button>
+          <button
+            type="button"
+            onClick={() => setNewDoorType('stairs')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'stairs' ? 'bg-orange-600/30 text-orange-200 border border-orange-500/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          >
+            Treppe
+          </button>
         </div>
       )}
       {tool === 'select' && activeTab === 'doors' && selectedPolygonIndex !== null && plansData[planIndexClamped]?.doors[selectedPolygonIndex] && (
-        <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5">
+        <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
           <span className="text-sand/70 text-xs">Typ:</span>
           {(['door', 'window', 'garage_door', 'stairs'] as const).map((doorType) => {
             const labels = { door: 'Tür', window: 'Fenster', garage_door: 'Garagentor', stairs: 'Treppe' }
@@ -541,6 +578,28 @@ export function DetectionsReviewEditor({
               </button>
             )
           })}
+          {normalizeDoorType(plansData[planIndexClamped]?.doors[selectedPolygonIndex]?.type) !== 'stairs' && (
+            <>
+              <span className="text-sand/70 text-xs ml-2">B (m):</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={typeof plansData[planIndexClamped]?.doors[selectedPolygonIndex]?.width_m === 'number' ? plansData[planIndexClamped].doors[selectedPolygonIndex].width_m!.toFixed(2) : ''}
+                onChange={(e) => handleSetSelectedDoorDimension('width_m', e.target.value)}
+                className="w-[84px] rounded bg-black/40 border border-white/20 px-2 py-1 text-xs text-white"
+              />
+              <span className="text-sand/70 text-xs">H (m):</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={typeof plansData[planIndexClamped]?.doors[selectedPolygonIndex]?.height_m === 'number' ? plansData[planIndexClamped].doors[selectedPolygonIndex].height_m!.toFixed(2) : ''}
+                onChange={(e) => handleSetSelectedDoorDimension('height_m', e.target.value)}
+                className="w-[84px] rounded bg-black/40 border border-white/20 px-2 py-1 text-xs text-white"
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -550,9 +609,39 @@ export function DetectionsReviewEditor({
         </p>
       )}
 
+      {/* Tab-uri etaj: Beci, Parter, Etaj 1, etc. */}
+      {!loading && plansData.length > 0 && n > 1 && (
+        <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
+          {Array.from({ length: n }).map((_, i) => {
+            const label = floorLabels[i] ?? `Plan ${i + 1}`
+            const isActive = planIndexClamped === i
+            return (
+              <button
+                key={`floor-tab-${i}`}
+                type="button"
+                onClick={() => { setPlanIndex(i); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden preisdatenbank-scroll px-2 py-2 flex flex-col items-center gap-4">
-        {loading ? (
-          <p className="text-sand/70 text-sm">Lade Vektordaten…</p>
+        {loading && plansData.length === 0 ? (
+          <div className="w-full flex flex-col items-center gap-2">
+            <div className="relative w-full min-h-[38vh] max-h-[50vh] rounded-lg overflow-hidden border border-[#FF9F0F]/50 bg-black/30 flex items-center justify-center">
+              {images[0]?.url && (
+                <img src={images[0].url} alt="" className="absolute inset-0 w-full h-full object-contain opacity-40" />
+              )}
+              <div className="relative z-10 flex flex-col items-center gap-2 text-sand/80">
+                <div className="w-8 h-8 border-2 border-[#FF9F0F]/60 border-t-[#FF9F0F] rounded-full animate-spin" />
+                <p className="text-sm font-medium">Lade Vektordaten…</p>
+              </div>
+            </div>
+          </div>
         ) : plansData.length === 0 ? (
           <div className="flex flex-wrap gap-4 justify-center">
             {images.slice(0, n).map((img, i) => (
@@ -583,7 +672,7 @@ export function DetectionsReviewEditor({
                     <button
                       type="button"
                       onClick={() => { setTabForPlan(i, 'rooms'); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
-                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'rooms' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'rooms' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
                     >
                       <LayoutGrid size={14} strokeWidth={2} />
                       <span>Räume</span>
@@ -591,22 +680,29 @@ export function DetectionsReviewEditor({
                     <button
                       type="button"
                       onClick={() => { setTabForPlan(i, 'doors'); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
-                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'doors' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'doors' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
                     >
                       <DoorOpen size={14} strokeWidth={2} />
                       <span>Fenster / Türen</span>
                     </button>
                   </div>
                 </div>
-                <div className="relative w-full min-h-[38vh] max-h-[50vh] rounded-lg overflow-hidden border border-[#E5B800]/50 ring-1 ring-[#E5B800]/30 bg-black/30">
+                <div className="relative w-full min-h-[38vh] max-h-[50vh] rounded-lg overflow-hidden border border-[#FF9F0F]/50 ring-1 ring-[#FF9F0F]/30 bg-black/30">
                   {(pendingNewRoomPoints || pendingNewDoorBbox || (roomTypePopoverIndex !== null && plansData[planIndexClamped]?.rooms[roomTypePopoverIndex])) && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
-                      <div className="flex flex-wrap items-center justify-center gap-2 p-4 bg-[#1a1a1a] rounded-xl border-2 border-[#E5B800]/60 shadow-xl max-w-md">
+                      <div className="flex flex-wrap items-center justify-center gap-2 p-4 bg-[#1a1a1a] rounded-xl border-2 border-[#FF9F0F]/60 shadow-xl max-w-md">
                         {pendingNewRoomPoints ? (
                           <>
                             <span className="text-white text-sm font-medium w-full text-center">Raumart:</span>
                             {ROOM_TYPE_OPTIONS.map((opt) => (
-                              <button key={opt} type="button" onClick={() => handlePickNewRoomType(opt)} className="px-4 py-2 rounded-lg text-sm font-medium bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/60 hover:bg-[#E5B800]/35">{opt}</button>
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => handlePickNewRoomType(opt)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/60 hover:bg-[#FF9F0F]/35"
+                              >
+                                {opt}
+                              </button>
                             ))}
                             <button type="button" onClick={() => setPendingNewRoomPoints(null)} className="text-sand/60 text-sm hover:underline mt-1">Abbrechen</button>
                           </>
@@ -636,7 +732,7 @@ export function DetectionsReviewEditor({
                             <button
                               type="button"
                               onClick={handleCreateNewDoorWithDimensions}
-                              className="px-4 py-2 rounded-lg text-sm font-medium bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/60 hover:bg-[#E5B800]/35"
+                              className="px-4 py-2 rounded-lg text-sm font-medium bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/60 hover:bg-[#FF9F0F]/35"
                             >
                               Speichern
                             </button>
@@ -652,7 +748,14 @@ export function DetectionsReviewEditor({
                           <>
                             <span className="text-white text-sm font-medium w-full text-center">Raumtyp ändern:</span>
                             {ROOM_TYPE_OPTIONS.map((opt) => (
-                              <button key={opt} type="button" onClick={() => handlePickEditRoomType(opt)} className="px-4 py-2 rounded-lg text-sm font-medium bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/60 hover:bg-[#E5B800]/35">{opt}</button>
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => handlePickEditRoomType(opt)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/60 hover:bg-[#FF9F0F]/35"
+                              >
+                                {opt}
+                              </button>
                             ))}
                             <button type="button" onClick={() => setRoomTypePopoverIndex(null)} className="text-sand/60 text-sm hover:underline mt-1">Schließen</button>
                           </>
@@ -674,13 +777,13 @@ export function DetectionsReviewEditor({
                     newDoorType={newDoorType}
                     onInsertVertex={planTab === 'rooms' ? (polyIndex: number, afterVertexIndex: number, x: number, y: number) => handleInsertVertex(i, polyIndex, afterVertexIndex, x, y) : undefined}
                     onSelect={setSelectedPolygonIndex}
-                    onAddPoint={(x, y) => setNewPolygonPoints((prev) => prev ? [...prev, [x, y]] : [[x, y]])}
+                    onAddPoint={(x: number, y: number) => setNewPolygonPoints((prev) => prev ? [...prev, [x, y]] : [[x, y]])}
                     onCloseNewPolygon={handleRequestCloseNewPolygon}
                     onRoomTypeLabelClick={handleRoomTypeLabelClick}
-                    onMoveVertex={(polyIndex, vertexIndex, x, y) => {
+                    onMoveVertex={(polyIndex: number, vertexIndex: number, x: number, y: number) => {
                       if (planTab === 'rooms') {
                         const next = plan.rooms.map((r, ri) =>
-                          ri !== polyIndex ? r : { ...r, points: r.points.map((p, vi) => vi === vertexIndex ? [x, y] as Point : p) }
+                          ri !== polyIndex ? r : { ...r, points: r.points.map((p: Point, vi: number) => vi === vertexIndex ? [x, y] as Point : p) }
                         )
                         setRooms(i, next)
                       } else {
@@ -699,10 +802,10 @@ export function DetectionsReviewEditor({
                         setDoors(i, next)
                       }
                     }}
-                    onRemoveSelected={(index) => handleRemoveSelected(index)}
+                    onRemoveSelected={(index?: number) => handleRemoveSelected(index)}
                     onEditStart={pushHistory}
-                    onRoomsChange={(rooms) => setRooms(i, rooms)}
-                    onDoorsChange={(doors) => setDoors(i, doors)}
+                    onRoomsChange={(rooms: RoomPolygon[]) => setRooms(i, rooms)}
+                    onDoorsChange={(doors: DoorRect[]) => setDoors(i, doors)}
                     onDoorHover={(payload) => {
                       if (!payload) {
                         setHoverDoorInfo(null)
@@ -715,15 +818,7 @@ export function DetectionsReviewEditor({
                       }
                       setHoverDoorInfo(payload)
                     }}
-                    onDoorActivate={(idx) => {
-                      const d = plan.doors[idx]
-                      if (!d || !isEditableOpeningType(d.type)) return
-                      setDoorEditDialog({
-                        index: idx,
-                        width: typeof d.width_m === 'number' ? d.width_m.toFixed(2) : '',
-                        height: typeof d.height_m === 'number' ? d.height_m.toFixed(2) : '',
-                      })
-                    }}
+                    onDoorActivate={undefined}
                   />
                   {activeTab === 'doors' && hoverDoorInfo && (
                     <div
@@ -744,37 +839,6 @@ export function DetectionsReviewEditor({
                       })()}
                     </div>
                   )}
-                  {activeTab === 'doors' && doorEditDialog && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45">
-                      <div className="w-[260px] rounded-lg border border-[#E5B800]/60 bg-[#1a1a1a] p-3">
-                        <div className="text-white text-sm font-medium mb-2">Öffnung Maße (m)</div>
-                        <div className="grid grid-cols-[16px_1fr] items-center gap-2 mb-2">
-                          <span className="text-sand/70 text-xs">B</span>
-                          <input
-                            type="number"
-                            min={0.01}
-                            step={0.01}
-                            value={doorEditDialog.width}
-                            onChange={(e) => setDoorEditDialog((prev) => prev ? { ...prev, width: e.target.value } : prev)}
-                            className="w-full rounded bg-black/40 border border-white/20 px-2 py-1 text-sm text-white"
-                          />
-                          <span className="text-sand/70 text-xs">H</span>
-                          <input
-                            type="number"
-                            min={0.01}
-                            step={0.01}
-                            value={doorEditDialog.height}
-                            onChange={(e) => setDoorEditDialog((prev) => prev ? { ...prev, height: e.target.value } : prev)}
-                            className="w-full rounded bg-black/40 border border-white/20 px-2 py-1 text-sm text-white"
-                          />
-                        </div>
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => setDoorEditDialog(null)} className="px-2 py-1 text-xs text-sand/70">Abbrechen</button>
-                          <button type="button" onClick={handleSaveDoorDimensions} className="rounded bg-[#E5B800]/25 border border-[#E5B800]/60 px-2 py-1 text-xs text-[#E5B800]">Speichern</button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )
@@ -785,11 +849,16 @@ export function DetectionsReviewEditor({
       <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2 py-2">
         <button
           type="button"
-          onClick={handleConfirm}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
+          onClick={async () => {
+            if (isConfirming) return
+            setIsConfirming(true)
+            try { await handleConfirm() } finally { setIsConfirming(false) }
+          }}
+          disabled={isConfirming}
+          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
         >
           <Check size={18} />
-          Erkennung bestätigen – weiter
+          {isConfirming ? 'Speichern…' : 'Erkennung bestätigen – weiter'}
         </button>
         <button
           type="button"
