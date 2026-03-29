@@ -76,6 +76,7 @@ export const formSteps: Step[] = [
       { type: 'select', name: 'inaltimeEtaje', label: 'Geschosshöhe', options: ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] },
       { type: 'bool', name: 'hasWintergarden', label: 'Wintergarten vorhanden' },
       { type: 'bool', name: 'hasBalkone', label: 'Balkone vorhanden' },
+      { type: 'bool', name: 'hasGarage', label: 'Garage / Carport vorhanden' },
     ],
   },
 
@@ -110,6 +111,7 @@ export const formSteps: Step[] = [
       { type: 'select', name: 'windowQuality', label: 'Fensterart (Preis 2-/3-fach)', options: ['2-fach verglast', '3-fach verglast', '3-fach verglast, Passiv'] },
       { type: 'select', name: 'doorMaterialInterior', label: 'Material Innentüren', options: ['Standard', 'Holz', 'Glas', 'Weiß lackiert'] },
       { type: 'select', name: 'doorMaterialExterior', label: 'Material Außentüren', options: ['Standard', 'Holz', 'Aluminium', 'Kunststoff'] },
+      { type: 'select', name: 'garageDoorType', label: 'Garagentor Typ', options: ['Sektionaltor Standard', 'Sektionaltor Premium', 'Rolltor'], tag: 'garage_door_type' },
       { type: 'select', name: 'turhohe', label: 'Türhöhe', options: ['Standard (2m)', 'Erhöht / Sondermaß (2,2+ m)'] },
     ],
   },
@@ -606,6 +608,14 @@ export const PRICING_VARIABLES_SECTIONS: PricingVariablesSectionDef[] = [
         variables: [
           { key: 'door_interior_price', label: 'Innentür (€/m²)', unit: '€/m²', default: 380 },
           { key: 'door_exterior_price', label: 'Außentür (€/m²)', unit: '€/m²', default: 480 },
+        ],
+      },
+      {
+        title: 'Garagentor (pro m²)',
+        variables: [
+          { key: 'garage_door_standard_price', label: 'Sektionaltor Standard (€/m²)', unit: '€/m²', default: 360 },
+          { key: 'garage_door_premium_price', label: 'Sektionaltor Premium (€/m²)', unit: '€/m²', default: 470 },
+          { key: 'garage_door_rolltor_price', label: 'Rolltor (€/m²)', unit: '€/m²', default: 420 },
         ],
       },
     ],

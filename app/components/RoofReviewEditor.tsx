@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Check, MousePointer2, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react'
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
 import { apiFetch } from '../lib/supabaseClient'
@@ -132,6 +132,10 @@ function roofPlanLabelDe(labels: string[], index: number): string {
   return fallbackFloorLabelDe(index)
 }
 
+export type RoofReviewEditorHandle = {
+  flushSave: () => Promise<boolean>
+}
+
 type RoofReviewEditorProps = {
   offerId?: string
   images: ReviewImage[]
@@ -139,17 +143,38 @@ type RoofReviewEditorProps = {
   onCancel: () => void
   /** betonbot: shift roof preview thumbnails from orange toward yellow */
   roofUiVariant?: 'holzbot' | 'betonbot'
+  /**
+   * În editorul unificat: fără titlu/footer proprii; etajul urmește tab-urile părinte.
+   */
+  embedded?: boolean
+  /** Când e setat (și embedded), folosim acest index în loc de tab-urile interne de etaj. */
+  embedPlanIndex?: number
+  /**
+   * Editor unificat: dimensiuni imagine din tab Räume (înainte de roof-review-data), ca blueprint-ul să apară la fel.
+   */
+  embeddedPlanSeeds?: Array<{ imageWidth: number; imageHeight: number }>
+  /** False când tab-ul Dach e ascuns (display:none) — recalculează canvas la activare. */
+  layoutActive?: boolean
 }
 
-export function RoofReviewEditor({
-  offerId,
-  images,
-  onConfirm,
-  onCancel,
-  roofUiVariant = 'betonbot',
-}: RoofReviewEditorProps) {
+export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEditorProps>(function RoofReviewEditor(
+  {
+    offerId,
+    images,
+    onConfirm,
+    onCancel,
+    roofUiVariant = 'betonbot',
+    embedded = false,
+    embedPlanIndex,
+    embeddedPlanSeeds,
+    layoutActive = true,
+  },
+  ref,
+) {
   const [tool, setTool] = useState<Tool>('select')
-  const [planIndex, setPlanIndex] = useState(0)
+  const [planIndexInternal, setPlanIndexInternal] = useState(0)
+  const planIndex =
+    embedded && typeof embedPlanIndex === 'number' && embedPlanIndex >= 0 ? embedPlanIndex : planIndexInternal
   const [plansData, setPlansData] = useState<PlanData[]>([])
   const [floorLabels, setFloorLabels] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -167,8 +192,6 @@ export function RoofReviewEditor({
   const [dialogType, setDialogType] = useState<RoofTypeId>(DEFAULT_ROOF_TYPE)
   const [pendingNewRoofWindowBbox, setPendingNewRoofWindowBbox] = useState<[number, number, number, number] | null>(null)
   const [newRoofWindowDims, setNewRoofWindowDims] = useState({ width: '', height: '' })
-
-  const imagesKey = images.map((img) => img.url).join('|')
 
   const thumbFilter =
     roofUiVariant === 'betonbot' ? 'hue-rotate(-18deg) saturate(0.85) brightness(1.08)' : undefined
@@ -234,6 +257,8 @@ export function RoofReviewEditor({
     }
   }, [offerId])
 
+  useImperativeHandle(ref, () => ({ flushSave: () => saveRoofEditsToServer() }), [saveRoofEditsToServer])
+
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!offerId || loading || plansData.length === 0) return
@@ -277,6 +302,7 @@ export function RoofReviewEditor({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleUndo])
 
+  /** Refetch doar la offerId / număr etaje — nu la schimbarea URL-urilor (ex. roofImages vs blueprint), ca să nu ștergem poligoanele la schimbarea tab-ului. */
   useEffect(() => {
     if (!offerId || images.length === 0) {
       setLoading(false)
@@ -284,7 +310,25 @@ export function RoofReviewEditor({
       return
     }
     let cancelled = false
-    setLoading(true)
+    const canSeedEmbedded =
+      embedded &&
+      Array.isArray(embeddedPlanSeeds) &&
+      embeddedPlanSeeds.length > 0 &&
+      embeddedPlanSeeds.every((s) => Number(s.imageWidth) > 0 && Number(s.imageHeight) > 0)
+    if (canSeedEmbedded) {
+      setPlansData((prev) => {
+        if (prev.length > 0) return prev
+        return embeddedPlanSeeds!.map((s) => ({
+          imageWidth: s.imageWidth,
+          imageHeight: s.imageHeight,
+          rectangles: [],
+          doors: [],
+        }))
+      })
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     const fetchWithRetry = async () => {
       let lastPlans: PlanData[] = []
       for (let attempt = 0; attempt < 14 && !cancelled; attempt++) {
@@ -321,13 +365,33 @@ export function RoofReviewEditor({
           if (cancelled) return
           setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
           if (normalized.length > 0 || attempt === 13) {
-            setPlansData(normalized)
+            let toSet = normalized
+            if (toSet.length === 0 && canSeedEmbedded) {
+              toSet = embeddedPlanSeeds!.map((s) => ({
+                imageWidth: s.imageWidth,
+                imageHeight: s.imageHeight,
+                rectangles: [],
+                doors: [],
+              }))
+            }
+            setPlansData(toSet)
             setLoading(false)
             return
           }
         } catch (_) {
           if (attempt === 13 && !cancelled) {
-            setPlansData(lastPlans)
+            if (lastPlans.length === 0 && canSeedEmbedded) {
+              setPlansData(
+                embeddedPlanSeeds!.map((s) => ({
+                  imageWidth: s.imageWidth,
+                  imageHeight: s.imageHeight,
+                  rectangles: [],
+                  doors: [],
+                })),
+              )
+            } else {
+              setPlansData(lastPlans)
+            }
             setLoading(false)
             return
           }
@@ -340,7 +404,71 @@ export function RoofReviewEditor({
     return () => {
       cancelled = true
     }
-  }, [offerId, imagesKey])
+  }, [offerId, images.length, embedded, embeddedPlanSeeds])
+
+  /**
+   * Editorul unificat (embedded): tab-urile de etaj urmează `images.length`, dar API-ul roof poate întoarce
+   * mai puține rânduri în `plans` sau dimensiuni 0 — fără `currentPlan` și fără imageWidth/imageHeight > 0
+   * canvas-ul rămâne negru (DetectionsPolygonCanvas nu desenează).
+   */
+  useEffect(() => {
+    if (loading || images.length === 0) return
+    setPlansData((prev) => {
+      const refPlan = prev.find((p) => Number(p.imageWidth) > 0 && Number(p.imageHeight) > 0)
+      let out = [...prev]
+      let changed = false
+      if (refPlan) {
+        out = out.map((p) => {
+          const iw = Number(p.imageWidth) || 0
+          const ih = Number(p.imageHeight) || 0
+          if (iw > 0 && ih > 0) return p
+          changed = true
+          return { ...p, imageWidth: refPlan.imageWidth, imageHeight: refPlan.imageHeight }
+        })
+      }
+      const targetFloors = Math.max(images.length, out.length)
+      if (refPlan && out.length < targetFloors) {
+        while (out.length < targetFloors) {
+          out.push({
+            imageWidth: refPlan.imageWidth,
+            imageHeight: refPlan.imageHeight,
+            rectangles: [],
+            doors: [],
+          })
+          changed = true
+        }
+      }
+      return changed ? out : prev
+    })
+  }, [loading, images.length])
+
+  /** Dacă niciun plan nu are dimensiuni valide, le luăm din dimensiunea naturală a blueprint-ului. */
+  useEffect(() => {
+    if (loading) return
+    const url = images.map((i) => i.url).find((u) => typeof u === 'string' && u.length > 0)
+    if (!url) return
+    if (plansDataRef.current.some((p) => Number(p.imageWidth) > 0 && Number(p.imageHeight) > 0)) return
+
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const w = img.naturalWidth
+      const h = img.naturalHeight
+      if (w <= 0 || h <= 0) return
+      if (plansDataRef.current.some((p) => Number(p.imageWidth) > 0 && Number(p.imageHeight) > 0)) return
+      setPlansData((prev) => {
+        if (prev.length === 0) {
+          return [{ imageWidth: w, imageHeight: h, rectangles: [], doors: [] }]
+        }
+        return prev.map((p) => ({
+          ...p,
+          imageWidth: Number(p.imageWidth) > 0 ? p.imageWidth : w,
+          imageHeight: Number(p.imageHeight) > 0 ? p.imageHeight : h,
+        }))
+      })
+    }
+    img.src = url
+  }, [loading, images.length])
 
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
@@ -495,9 +623,11 @@ export function RoofReviewEditor({
 
   return (
     <div className="relative w-full flex flex-col flex-1 min-h-0 h-full max-h-full overflow-hidden gap-2">
-      <div className="shrink-0 px-2 pt-1 pb-0">
-        <h2 className="text-white font-semibold text-base text-center">Dach prüfen – Rechtecke je Etage</h2>
-      </div>
+      {!embedded && (
+        <div className="shrink-0 px-2 pt-1 pb-0">
+          <h2 className="text-white font-semibold text-base text-center">Dach prüfen – Rechtecke je Etage</h2>
+        </div>
+      )}
 
       <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2">
         <button
@@ -583,14 +713,14 @@ export function RoofReviewEditor({
         </button>
       </div>
 
-      {!loading && n > 1 && (
+      {!loading && n > 1 && !embedded && (
         <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
           {Array.from({ length: n }).map((_, i) => (
             <button
               key={`roof-floor-tab-${i}`}
               type="button"
               onClick={() => {
-                setPlanIndex(i)
+                setPlanIndexInternal(i)
                 setSelectedPolygonIndex(null)
                 setNewPolygonPoints(null)
                 setRoofSurfaceTab('surfaces')
@@ -663,6 +793,7 @@ export function RoofReviewEditor({
                   <DetectionsPolygonCanvas
                     key={`roof-plan-${planIndexClamped}-surf`}
                     className="block h-full w-full min-h-0"
+                    layoutActive={layoutActive}
                     imageUrl={getBaseImageUrl(planIndexClamped)!}
                     imageWidth={currentPlan.imageWidth}
                     imageHeight={currentPlan.imageHeight}
@@ -706,6 +837,7 @@ export function RoofReviewEditor({
                   <DetectionsPolygonCanvas
                     key={`roof-plan-${planIndexClamped}-win`}
                     className="block h-full w-full min-h-0"
+                    layoutActive={layoutActive}
                     imageUrl={getBaseImageUrl(planIndexClamped)!}
                     imageWidth={currentPlan.imageWidth}
                     imageHeight={currentPlan.imageHeight}
@@ -949,24 +1081,26 @@ export function RoofReviewEditor({
         </div>
       )}
 
-      <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2 pt-1 pb-2">
-        <button
-          type="button"
-          onClick={handleConfirm}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg bg-gradient-to-b from-[#e08414] to-[#f79116]"
-        >
-          <Check size={18} />
-          Dach bestätigen – weiter
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sand/90 border border-white/30 hover:bg-white/10"
-        >
-          <X size={18} />
-          Abbrechen
-        </button>
-      </div>
+      {!embedded && (
+        <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2 pt-1 pb-2">
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg bg-gradient-to-b from-[#e08414] to-[#f79116]"
+          >
+            <Check size={18} />
+            Dach bestätigen – weiter
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sand/90 border border-white/30 hover:bg-white/10"
+          >
+            <X size={18} />
+            Abbrechen
+          </button>
+        </div>
+      )}
     </div>
   )
-}
+})

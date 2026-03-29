@@ -9,7 +9,6 @@ import holzbauFormStepsJson from '../../data/form-schema/holzbau-form-steps.json
 import { type Field, formStepsDachstuhl } from '../dashboard/formConfig'
 import { CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Loader2, AlertTriangle, X } from 'lucide-react'
 import { DetectionsReviewEditor } from './DetectionsReviewEditor'
-import { RoofReviewEditor } from './RoofReviewEditor'
 
 const SimplePdfViewer = dynamic(() => import('./SimplePdfViewer.client'), {
   ssr: false,
@@ -296,6 +295,7 @@ function validateGeneric(stepKey: string, fields: Field[], form: Record<string, 
       if (fieldName === 'wintergartenTyp' && !asBool(form.hasWintergarden)) return true
       if (fieldName === 'balkonTyp' && !asBool(form.hasBalkone)) return true
     }
+    if (stepKey === 'ferestreUsi' && fieldName === 'garageDoorType' && !asBool(form.hasGarage)) return true
     if ((stepKey === 'sistemConstructiv' || stepKey === 'structuraCladirii' || stepKey === 'materialeFinisaj') && fieldName === 'tipAcoperis') return true
     if (stepKey === 'structuraCladirii' && fieldName === 'floorsNumber') return true
     if (!nivelOferta) return false
@@ -573,9 +573,9 @@ export default function StepWizard() {
   const [showDetectionsReview, setShowDetectionsReview] = useState(false)
   const [reviewImages, setReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
   const [planReviewImages, setPlanReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
-  const [showRoofReview, setShowRoofReview] = useState(false)
   const [roofReviewImages, setRoofReviewImages] = useState<Array<{ url: string; caption?: string }>>([])
-  const [reviewTab, setReviewTab] = useState<'rooms' | 'doors'>('rooms')
+  /** Sincron cu meta `roof_only_offer` pentru UI-ul editorului unificat (state, nu doar ref). */
+  const [activeRoofOnlyOffer, setActiveRoofOnlyOffer] = useState(false)
 
   /** Opțiuni custom per tag (din Preisdatenbank) – cu price_key pentru mapare etichete. */
   const [customOptionsForm, setCustomOptionsForm] = useState<Record<string, Array<{ label: string; value: string; price_key: string }>>>({})
@@ -595,7 +595,7 @@ export default function StepWizard() {
   const roofReviewApprovedRef = useRef(false)
   const [offerTypesBySlug, setOfferTypesBySlug] = useState<Record<string, string>>({})
   /** Ultima stare a checkbox-urilor Wintergarten/Balkone pe pasul Gebäudestruktur – ca debifarea să nu fie suprascrisă de effect. */
-  const structuraWinterBalkoneRef = useRef<{ hasWintergarden?: boolean; hasBalkone?: boolean }>({})
+  const structuraWinterBalkoneRef = useRef<{ hasWintergarden?: boolean; hasBalkone?: boolean; hasGarage?: boolean }>({})
   const stepsScrollContainerRef = useRef<HTMLDivElement>(null)
   /** Pasul pentru care am rulat ultima încărcare – evită re-rularea effect-ului la fiecare re-render (Maximum update depth). */
   const lastLoadedStepKeyRef = useRef<string | null>(null)
@@ -895,6 +895,7 @@ export default function StepWizard() {
       setSaveStatus('idle')
       setSelectedPackage(null)
       roofOnlyOfferRef.current = false
+      setActiveRoofOnlyOffer(false)
       creatingRef.current = false
       activeCreationPromise.current = null
     }
@@ -920,7 +921,9 @@ export default function StepWizard() {
       void apiFetch(`/offers/${detail.offerId}`)
         .then((o: unknown) => {
           const m = (o as { meta?: { roof_only_offer?: boolean } })?.meta
-          roofOnlyOfferRef.current = m?.roof_only_offer === true
+          const ro = m?.roof_only_offer === true
+          roofOnlyOfferRef.current = ro
+          setActiveRoofOnlyOffer(ro)
         })
         .catch(() => {})
     }
@@ -948,7 +951,6 @@ export default function StepWizard() {
 
       // Close editors immediately once final PDF is ready (avoid brief "editor flash" before viewer).
       setShowDetectionsReview(false)
-      setShowRoofReview(false)
       setReviewImages([])
       setRoofReviewImages([])
       roofReviewApprovedRef.current = true
@@ -985,7 +987,7 @@ export default function StepWizard() {
   // 4b2. Editor verificare detecții: când LiveFeed primește detections_review, afișăm overlay-urile în loc de GIF
   useEffect(() => {
     const onDetectionsReviewStart = () => {
-      if (detectionsReviewApprovedRef.current || roofOnlyOfferRef.current) return
+      if (detectionsReviewApprovedRef.current) return
       setShowDetectionsReview(true)
     }
     window.addEventListener('offer:detections-review-start', onDetectionsReviewStart as EventListener)
@@ -996,7 +998,7 @@ export default function StepWizard() {
       if (detectionsReviewApprovedRef.current) return
       const detail = (e as CustomEvent<{ files: Array<{ url: string; caption?: string }> }>).detail
       const files = detail?.files ?? []
-      if (files.length > 0 && !roofOnlyOfferRef.current) {
+      if (files.length > 0) {
         setReviewImages(files)
         setPlanReviewImages(files)
         setShowDetectionsReview(true)
@@ -1008,7 +1010,7 @@ export default function StepWizard() {
   useEffect(() => {
     const onRoofReviewStart = () => {
       if (roofReviewApprovedRef.current) return
-      setShowRoofReview(true)
+      setShowDetectionsReview(true)
     }
     window.addEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
     return () => window.removeEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
@@ -1020,7 +1022,7 @@ export default function StepWizard() {
       const files = detail?.files ?? []
       if (files.length === 0) return
       setRoofReviewImages(files)
-      setShowRoofReview(true)
+      setShowDetectionsReview(true)
     }
     window.addEventListener('offer:roof-review', onRoofReview as EventListener)
     return () => window.removeEventListener('offer:roof-review', onRoofReview as EventListener)
@@ -1030,6 +1032,7 @@ export default function StepWizard() {
       detectionsReviewApprovedRef.current = true
       setShowDetectionsReview(false)
       setReviewImages([])
+      setRoofReviewImages([])
     }
     window.addEventListener('offer:detections-review-approved', onDetectionsReviewApproved as EventListener)
     return () => window.removeEventListener('offer:detections-review-approved', onDetectionsReviewApproved as EventListener)
@@ -1037,8 +1040,6 @@ export default function StepWizard() {
   useEffect(() => {
     const onRoofReviewApproved = () => {
       roofReviewApprovedRef.current = true
-      setShowRoofReview(false)
-      setRoofReviewImages([])
     }
     window.addEventListener('offer:roof-review-approved', onRoofReviewApproved as EventListener)
     return () => window.removeEventListener('offer:roof-review-approved', onRoofReviewApproved as EventListener)
@@ -1046,10 +1047,9 @@ export default function StepWizard() {
   useEffect(() => {
     if (!computing) {
       setShowDetectionsReview(false)
-      setShowRoofReview(false)
       setReviewImages([])
       setRoofReviewImages([])
-      setReviewTab('rooms')
+      setActiveRoofOnlyOffer(false)
     }
   }, [computing])
 
@@ -1080,7 +1080,7 @@ export default function StepWizard() {
           const stage = match?.[1]?.trim()
           const files = (ev.payload?.files ?? []).filter((f) => typeof f?.url === 'string' && f.url.length > 0) as Array<{ url: string; caption?: string }>
 
-          if (stage === 'detections_review' && !roofOnlyOfferRef.current) {
+          if (stage === 'detections_review') {
             if (detectionsReviewApprovedRef.current) continue
             window.dispatchEvent(new CustomEvent('offer:detections-review-start'))
             if (files.length > 0) {
@@ -1095,14 +1095,12 @@ export default function StepWizard() {
           if (stage === 'roof') {
             if (roofReviewApprovedRef.current) continue
             window.dispatchEvent(new CustomEvent('offer:roof-review-start'))
-            // Some backend runs emit [roof] without files first; switch instantly from GIF to editor
-            // and fallback to already known plan images until roof-specific files arrive.
             if (files.length > 0) {
               setRoofReviewImages(files)
             }
             const hasFallback = planReviewImages.length > 0 || reviewImages.length > 0
             if (files.length > 0 || hasFallback) {
-              setShowRoofReview(true)
+              setShowDetectionsReview(true)
             }
           }
 
@@ -1193,9 +1191,12 @@ export default function StepWizard() {
       try {
         const offerRow = (await apiFetch(`/offers/${id}`)) as { meta?: { roof_only_offer?: boolean }; offer?: { meta?: { roof_only_offer?: boolean } } }
         const offerMeta = offerRow?.meta ?? offerRow?.offer?.meta
-        roofOnlyOfferRef.current = offerMeta?.roof_only_offer === true
+        const ro = offerMeta?.roof_only_offer === true
+        roofOnlyOfferRef.current = ro
+        setActiveRoofOnlyOffer(ro)
       } catch {
         roofOnlyOfferRef.current = false
+        setActiveRoofOnlyOffer(false)
       }
       try {
         const fresh = await fetchFreshPdfUrl(id)
@@ -1222,7 +1223,7 @@ export default function StepWizard() {
   }, [])
 
   // 6. Update Form State on Step Change (ca pe VPS)
-  // structuraCladirii + wintergaertenBalkone: folosim ref / prev pentru hasWintergarden/hasBalkone ca debifarea să persiste
+  // structuraCladirii + wintergaertenBalkone: folosim ref / prev pentru hasWintergarden/hasBalkone/hasGarage ca debifarea să persiste
   // și ca pe pasul Wintergärten & Balkone să apară doar secțiunile pentru opțiunile încă bifate.
   function mergeStepForm(key: string, loaded: Record<string, any>, prev: Record<string, any>): Record<string, any> {
     if (!loaded || typeof loaded !== 'object') return loaded
@@ -1233,9 +1234,15 @@ export default function StepWizard() {
         ...loaded,
         hasWintergarden: r.hasWintergarden ?? prev.hasWintergarden ?? loaded.hasWintergarden,
         hasBalkone: r.hasBalkone ?? prev.hasBalkone ?? loaded.hasBalkone,
+        hasGarage: r.hasGarage ?? prev.hasGarage ?? loaded.hasGarage,
       }
     }
-    return { ...loaded, hasWintergarden: loaded.hasWintergarden ?? prev.hasWintergarden, hasBalkone: loaded.hasBalkone ?? prev.hasBalkone }
+    return {
+      ...loaded,
+      hasWintergarden: loaded.hasWintergarden ?? prev.hasWintergarden,
+      hasBalkone: loaded.hasBalkone ?? prev.hasBalkone,
+      hasGarage: loaded.hasGarage ?? prev.hasGarage,
+    }
   }
 
   // Încărcare date pas: doar când idx sau offerId se schimbă (fără currentStepKey/form ca să nu retrigărăm la fiecare setForm → Maximum update depth).
@@ -1252,6 +1259,7 @@ export default function StepWizard() {
         structuraWinterBalkoneRef.current = {
           hasWintergarden: merged.hasWintergarden ?? structuraWinterBalkoneRef.current.hasWintergarden,
           hasBalkone: merged.hasBalkone ?? structuraWinterBalkoneRef.current.hasBalkone,
+          hasGarage: merged.hasGarage ?? structuraWinterBalkoneRef.current.hasGarage,
         }
         setWinterBalkoneFlags({
           hasWintergarden: merged.hasWintergarden === true,
@@ -1528,6 +1536,7 @@ export default function StepWizard() {
         await apiFetch(`/offers/${id}`, { method: 'PATCH', body: JSON.stringify({ meta }) })
       } catch (_) { /* meta merge best-effort */ }
 
+      setActiveRoofOnlyOffer(roofOnly)
       const { run_id } = await apiFetch(`/offers/${id}/compute`, { method: 'POST', body: JSON.stringify({ payload: {} }), timeoutMs: 180_000 })
       setPdfUrl(null)
       setComputeFailed(false)
@@ -1582,6 +1591,7 @@ export default function StepWizard() {
     setSaveStatus('idle')
     setSelectedPackage(null)
     roofOnlyOfferRef.current = false
+    setActiveRoofOnlyOffer(false)
     creatingRef.current = false
     activeCreationPromise.current = null
     updateRunUrl(null, null)
@@ -1714,39 +1724,24 @@ export default function StepWizard() {
             </div>
           </div>
         ) : computing && !pdfUrl ? (
-          showDetectionsReview && reviewImages.length > 0 ? (
+          showDetectionsReview &&
+          (reviewImages.length > 0 || planReviewImages.length > 0 || activeRoofOnlyOffer) ? (
             <DetectionsReviewEditor
               offerId={offerId ?? undefined}
-              images={reviewImages}
+              images={reviewImages.length > 0 ? reviewImages : planReviewImages}
+              roofImages={roofReviewImages.length > 0 ? roofReviewImages : undefined}
+              roofOnlyOffer={activeRoofOnlyOffer}
               onConfirm={async () => {
                 detectionsReviewApprovedRef.current = true
+                roofReviewApprovedRef.current = true
                 setShowDetectionsReview(false)
                 setReviewImages([])
+                setRoofReviewImages([])
                 window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
-                if (offerId) {
-                  // Nu blocăm UI; aprobarea e best-effort în background.
-                  void apiFetch(`/offers/${offerId}/compute/detections-review-approved`, { method: 'POST', timeoutMs: 6000 }).catch(() => {})
-                }
+                window.dispatchEvent(new CustomEvent('offer:roof-review-approved'))
               }}
               onCancel={() => setShowCancelConfirm(true)}
             />
-          ) : showRoofReview && (roofReviewImages.length > 0 || planReviewImages.length > 0) ? (
-            <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden self-stretch">
-              <RoofReviewEditor
-                offerId={offerId ?? undefined}
-                images={roofReviewImages.length > 0 ? roofReviewImages : planReviewImages}
-                onConfirm={async () => {
-                  setShowRoofReview(false)
-                  setRoofReviewImages([])
-                  window.dispatchEvent(new CustomEvent('offer:roof-review-approved'))
-                  if (offerId) {
-                    // Nu blocăm UI; aprobarea e best-effort în background.
-                    void apiFetch(`/offers/${offerId}/compute/roof-review-approved`, { method: 'POST', timeoutMs: 6000 }).catch(() => {})
-                  }
-                }}
-                onCancel={() => setShowCancelConfirm(true)}
-              />
-            </div>
           ) : (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 page-enter" style={{ minHeight: '68vh' }}>
             <img 
@@ -1883,11 +1878,16 @@ export default function StepWizard() {
                   setForm={(v, shouldAutosave = false) => {
                     ensureOffer().catch(() => {})
                     const syncWinterBalkone = (next: Record<string, any>) => {
-                      if (typeof next.hasWintergarden !== 'undefined' || typeof next.hasBalkone !== 'undefined') {
+                      if (
+                        typeof next.hasWintergarden !== 'undefined' ||
+                        typeof next.hasBalkone !== 'undefined' ||
+                        typeof next.hasGarage !== 'undefined'
+                      ) {
                         structuraWinterBalkoneRef.current = {
                           ...structuraWinterBalkoneRef.current,
                           ...(typeof next.hasWintergarden !== 'undefined' && { hasWintergarden: next.hasWintergarden }),
                           ...(typeof next.hasBalkone !== 'undefined' && { hasBalkone: next.hasBalkone }),
+                          ...(typeof next.hasGarage !== 'undefined' && { hasGarage: next.hasGarage }),
                         }
                         setWinterBalkoneFlags(prev => ({
                           hasWintergarden: typeof next.hasWintergarden !== 'undefined' ? next.hasWintergarden === true : prev.hasWintergarden,
@@ -3070,6 +3070,16 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
             />
             <span className="text-sm font-medium text-sun/90">Balkone vorhanden</span>
           </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none" htmlFor="struct-has-garage" data-field="hasGarage">
+            <input
+              id="struct-has-garage"
+              type="checkbox"
+              className="sun-checkbox cursor-pointer"
+              checked={form.hasGarage === true}
+              onChange={(e) => setForm((prev: Record<string, any>) => ({ ...prev, hasGarage: e.target.checked }))}
+            />
+            <span className="text-sm font-medium text-sun/90">Garage / Carport vorhanden</span>
+          </label>
         </div>
         </div>
       </div>
@@ -3114,6 +3124,9 @@ function DynamicFields({
           if (!hasFloorAboveGround) return null
         }
         if (stepKey === 'daemmungDachdeckung' && f.name === 'dachfensterTyp' && !asBool(form.dachfensterImDach)) {
+          return null
+        }
+        if (stepKey === 'ferestreUsi' && f.name === 'garageDoorType' && !asBool(form.hasGarage)) {
           return null
         }
         if (f.type === 'upload') {

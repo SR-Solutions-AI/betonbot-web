@@ -217,6 +217,12 @@
           "name": "hasBalkone",
           "label": "Balkone vorhanden",
           "tag": "has_balkone"
+        },
+        {
+          "type": "bool",
+          "name": "hasGarage",
+          "label": "Garage / Carport vorhanden",
+          "tag": "has_garage"
         }
       ],
       "priceSections": [
@@ -719,6 +725,18 @@
         },
         {
           "type": "select",
+          "name": "garageDoorType",
+          "label": "Garagentor Typ",
+          "options": [
+            "Sektionaltor Standard",
+            "Sektionaltor Premium",
+            "Rolltor"
+          ],
+          "tag": "garage_door_type",
+          "optional": true
+        },
+        {
+          "type": "select",
           "name": "turhohe",
           "label": "Türhöhe (nur für Flächenberechnung)",
           "options": [
@@ -726,20 +744,8 @@
             "Erhöht / Sondermaß (2,2+ m)"
           ],
           "tag": "door_height"
-        },
-        {
-          "type": "select",
-          "name": "treppeTyp",
-          "label": "Treppentyp (Preis pro Stück)",
-          "options": [
-            "Standard",
-            "Holz",
-            "Beton",
-            "Metall",
-            "Sonder"
-          ],
-          "tag": "stairs_type"
         }
+
       ],
       "priceSections": [
         {

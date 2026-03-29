@@ -50,6 +50,11 @@ type PolygonCanvasProps = {
   /** tab=doors: desenează mai întâi poligoanele din `rooms` ca fundal (ex. Dachflächen + Dachfenster). */
   showRoomPolygonsUnderDoors?: boolean
   className?: string
+  /**
+   * Când devine true după ce containerul era ascuns (ex. tab Dach cu display:none), forțează recalcul fit.
+   * Altfel getBoundingClientRect() rămâne 0×0 și planul pare negru până la resize/refresh.
+   */
+  layoutActive?: boolean
 }
 
 const HANDLE_R = 6
@@ -132,6 +137,7 @@ export function DetectionsPolygonCanvas({
   showRoomPolygonsUnderDoors = false,
   newDoorType = 'door',
   className = '',
+  layoutActive = true,
 }: PolygonCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [fit, setFit] = useState<{ scale: number; offX: number; offY: number; cw: number; ch: number } | null>(null)
@@ -224,7 +230,7 @@ export function DetectionsPolygonCanvas({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !imageWidth || !imageHeight) return
+    if (!canvas || !imageWidth || !imageHeight || !layoutActive) return
     const handleResize = () => {
       const dpr = window.devicePixelRatio || 1
       const rect = canvas.getBoundingClientRect()
@@ -239,7 +245,7 @@ export function DetectionsPolygonCanvas({
     requestAnimationFrame(handleResize)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [imageWidth, imageHeight, recomputeFit])
+  }, [imageWidth, imageHeight, recomputeFit, layoutActive])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current

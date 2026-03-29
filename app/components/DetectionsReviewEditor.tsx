@@ -6,10 +6,11 @@
  * - Tipuri uși/geamuri = doors_types.json (Gemini) + euristică aspect – aceeași clasificare ca în LiveFeed.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   LayoutGrid,
   DoorOpen,
+  Home,
   MousePointer2,
   Plus,
   Trash2,
@@ -19,6 +20,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
+import { RoofReviewEditor, type RoofReviewEditorHandle } from './RoofReviewEditor'
 import { apiFetch } from '../lib/supabaseClient'
 
 /** Unire vârfuri consecutive foarte apropiate (în px imagine) – la randarea poligoanelor prima dată. */
@@ -56,7 +58,7 @@ function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   return out.length >= 3 ? out : points
 }
 
-export type ReviewTab = 'rooms' | 'doors'
+export type ReviewTab = 'rooms' | 'doors' | 'roof'
 
 export type ReviewImage = { url: string; caption?: string }
 
@@ -73,7 +75,7 @@ type PlanData = {
 type DoorType = 'door' | 'window' | 'garage_door' | 'stairs'
 const isEditableOpeningType = (t?: string) => {
   const nt = normalizeDoorType(t)
-  return nt === 'door' || nt === 'window'
+  return nt === 'door' || nt === 'window' || nt === 'garage_door'
 }
 const round2 = (v: number) => Math.round(v * 100) / 100
 
@@ -121,6 +123,9 @@ function withAutoDoorDimensions(
 type DetectionsReviewEditorProps = {
   offerId?: string
   images: ReviewImage[]
+  /** Pentru tab-ul Dach: dacă lipsesc, se folosesc `images`. */
+  roofImages?: ReviewImage[]
+  roofOnlyOffer?: boolean
   onConfirm: () => void | Promise<void>
   onCancel: () => void
 }
@@ -128,6 +133,8 @@ type DetectionsReviewEditorProps = {
 export function DetectionsReviewEditor({
   offerId,
   images,
+  roofImages,
+  roofOnlyOffer = false,
   onConfirm,
   onCancel,
 }: DetectionsReviewEditorProps) {
@@ -150,6 +157,7 @@ export function DetectionsReviewEditor({
   const historyLimit = 50
   const skipNextPushRef = useRef(false)
   const plansDataRef = useRef<PlanData[]>(plansData)
+  const roofEditorRef = useRef<RoofReviewEditorHandle>(null)
   useEffect(() => {
     plansDataRef.current = plansData
   }, [plansData])
@@ -193,7 +201,26 @@ export function DetectionsReviewEditor({
   const currentPlan = plansData[planIndexClamped]
   // O imagine de bază per plan (fără poligoane); canvas-ul desenează rooms/doors din API
   const getBaseImageUrl = (planIdx: number) => images[planIdx]?.url ?? images[0]?.url
-  const getTabForPlan = (planIdx: number) => tabPerPlan[planIdx] ?? 'rooms'
+  const roofImgs = roofOnlyOffer && roofImages?.length ? roofImages : images
+
+  const plansDimKey =
+    plansData.length === 0
+      ? ''
+      : `${plansData.length}|${plansData.map((p) => `${Number(p.imageWidth) || 0}x${Number(p.imageHeight) || 0}`).join('|')}`
+  const roofEmbeddedSeeds = useMemo((): Array<{ imageWidth: number; imageHeight: number }> | undefined => {
+    if (roofOnlyOffer || plansData.length === 0) return undefined
+    return plansData.map((p) => ({
+      imageWidth: Number(p.imageWidth) || 0,
+      imageHeight: Number(p.imageHeight) || 0,
+    }))
+  }, [roofOnlyOffer, plansDimKey])
+  const getTabForPlan = useCallback(
+    (planIdx: number): ReviewTab => {
+      if (roofOnlyOffer) return 'roof'
+      return tabPerPlan[planIdx] ?? 'rooms'
+    },
+    [roofOnlyOffer, tabPerPlan],
+  )
   const setTabForPlan = (planIdx: number, t: ReviewTab) =>
     setTabPerPlan((prev) => ({ ...prev, [planIdx]: t }))
   useEffect(() => {
@@ -255,6 +282,37 @@ export function DetectionsReviewEditor({
     return () => { cancelled = true }
   }, [offerId, images.length])
 
+  const saveDetectionsToServer = useCallback(async (): Promise<boolean> => {
+    if (!offerId) return false
+    const snapshot = plansDataRef.current
+    if (snapshot.length === 0) return false
+    try {
+      const res = (await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plans: snapshot.map((p) => ({ rooms: p.rooms, doors: p.doors })),
+        }),
+      })) as { ok?: boolean }
+      return res?.ok === true
+    } catch (e) {
+      console.error('[DetectionsReviewEditor] PATCH detections-review-data failed', e)
+      return false
+    }
+  }, [offerId])
+
+  const detSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!offerId || loading || plansData.length === 0) return
+    if (detSaveDebounceRef.current) clearTimeout(detSaveDebounceRef.current)
+    detSaveDebounceRef.current = setTimeout(() => {
+      void saveDetectionsToServer()
+    }, 700)
+    return () => {
+      if (detSaveDebounceRef.current) clearTimeout(detSaveDebounceRef.current)
+    }
+  }, [plansData, offerId, loading, saveDetectionsToServer])
+
   const setRooms = useCallback((planIdx: number, rooms: RoomPolygon[]) => {
     setPlansData((prev) => {
       const next = [...prev]
@@ -275,26 +333,44 @@ export function DetectionsReviewEditor({
   }, [])
 
   const handleConfirm = useCallback(async () => {
-    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
-      Promise.race<T | null>([
-        p,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-      ])
-
-    if (offerId && plansData.length > 0) {
-      try {
-        // Nu blocăm UI pe rețea lentă: dăm un timeout scurt, iar salvarea poate continua best-effort.
-        void withTimeout(
-          apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              plans: plansData.map((p) => ({ rooms: p.rooms, doors: p.doors })),
-            }),
+    if (!offerId) {
+      await onConfirm()
+      return
+    }
+    await roofEditorRef.current?.flushSave()
+    try {
+      if (plansData.length > 0) {
+        await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plans: plansData.map((p) => ({ rooms: p.rooms, doors: p.doors })),
           }),
-          2500,
-        )
-      } catch (_) {}
+          timeoutMs: 20_000,
+        })
+      }
+    } catch {
+      alert('Speichern der Räume/Türen ist fehlgeschlagen. Bitte erneut versuchen.')
+      return
+    }
+    let detRes: { ok?: boolean; error?: string } = { ok: true }
+    try {
+      detRes = (await apiFetch(`/offers/${offerId}/compute/detections-review-approved`, {
+        method: 'POST',
+        timeoutMs: 20_000,
+      })) as { ok?: boolean; error?: string }
+    } catch {
+      alert('Bestätigung konnte nicht gesendet werden.')
+      return
+    }
+    if (detRes?.ok !== true) {
+      alert(typeof detRes?.error === 'string' && detRes.error ? detRes.error : 'Validierung fehlgeschlagen.')
+      return
+    }
+    try {
+      await apiFetch(`/offers/${offerId}/compute/roof-review-approved`, { method: 'POST', timeoutMs: 15_000 })
+    } catch {
+      // roof flag best-effort; engine poate depinde doar de detections flag
     }
     await onConfirm()
   }, [offerId, plansData, onConfirm])
@@ -305,6 +381,7 @@ export function DetectionsReviewEditor({
     pushHistory()
     const pi = planIndexClamped
     const activeTab = getTabForPlan(pi)
+    if (activeTab === 'roof') return
     setPlansData((prev) => {
       if (pi >= prev.length) return prev
       const plan = prev[pi]
@@ -447,7 +524,9 @@ export function DetectionsReviewEditor({
   }, [pendingNewDoorBbox, planIndexClamped, plansData, newDoorDims, newDoorType, pushHistory, setDoors])
 
   const toolHint =
-    tool === 'select' && activeTab === 'doors'
+    activeTab === 'roof'
+      ? ''
+      : tool === 'select' && activeTab === 'doors'
       ? 'Element wählen und ziehen zum Verschieben'
       : tool === 'select'
       ? 'Auf Element klicken und ziehen zum Verschieben'
@@ -470,14 +549,18 @@ export function DetectionsReviewEditor({
     setRooms(planIdx, plan.rooms.map((r, i) => i !== polyIndex ? r : { points: newPts }))
   }, [plansData, setRooms, pushHistory])
 
+  const showRoofWorkspace = roofOnlyOffer || activeTab === 'roof'
+  const showRoomsCanvas = !roofOnlyOffer && activeTab !== 'roof' && plansData.length > 0
+
   return (
     <div className="relative w-full flex flex-col items-stretch gap-3 flex-1 min-h-0">
       <div className="shrink-0 px-2 pt-1 pb-1">
         <h2 className="text-white font-semibold text-base text-center">
-          Erkennung prüfen – Räume und Fenster/Türen
+          {roofOnlyOffer ? 'Dach prüfen' : 'Erkennung prüfen – Räume, Fenster/Türen und Dach'}
         </h2>
       </div>
 
+      {!roofOnlyOffer && activeTab !== 'roof' && (
       <div className="shrink-0 flex flex-wrap items-center justify-center gap-3 px-2 py-1">
         <span className="text-sand/60 text-xs">Werkzeuge:</span>
         <div className="flex flex-col items-center gap-0.5">
@@ -537,6 +620,7 @@ export function DetectionsReviewEditor({
           <span className="text-[10px] text-sand/60">Rückgängig</span>
         </div>
       </div>
+      )}
 
       {(tool === 'add' && activeTab === 'doors') && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
@@ -627,7 +711,7 @@ export function DetectionsReviewEditor({
       )}
 
       {/* Tab-uri etaj: Beci, Parter, Etaj 1, etc. */}
-      {!loading && plansData.length > 0 && n > 1 && (
+      {!loading && n > 1 && (plansData.length > 0 || roofOnlyOffer) && (
         <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
           {Array.from({ length: n }).map((_, i) => {
             const label = floorLabels[i] ?? `Plan ${i + 1}`
@@ -659,7 +743,22 @@ export function DetectionsReviewEditor({
               </div>
             </div>
           </div>
-        ) : plansData.length === 0 ? (
+        ) : roofOnlyOffer && offerId && roofImgs.length > 0 && !loading ? (
+          <div className="w-full flex flex-col flex-1 min-h-[42vh] min-w-0">
+            <RoofReviewEditor
+              key={offerId ? `roof-embed-${offerId}` : 'roof-embed'}
+              ref={roofEditorRef}
+              embedded
+              embedPlanIndex={planIndexClamped}
+              offerId={offerId}
+              images={roofImgs}
+              embeddedPlanSeeds={roofEmbeddedSeeds}
+              layoutActive
+              onConfirm={() => {}}
+              onCancel={() => {}}
+            />
+          </div>
+        ) : plansData.length === 0 && !roofOnlyOffer ? (
           <div className="flex flex-wrap gap-4 justify-center">
             {images.slice(0, n).map((img, i) => (
               <div key={`img-${i}`} className="flex flex-col items-center gap-1">
@@ -678,9 +777,10 @@ export function DetectionsReviewEditor({
             const plan = plansData[i]
             const imageUrlForPlan = getBaseImageUrl(i)
             const planTab = getTabForPlan(i)
-            if (!plan || !imageUrlForPlan) return null
+            if (!roofOnlyOffer && (!plan || !imageUrlForPlan)) return null
             return (
-              <div key={`plan-${i}`} className="w-full flex flex-col gap-1.5">
+              <div key={`plan-${i}`} className="w-full flex flex-col gap-1.5 flex-1 min-h-0 min-w-0">
+                {!roofOnlyOffer && plan && imageUrlForPlan && (
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <h3 className="text-white font-medium text-sm">
                     {floorLabels[i] ?? `Plan ${i + 1}`}
@@ -702,8 +802,34 @@ export function DetectionsReviewEditor({
                       <DoorOpen size={14} strokeWidth={2} />
                       <span>Fenster / Türen</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTabForPlan(i, 'roof'); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'roof' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                    >
+                      <Home size={14} strokeWidth={2} />
+                      <span>Dach</span>
+                    </button>
                   </div>
                 </div>
+                )}
+                {offerId && roofImgs.length > 0 && (
+                  <div className={showRoofWorkspace ? 'w-full flex flex-col flex-1 min-h-[42vh] min-w-0' : 'hidden'}>
+                    <RoofReviewEditor
+                      key={offerId ? `roof-embed-${offerId}` : 'roof-embed'}
+                      ref={roofEditorRef}
+                      embedded
+                      embedPlanIndex={planIndexClamped}
+                      offerId={offerId}
+                      images={roofImgs}
+                      embeddedPlanSeeds={roofEmbeddedSeeds}
+                      layoutActive={showRoofWorkspace}
+                      onConfirm={() => {}}
+                      onCancel={() => {}}
+                    />
+                  </div>
+                )}
+                {showRoomsCanvas && plan && imageUrlForPlan && (
                 <div className="relative w-full min-h-[38vh] max-h-[50vh] rounded-lg overflow-hidden border border-[#FF9F0F]/50 ring-1 ring-[#FF9F0F]/30 bg-black/30">
                   {(pendingNewRoomPoints || pendingNewDoorBbox || (roomTypePopoverIndex !== null && plansData[planIndexClamped]?.rooms[roomTypePopoverIndex])) && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
@@ -787,7 +913,7 @@ export function DetectionsReviewEditor({
                     imageHeight={plan.imageHeight}
                     rooms={plan.rooms}
                     doors={plan.doors}
-                    tab={planTab}
+                    tab={planTab === 'doors' ? 'doors' : 'rooms'}
                     tool={tool}
                     selectedIndex={selectedPolygonIndex}
                     newPoints={tool === 'add' ? newPolygonPoints : null}
@@ -857,6 +983,7 @@ export function DetectionsReviewEditor({
                     </div>
                   )}
                 </div>
+                )}
               </div>
             )
           })()
