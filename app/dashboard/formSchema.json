@@ -286,8 +286,8 @@
           "name": "inaltimeEtaje",
           "type": "select",
           "labels": {
-            "ro": "Geschosshöhe",
-            "de": "Geschosshöhe",
+            "ro": "Raumhöhe",
+            "de": "Raumhöhe",
             "en": "Floor height"
           },
           "options": [
@@ -538,31 +538,13 @@
           ]
         },
         {
-          "name": "turhohe",
-          "type": "select",
+          "name": "garagentorGewuenscht",
+          "type": "bool",
           "labels": {
-            "ro": "Türhöhe",
-            "de": "Türhöhe",
-            "en": "Door height"
-          },
-          "options": [
-            {
-              "value": "Standard (2m)",
-              "labels": {
-                "ro": "Standard (2m)",
-                "de": "Standard (2m)",
-                "en": "Standard (2m)"
-              }
-            },
-            {
-              "value": "Erhöht / Sondermaß (2,2+ m)",
-              "labels": {
-                "ro": "Erhöht / Sondermaß (2,2+ m)",
-                "de": "Erhöht / Sondermaß (2,2+ m)",
-                "en": "Raised / custom size (2.2+ m)"
-              }
-            }
-          ]
+            "ro": "Garagentor dorit",
+            "de": "Garagentor gewünscht",
+            "en": "Garage door desired"
+          }
         }
       ]
     },

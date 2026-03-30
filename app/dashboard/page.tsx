@@ -57,14 +57,15 @@ export default function Home() {
     try {
       const raw = typeof window !== 'undefined' ? sessionStorage.getItem('holzbot_dashboard_offer') : null
       if (!raw) return
-      const data = JSON.parse(raw) as { offerId?: string; runId?: string | null; isComputing?: boolean }
+      const data = JSON.parse(raw) as { offerId?: string; runId?: string | null; isComputing?: boolean; flow?: 'neubau' | 'dachstuhl' }
       const offerId = data?.offerId
       if (!offerId) return
       const runId = data?.runId ?? null
       const isComputing = data?.isComputing === true
+      const flow = data?.flow === 'dachstuhl' || data?.flow === 'neubau' ? data.flow : undefined
       const timer = window.setTimeout(() => {
         if (isComputing && runId) {
-          window.dispatchEvent(new CustomEvent('offer:compute-started', { detail: { offerId, runId } }))
+          window.dispatchEvent(new CustomEvent('offer:compute-started', { detail: { offerId, runId, ...(flow ? { flow } : {}) } }))
         } else {
           window.dispatchEvent(new CustomEvent('offer:selected', { detail: { offerId } }))
         }

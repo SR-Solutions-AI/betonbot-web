@@ -234,7 +234,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       return
     }
     setPendingNewRoofWindowBbox(clipped)
-    setNewRoofWindowDims({ width: '0.9', height: '0.9' })
+    setNewRoofWindowDims({ width: '90', height: '90' })
     setNewPolygonPoints(null)
   }, [newPolygonPoints, roofSurfaceTab, planIndex])
 
@@ -585,8 +585,10 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
 
   const handleCreateRoofWindow = useCallback(() => {
     if (!pendingNewRoofWindowBbox || !currentPlan) return
-    const width = Math.round(Number(newRoofWindowDims.width) * 100) / 100
-    const height = Math.round(Number(newRoofWindowDims.height) * 100) / 100
+    const wCm = Number(String(newRoofWindowDims.width).replace(',', '.'))
+    const hCm = Number(String(newRoofWindowDims.height).replace(',', '.'))
+    const width = Math.round((wCm / 100) * 1000) / 1000
+    const height = Math.round((hCm / 100) * 1000) / 1000
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
     if (!bboxFullyInsideSomeRoofRect(pendingNewRoofWindowBbox, currentPlan.rectangles)) return
     pushHistory()
@@ -621,11 +623,61 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       ? currentPlan.doors[selectedPolygonIndex]
       : null
 
+  const updateSelectedRoofWindowCm = useCallback(
+    (axis: 'width_m' | 'height_m', raw: string) => {
+      if (selectedPolygonIndex === null || !currentPlan || selectedPolygonIndex >= currentPlan.doors.length) return
+      const v = Number(String(raw).replace(',', '.'))
+      if (!Number.isFinite(v) || v <= 0) return
+      const m = Math.round((v / 100) * 1000) / 1000
+      pushHistory()
+      setPlanDoors(
+        planIndexClamped,
+        currentPlan.doors.map((d, i) =>
+          i !== selectedPolygonIndex ? d : { ...d, [axis]: m, dimensionsEdited: true },
+        ),
+      )
+    },
+    [selectedPolygonIndex, currentPlan, planIndexClamped, pushHistory, setPlanDoors],
+  )
+
+  const roofWindowDimsToolbar =
+    roofSurfaceTab === 'windows' && tool === 'select' && selectedRoofWindow ? (
+      <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
+        <span className="text-sand/70 text-xs">Maße (cm):</span>
+        <span className="text-sand/70 text-xs">B:</span>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={
+            typeof selectedRoofWindow.width_m === 'number' && Number.isFinite(selectedRoofWindow.width_m)
+              ? Math.round(selectedRoofWindow.width_m * 100)
+              : ''
+          }
+          onChange={(e) => updateSelectedRoofWindowCm('width_m', e.target.value)}
+          className="w-[84px] rounded bg-black/40 border border-white/20 px-2 py-1 text-xs text-white"
+        />
+        <span className="text-sand/70 text-xs">L:</span>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={
+            typeof selectedRoofWindow.height_m === 'number' && Number.isFinite(selectedRoofWindow.height_m)
+              ? Math.round(selectedRoofWindow.height_m * 100)
+              : ''
+          }
+          onChange={(e) => updateSelectedRoofWindowCm('height_m', e.target.value)}
+          className="w-[84px] rounded bg-black/40 border border-white/20 px-2 py-1 text-xs text-white"
+        />
+      </div>
+    ) : null
+
   return (
     <div className="relative w-full flex flex-col flex-1 min-h-0 h-full max-h-full overflow-hidden gap-2">
       {!embedded && (
         <div className="shrink-0 px-2 pt-1 pb-0">
-          <h2 className="text-white font-semibold text-base text-center">Dach prüfen – Rechtecke je Etage</h2>
+          <h2 className="text-white font-semibold text-base text-center">Dach konfigurieren</h2>
         </div>
       )}
 
@@ -713,6 +765,8 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
         </button>
       </div>
 
+      {roofWindowDimsToolbar}
+
       {!loading && n > 1 && !embedded && (
         <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
           {Array.from({ length: n }).map((_, i) => (
@@ -745,27 +799,33 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               <div className="relative w-full flex-[1_1_0%] min-h-[96px] rounded-lg overflow-hidden border border-[#FF9F0F]/50 ring-1 ring-[#FF9F0F]/30 bg-black/30">
                 {pendingNewRoofWindowBbox && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 rounded-lg">
-                    <div className="w-[280px] rounded-xl border border-[#FF9F0F]/60 bg-[#1a1a1a] p-3 space-y-2">
-                      <div className="text-white text-sm font-medium text-center">Dachfenster – Maße (m)</div>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min={0.01}
-                          step={0.01}
-                          placeholder="Breite"
-                          value={newRoofWindowDims.width}
-                          onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, width: e.target.value }))}
-                          className="flex-1 rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
-                        />
-                        <input
-                          type="number"
-                          min={0.01}
-                          step={0.01}
-                          placeholder="Höhe"
-                          value={newRoofWindowDims.height}
-                          onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, height: e.target.value }))}
-                          className="flex-1 rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
-                        />
+                    <div className="w-[300px] rounded-xl border border-[#FF9F0F]/60 bg-[#1a1a1a] p-3 space-y-2">
+                      <div className="text-white text-sm font-medium text-center">Dachfenster – Maße (cm)</div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-sand/70 text-xs">
+                          Breite (cm)
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            placeholder="z. B. 90"
+                            value={newRoofWindowDims.width}
+                            onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, width: e.target.value }))}
+                            className="mt-0.5 w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
+                          />
+                        </label>
+                        <label className="text-sand/70 text-xs">
+                          Länge (cm)
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            placeholder="z. B. 120"
+                            value={newRoofWindowDims.height}
+                            onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, height: e.target.value }))}
+                            className="mt-0.5 w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
+                          />
+                        </label>
                       </div>
                       <div className="flex justify-end gap-2 pt-1">
                         <button
@@ -902,17 +962,10 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
         <div className="shrink-0 rounded-xl border border-[#FF9F0F]/40 bg-black/25 p-2 space-y-2">
           {roofSurfaceTab === 'windows' ? (
             <div className="text-sm text-white space-y-1">
-              <p className="text-sand/80 font-normal">
-                Dachfenster nur auf den markierten Dachflächen (Rechteck ziehen, dann Maße). Bearbeiten: Werkzeuge wie
-                bei Räumen.
+              <p className="text-sand/80 text-xs font-normal leading-snug">
+                Dachfenster nur auf den markierten Dachflächen (Rechteck ziehen, dann Maße in cm). Gewählt: Maße oben
+                bearbeiten.
               </p>
-              {selectedRoofWindow && (
-                <p className="text-xs text-sand/60">
-                  Ausgewählt: Fenster{' '}
-                  {typeof selectedRoofWindow.width_m === 'number' ? `${selectedRoofWindow.width_m.toFixed(2)} × ` : ''}
-                  {typeof selectedRoofWindow.height_m === 'number' ? `${selectedRoofWindow.height_m.toFixed(2)} m` : ''}
-                </p>
-              )}
             </div>
           ) : (
             <>

@@ -184,7 +184,7 @@
         {
           "type": "select",
           "name": "inaltimeEtaje",
-          "label": "Geschosshöhe",
+          "label": "Raumhöhe",
           "options": [
             "Standard (2,50 m)",
             "Komfort (2,70 m)",
@@ -274,8 +274,8 @@
           ]
         },
         {
-          "title": "Geschosshöhe",
-          "subtitle": "Geschosshöhen die Ihr Unternehmen anbietet.",
+          "title": "Raumhöhe",
+          "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
           "fieldTag": "floor_height",
           "variables": [
             {
@@ -1450,8 +1450,8 @@
             ]
           },
           {
-            "title": "Geschosshöhe",
-            "subtitle": "Geschosshöhen die Ihr Unternehmen anbietet.",
+            "title": "Raumhöhe",
+            "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
             "fieldTag": "floor_height",
             "variables": [
               {

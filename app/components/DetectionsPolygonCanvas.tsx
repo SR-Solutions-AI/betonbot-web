@@ -224,9 +224,13 @@ export function DetectionsPolygonCanvas({
     const offX = (cw - imageWidth * scale) / 2
     const offY = (ch - imageHeight * scale) / 2
     setFit({ scale, offX, offY, cw, ch })
+  }, [imageWidth, imageHeight])
+
+  /** Zoom/pan nur bei neuem Plan/Bild zurücksetzen — nicht bei Canvas-Resize (Werkzeug-Zeilen ändern die Höhe). */
+  useEffect(() => {
     setUserZoom(1)
     setUserPan({ x: 0, y: 0 })
-  }, [imageWidth, imageHeight])
+  }, [imageUrl, imageWidth, imageHeight])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -822,12 +826,21 @@ export function DetectionsPolygonCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel)
   }, [handleWheel])
 
-  const cursor = tool === 'add' ? 'crosshair' : panning ? 'grabbing' : 'default'
+  const canvasCursor = (() => {
+    if (panning) return 'grabbing'
+    if (dragging?.kind === 'vertex' || dragging?.kind === 'edge' || dragging?.kind === 'poly') return 'move'
+    if (tool === 'add') return 'crosshair'
+    if (tool === 'remove') return 'default'
+    if (tool === 'edit') return 'default'
+    if (tool === 'select') return 'grab'
+    return 'default'
+  })()
+
   return (
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ width: '100%', height: '100%', cursor }}
+      style={{ width: '100%', height: '100%', cursor: canvasCursor }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

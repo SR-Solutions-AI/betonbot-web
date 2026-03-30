@@ -184,7 +184,7 @@
         {
           "type": "select",
           "name": "inaltimeEtaje",
-          "label": "Geschosshöhe",
+          "label": "Raumhöhe",
           "options": [
             "Standard (2,50 m)",
             "Komfort (2,70 m)",
@@ -217,12 +217,6 @@
           "name": "hasBalkone",
           "label": "Balkone vorhanden",
           "tag": "has_balkone"
-        },
-        {
-          "type": "bool",
-          "name": "hasGarage",
-          "label": "Garage / Carport vorhanden",
-          "tag": "has_garage"
         }
       ],
       "priceSections": [
@@ -324,8 +318,8 @@
           ]
         },
         {
-          "title": "Geschosshöhe",
-          "subtitle": "Geschosshöhen die Ihr Unternehmen anbietet.",
+          "title": "Raumhöhe",
+          "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
           "fieldTag": "floor_height",
           "variables": [
             {
@@ -702,7 +696,7 @@
         {
           "type": "select",
           "name": "doorMaterialInterior",
-          "label": "Material Innentüren",
+          "label": "Innentüren (Preis pro Stück)",
           "options": [
             "Standard",
             "Holz",
@@ -714,7 +708,7 @@
         {
           "type": "select",
           "name": "doorMaterialExterior",
-          "label": "Material Außentüren",
+          "label": "Außentüren (Preis pro Stück)",
           "options": [
             "Standard",
             "Holz",
@@ -724,26 +718,24 @@
           "tag": "door_material_exterior"
         },
         {
-          "type": "select",
-          "name": "garageDoorType",
-          "label": "Garagentor Typ",
-          "options": [
-            "Sektionaltor Standard",
-            "Sektionaltor Premium",
-            "Rolltor"
-          ],
-          "tag": "garage_door_type",
-          "optional": true
+          "type": "bool",
+          "name": "garagentorGewuenscht",
+          "label": "Garagentor gewünscht (Preis pro Stück)",
+          "tag": "garage_door_desired"
         },
         {
           "type": "select",
-          "name": "turhohe",
-          "label": "Türhöhe (nur für Flächenberechnung)",
+          "name": "garageDoorType",
+          "label": "Garagentor",
           "options": [
-            "Standard (2m)",
-            "Erhöht / Sondermaß (2,2+ m)"
+            "Sektionaltor Standard",
+            "Sektionaltor Premium",
+            "Rolltor",
+            "Schwingtor",
+            "Seiten-Sektionaltor"
           ],
-          "tag": "door_height"
+          "tag": "garage_door_type",
+          "optional": true
         }
 
       ],
@@ -775,63 +767,100 @@
         },
         {
           "title": "Innentüren",
-          "subtitle": "Preis pro m² je nach Material Innentüren",
+          "subtitle": "Stückpreis je nach gewählter Innentür",
           "fieldTag": "door_material_interior",
           "variables": [
             {
               "key": "door_interior_standard",
-              "label": "Standard (€/m²)",
-              "unit": "€/m²",
-              "value": 380
+              "label": "Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 320
             },
             {
               "key": "door_interior_holz",
-              "label": "Holz (€/m²)",
-              "unit": "€/m²",
-              "value": 420
+              "label": "Holz (€/Stück)",
+              "unit": "€/Stück",
+              "value": 580
             },
             {
               "key": "door_interior_glas",
-              "label": "Glas (€/m²)",
-              "unit": "€/m²",
-              "value": 520
+              "label": "Glas (€/Stück)",
+              "unit": "€/Stück",
+              "value": 890
             },
             {
               "key": "door_interior_weiss_lackiert",
-              "label": "Weiß lackiert (€/m²)",
-              "unit": "€/m²",
-              "value": 400
+              "label": "Weiß lackiert (€/Stück)",
+              "unit": "€/Stück",
+              "value": 420
             }
           ]
         },
         {
           "title": "Außentüren",
-          "subtitle": "Preis pro m² je nach Material Außentüren",
+          "subtitle": "Stückpreis je nach gewählter Außentür",
           "fieldTag": "door_material_exterior",
           "variables": [
             {
               "key": "door_exterior_standard",
-              "label": "Standard (€/m²)",
-              "unit": "€/m²",
-              "value": 480
+              "label": "Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1450
             },
             {
               "key": "door_exterior_holz",
-              "label": "Holz (€/m²)",
-              "unit": "€/m²",
-              "value": 550
+              "label": "Holz (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2200
             },
             {
               "key": "door_exterior_aluminium",
-              "label": "Aluminium (€/m²)",
-              "unit": "€/m²",
-              "value": 620
+              "label": "Aluminium (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2800
             },
             {
               "key": "door_exterior_kunststoff",
-              "label": "Kunststoff (€/m²)",
-              "unit": "€/m²",
-              "value": 420
+              "label": "Kunststoff (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1600
+            }
+          ]
+        },
+        {
+          "title": "Garagentor",
+          "subtitle": "Stückpreis Garagentor (nur wenn „Garagentor gewünscht“)",
+          "fieldTag": "garage_door_type",
+          "variables": [
+            {
+              "key": "garage_door_sektional_standard_stueck",
+              "label": "Sektionaltor Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2400
+            },
+            {
+              "key": "garage_door_sektional_premium_stueck",
+              "label": "Sektionaltor Premium (€/Stück)",
+              "unit": "€/Stück",
+              "value": 3200
+            },
+            {
+              "key": "garage_door_rolltor_stueck",
+              "label": "Rolltor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2100
+            },
+            {
+              "key": "garage_door_schwingtor_stueck",
+              "label": "Schwingtor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1800
+            },
+            {
+              "key": "garage_door_seiten_sektional_stueck",
+              "label": "Seiten-Sektionaltor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 3800
             }
           ]
         }
@@ -1543,8 +1572,8 @@
             ]
           },
           {
-            "title": "Geschosshöhe",
-            "subtitle": "Geschosshöhen die Ihr Unternehmen anbietet.",
+            "title": "Raumhöhe",
+            "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
             "fieldTag": "floor_height",
             "variables": [
               {
@@ -1842,63 +1871,100 @@
           },
           {
             "title": "Innentüren",
-            "subtitle": "Preis pro m² je nach Material Innentüren",
+            "subtitle": "Stückpreis je nach gewählter Innentür",
             "fieldTag": "door_material_interior",
             "variables": [
               {
                 "key": "door_interior_standard",
-                "label": "Standard (€/m²)",
-                "unit": "€/m²",
-                "value": 380
+                "label": "Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 320
               },
               {
                 "key": "door_interior_holz",
-                "label": "Holz (€/m²)",
-                "unit": "€/m²",
-                "value": 420
+                "label": "Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 580
               },
               {
                 "key": "door_interior_glas",
-                "label": "Glas (€/m²)",
-                "unit": "€/m²",
-                "value": 520
+                "label": "Glas (€/Stück)",
+                "unit": "€/Stück",
+                "value": 890
               },
               {
                 "key": "door_interior_weiss_lackiert",
-                "label": "Weiß lackiert (€/m²)",
-                "unit": "€/m²",
-                "value": 400
+                "label": "Weiß lackiert (€/Stück)",
+                "unit": "€/Stück",
+                "value": 420
               }
             ]
           },
           {
             "title": "Außentüren",
-            "subtitle": "Preis pro m² je nach Material Außentüren",
+            "subtitle": "Stückpreis je nach gewählter Außentür",
             "fieldTag": "door_material_exterior",
             "variables": [
               {
                 "key": "door_exterior_standard",
-                "label": "Standard (€/m²)",
-                "unit": "€/m²",
-                "value": 480
+                "label": "Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1450
               },
               {
                 "key": "door_exterior_holz",
-                "label": "Holz (€/m²)",
-                "unit": "€/m²",
-                "value": 550
+                "label": "Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2200
               },
               {
                 "key": "door_exterior_aluminium",
-                "label": "Aluminium (€/m²)",
-                "unit": "€/m²",
-                "value": 620
+                "label": "Aluminium (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2800
               },
               {
                 "key": "door_exterior_kunststoff",
-                "label": "Kunststoff (€/m²)",
-                "unit": "€/m²",
-                "value": 420
+                "label": "Kunststoff (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1600
+              }
+            ]
+          },
+          {
+            "title": "Garagentor",
+            "subtitle": "Stückpreis Garagentor (nur wenn „Garagentor gewünscht“)",
+            "fieldTag": "garage_door_type",
+            "variables": [
+              {
+                "key": "garage_door_sektional_standard_stueck",
+                "label": "Sektionaltor Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2400
+              },
+              {
+                "key": "garage_door_sektional_premium_stueck",
+                "label": "Sektionaltor Premium (€/Stück)",
+                "unit": "€/Stück",
+                "value": 3200
+              },
+              {
+                "key": "garage_door_rolltor_stueck",
+                "label": "Rolltor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2100
+              },
+              {
+                "key": "garage_door_schwingtor_stueck",
+                "label": "Schwingtor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1800
+              },
+              {
+                "key": "garage_door_seiten_sektional_stueck",
+                "label": "Seiten-Sektionaltor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 3800
               }
             ]
           }

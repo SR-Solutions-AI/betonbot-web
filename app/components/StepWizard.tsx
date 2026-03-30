@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } fr
 import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
 import { apiFetch } from '../lib/supabaseClient'
+import { inferOfferFlow } from '../lib/offerFlow'
 import { buildFormStepsFromJson, buildPriceSectionsFromFormStepsJson } from '../../lib/buildFormFromJson'
 import holzbauFormStepsJson from '../../data/form-schema/holzbau-form-steps.json'
 import { type Field, formStepsDachstuhl } from '../dashboard/formConfig'
@@ -19,7 +20,18 @@ type Drafts = Record<string, Record<string, any>>
 type Errors = Record<string, string | undefined>
 
 // Timpul minim (în ms) pentru care afișăm animația de loading/progres
-const MIN_ANIMATION_TIME = 5000; 
+const MIN_ANIMATION_TIME = 5000;
+
+/** Ofertă doar acoperiș (Dachstuhl): meta, wizard_package sau tip ofertă slug. */
+function isRoofOnlyOfferFromMeta(
+  meta: { roof_only_offer?: boolean | null; wizard_package?: string | null } | null | undefined,
+  offerTypeSlug?: string | null,
+): boolean {
+  if (meta?.roof_only_offer === true) return true
+  if ((meta?.wizard_package ?? '').toString().toLowerCase() === 'dachstuhl') return true
+  if ((offerTypeSlug ?? '').toString().toLowerCase() === 'dachstuhl') return true
+  return false
+}
 
 /* ================== DATE ACOPERIȘ (grid 4x6) ================== */
 const ROOF_TYPES = [
@@ -117,7 +129,9 @@ const DE = {
     'Fotografii / randări': 'Fotos / Renderings',
     'Documentație suplimentară': 'Zusätzliche Dokumentation',
     'Choose File': 'Datei auswählen',
-    'no file selected': 'keine Datei ausgewählt'
+    'no file selected': 'keine Datei ausgewählt',
+
+    inaltimeEtaje: 'Raumhöhe',
   },
 
   optionsGlobal: {
@@ -244,6 +258,7 @@ function tStepLabel(key: string, fallback: string) {
   return fromJson ? fallback : (DE.steps as any)?.[key] ?? key
 }
 function tFieldLabel(stepKey: string, fieldName: string, fallback: string | undefined) {
+  if (fieldName === 'inaltimeEtaje') return 'Raumhöhe'
   const fromJson = typeof fallback === 'string' && fallback.trim()
   if (fromJson) return fallback
   const fb = fieldName ?? ''
@@ -295,7 +310,7 @@ function validateGeneric(stepKey: string, fields: Field[], form: Record<string, 
       if (fieldName === 'wintergartenTyp' && !asBool(form.hasWintergarden)) return true
       if (fieldName === 'balkonTyp' && !asBool(form.hasBalkone)) return true
     }
-    if (stepKey === 'ferestreUsi' && fieldName === 'garageDoorType' && !asBool(form.hasGarage)) return true
+    if (stepKey === 'ferestreUsi' && fieldName === 'garageDoorType' && !asBool(form.garagentorGewuenscht)) return true
     if ((stepKey === 'sistemConstructiv' || stepKey === 'structuraCladirii' || stepKey === 'materialeFinisaj') && fieldName === 'tipAcoperis') return true
     if (stepKey === 'structuraCladirii' && fieldName === 'floorsNumber') return true
     if (!nivelOferta) return false
@@ -549,8 +564,6 @@ export default function StepWizard() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savingStepsRef = useRef<Set<string>>(new Set())
 
-  const saveDebounceRef = useRef<any>(null)
-  const lastSavedRef = useRef<string>('')
 
   const creatingRef = useRef(false)
   const [computing, setComputing] = useState(false)
@@ -595,10 +608,12 @@ export default function StepWizard() {
   const roofReviewApprovedRef = useRef(false)
   const [offerTypesBySlug, setOfferTypesBySlug] = useState<Record<string, string>>({})
   /** Ultima stare a checkbox-urilor Wintergarten/Balkone pe pasul Gebäudestruktur – ca debifarea să nu fie suprascrisă de effect. */
-  const structuraWinterBalkoneRef = useRef<{ hasWintergarden?: boolean; hasBalkone?: boolean; hasGarage?: boolean }>({})
+  const structuraWinterBalkoneRef = useRef<{ hasWintergarden?: boolean; hasBalkone?: boolean }>({})
   const stepsScrollContainerRef = useRef<HTMLDivElement>(null)
-  /** Pasul pentru care am rulat ultima încărcare – evită re-rularea effect-ului la fiecare re-render (Maximum update depth). */
-  const lastLoadedStepKeyRef = useRef<string | null>(null)
+  /** Invalidă GET /step în curs când se salvează sau se schimbă pasul/oferta – evită suprascrierea textului tastat. */
+  const stepLoadNonceRef = useRef(0)
+  /** Invalidă încărcarea ofertei când utilizatorul selectează altă ofertă înainte să termine request-urile. */
+  const offerSelectNonceRef = useRef(0)
   /** Sursă de adevăr pentru vizibilitatea pasului Wintergärten & Balkone – actualizat la toggle pe Gebäudestruktur. */
   const [winterBalkoneFlags, setWinterBalkoneFlags] = useState<{ hasWintergarden: boolean; hasBalkone: boolean }>({ hasWintergarden: false, hasBalkone: false })
 
@@ -636,7 +651,22 @@ export default function StepWizard() {
       const runFromUrl = url.searchParams.get('runId')
       if (!offerFromUrl) return
       if (runFromUrl) {
-        window.dispatchEvent(new CustomEvent('offer:compute-started', { detail: { offerId: offerFromUrl, runId: runFromUrl } }))
+        void apiFetch(`/offers/${encodeURIComponent(offerFromUrl)}`)
+          .then((o: any) => {
+            const meta = o?.meta ?? o?.offer?.meta
+            const slug = o?.offer_type_slug ?? o?.offer?.offer_type_slug
+            const flow = inferOfferFlow({ ...meta, offer_type_slug: slug })
+            window.dispatchEvent(
+              new CustomEvent('offer:compute-started', {
+                detail: { offerId: offerFromUrl, runId: runFromUrl, flow },
+              }),
+            )
+          })
+          .catch(() => {
+            window.dispatchEvent(
+              new CustomEvent('offer:compute-started', { detail: { offerId: offerFromUrl, runId: runFromUrl } }),
+            )
+          })
       } else {
         window.dispatchEvent(new CustomEvent('offer:selected', { detail: { offerId: offerFromUrl } }))
       }
@@ -654,11 +684,38 @@ export default function StepWizard() {
     if (!hasWG && !hasB) {
       steps = steps.filter((s: { key?: string }) => (s as any).key !== 'wintergaertenBalkone')
     }
-    const nivelRaw = (form.nivelOferta || form.sistemConstructiv?.nivelOferta || '').toString().trim().toLowerCase()
-    const isOnlyStructure = (nivelRaw.includes('rohbau') || nivelRaw.includes('tragwerk') || nivelRaw.includes('structură') || nivelRaw.includes('structura')) &&
-      !nivelRaw.includes('fenster') && !nivelRaw.includes('ferestre') && !nivelRaw.includes('completă') && !nivelRaw.includes('completa') && !nivelRaw.includes('schlüsselfertig')
-    const isStructurePlusWindows = (nivelRaw.includes('tragwerk') || nivelRaw.includes('structură') || nivelRaw.includes('structura')) &&
-      (nivelRaw.includes('fenster') || nivelRaw.includes('ferestre'))
+    // offer scope lives in drafts after leaving the step (mergeStepForm replaces form per step)
+    const nivelRaw = (
+      form.nivelOferta ||
+      form.sistemConstructiv?.nivelOferta ||
+      form.materialeFinisaj?.nivelOferta ||
+      drafts.sistemConstructiv?.nivelOferta ||
+      drafts.materialeFinisaj?.nivelOferta ||
+      ''
+    )
+      .toString()
+      .trim()
+      .toLowerCase()
+    const hasOpeningsInScope = nivelRaw.includes('fenster') || nivelRaw.includes('ferestre')
+    const isFullHouse =
+      nivelRaw.includes('completă') ||
+      nivelRaw.includes('completa') ||
+      nivelRaw.includes('schlüsselfertig') ||
+      nivelRaw.includes('schlüsselfertiges haus')
+    const isOnlyStructure =
+      !hasOpeningsInScope &&
+      !isFullHouse &&
+      (nivelRaw.includes('rohbau') ||
+        nivelRaw.includes('tragwerk') ||
+        nivelRaw.includes('structură') ||
+        nivelRaw.includes('structura'))
+    const isStructurePlusWindows =
+      hasOpeningsInScope &&
+      !isFullHouse &&
+      (nivelRaw.includes('rohbau') ||
+        nivelRaw.includes('tragwerk') ||
+        nivelRaw.includes('structură') ||
+        nivelRaw.includes('structura'))
     if (isOnlyStructure || isStructurePlusWindows) {
       steps = steps.filter((s: { key?: string }) => {
         const key = (s as any).key
@@ -669,7 +726,16 @@ export default function StepWizard() {
       }
     }
     return steps
-  }, [dynamicSteps, winterBalkoneFlags.hasWintergarden, winterBalkoneFlags.hasBalkone, form.nivelOferta, form.sistemConstructiv])
+  }, [
+    dynamicSteps,
+    winterBalkoneFlags.hasWintergarden,
+    winterBalkoneFlags.hasBalkone,
+    form.nivelOferta,
+    form.sistemConstructiv,
+    form.materialeFinisaj,
+    drafts.sistemConstructiv,
+    drafts.materialeFinisaj,
+  ])
 
   // -- UseMemo hooks (safe to run even if visibleSteps is empty)
   const step = visibleSteps[idx]
@@ -873,11 +939,9 @@ export default function StepWizard() {
       if (creationId) lastProcessedCreationId.current = creationId
       pendingOfferTypeIdRef.current = offerTypeId ?? null
 
-      if (saveDebounceRef.current) {
-        clearTimeout(saveDebounceRef.current)
-        saveDebounceRef.current = null
-      }
-      lastSavedRef.current = ''
+      // Anulează încărcarea unei oferte selectate înainte (click rapid: ofertă veche → Neues Projekt).
+      offerSelectNonceRef.current += 1
+      stepLoadNonceRef.current += 1
 
       setOfferId(null)
       offerIdRef.current = null
@@ -920,8 +984,13 @@ export default function StepWizard() {
       setComputeFailed(false)
       void apiFetch(`/offers/${detail.offerId}`)
         .then((o: unknown) => {
-          const m = (o as { meta?: { roof_only_offer?: boolean } })?.meta
-          const ro = m?.roof_only_offer === true
+          const row = o as {
+            meta?: { roof_only_offer?: boolean; wizard_package?: string | null }
+            offer?: { meta?: { roof_only_offer?: boolean; wizard_package?: string | null }; offer_type_slug?: string | null }
+          }
+          const meta = row?.offer?.meta ?? row?.meta
+          const slug = row?.offer?.offer_type_slug ?? null
+          const ro = isRoofOnlyOfferFromMeta(meta, slug)
           roofOnlyOfferRef.current = ro
           setActiveRoofOnlyOffer(ro)
         })
@@ -1165,11 +1234,15 @@ export default function StepWizard() {
     const onSel = async (e: any) => {
       const id = e.detail.offerId as string
       if (!id) {
+        offerSelectNonceRef.current += 1
         setSelectedPackage(null)
         setDrafts({})
         setForm({})
         return
       }
+      offerSelectNonceRef.current += 1
+      const selNonce = offerSelectNonceRef.current
+      stepLoadNonceRef.current += 1
       // Clean current wizard state before loading the newly selected offer
       setSelectedPackage(null)
       setDrafts({})
@@ -1189,17 +1262,28 @@ export default function StepWizard() {
       setOfferId(id)
       offerIdRef.current = id
       try {
-        const offerRow = (await apiFetch(`/offers/${id}`)) as { meta?: { roof_only_offer?: boolean }; offer?: { meta?: { roof_only_offer?: boolean } } }
-        const offerMeta = offerRow?.meta ?? offerRow?.offer?.meta
-        const ro = offerMeta?.roof_only_offer === true
+        const offerRow = (await apiFetch(`/offers/${id}`)) as {
+          meta?: { roof_only_offer?: boolean; wizard_package?: string | null }
+          offer?: {
+            meta?: { roof_only_offer?: boolean; wizard_package?: string | null }
+            offer_type_slug?: string | null
+          }
+        }
+        if (selNonce !== offerSelectNonceRef.current) return
+        const offerMeta = offerRow?.offer?.meta ?? offerRow?.meta
+        const slug = offerRow?.offer?.offer_type_slug ?? null
+        const ro = isRoofOnlyOfferFromMeta(offerMeta, slug)
         roofOnlyOfferRef.current = ro
         setActiveRoofOnlyOffer(ro)
       } catch {
+        if (selNonce !== offerSelectNonceRef.current) return
         roofOnlyOfferRef.current = false
         setActiveRoofOnlyOffer(false)
       }
+      if (selNonce !== offerSelectNonceRef.current) return
       try {
         const fresh = await fetchFreshPdfUrl(id)
+        if (selNonce !== offerSelectNonceRef.current) return
         if (fresh) {
           setPdfUrl(fresh)
           setComputing(false)
@@ -1208,6 +1292,7 @@ export default function StepWizard() {
         }
         try {
           const stepsData = await apiFetch(`/offers/${id}/steps`).catch(() => null)
+          if (selNonce !== offerSelectNonceRef.current) return
           if (stepsData && typeof stepsData === 'object') {
             setDrafts(stepsData)
           }
@@ -1215,6 +1300,7 @@ export default function StepWizard() {
           // Endpoint might not exist
         }
       } catch {
+        if (selNonce !== offerSelectNonceRef.current) return
         setPdfUrl(null)
       }
     }
@@ -1223,7 +1309,7 @@ export default function StepWizard() {
   }, [])
 
   // 6. Update Form State on Step Change (ca pe VPS)
-  // structuraCladirii + wintergaertenBalkone: folosim ref / prev pentru hasWintergarden/hasBalkone/hasGarage ca debifarea să persiste
+  // structuraCladirii + wintergaertenBalkone: folosim ref / prev pentru hasWintergarden/hasBalkone ca debifarea să persiste
   // și ca pe pasul Wintergärten & Balkone să apară doar secțiunile pentru opțiunile încă bifate.
   function mergeStepForm(key: string, loaded: Record<string, any>, prev: Record<string, any>): Record<string, any> {
     if (!loaded || typeof loaded !== 'object') return loaded
@@ -1234,14 +1320,12 @@ export default function StepWizard() {
         ...loaded,
         hasWintergarden: r.hasWintergarden ?? prev.hasWintergarden ?? loaded.hasWintergarden,
         hasBalkone: r.hasBalkone ?? prev.hasBalkone ?? loaded.hasBalkone,
-        hasGarage: r.hasGarage ?? prev.hasGarage ?? loaded.hasGarage,
       }
     }
     return {
       ...loaded,
       hasWintergarden: loaded.hasWintergarden ?? prev.hasWintergarden,
       hasBalkone: loaded.hasBalkone ?? prev.hasBalkone,
-      hasGarage: loaded.hasGarage ?? prev.hasGarage,
     }
   }
 
@@ -1249,8 +1333,8 @@ export default function StepWizard() {
   useEffect(() => {
     const key = visibleSteps[idx]?.key
     if (visibleSteps.length === 0 || !key) return
-    if (lastLoadedStepKeyRef.current === key) return
-    lastLoadedStepKeyRef.current = key
+    stepLoadNonceRef.current += 1
+    const loadNonce = stepLoadNonceRef.current
 
     const draftData = drafts[key]
     const applyMerge = (prev: Record<string, any>, loaded: Record<string, any>) => {
@@ -1259,7 +1343,6 @@ export default function StepWizard() {
         structuraWinterBalkoneRef.current = {
           hasWintergarden: merged.hasWintergarden ?? structuraWinterBalkoneRef.current.hasWintergarden,
           hasBalkone: merged.hasBalkone ?? structuraWinterBalkoneRef.current.hasBalkone,
-          hasGarage: merged.hasGarage ?? structuraWinterBalkoneRef.current.hasGarage,
         }
         setWinterBalkoneFlags({
           hasWintergarden: merged.hasWintergarden === true,
@@ -1273,6 +1356,7 @@ export default function StepWizard() {
     } else if (offerId) {
       apiFetch(`/offers/${offerId}/step?step_key=${encodeURIComponent(key)}`)
         .then((data: any) => {
+          if (loadNonce !== stepLoadNonceRef.current) return
           const stepData = data?.data
           if (stepData && Object.keys(stepData).length > 0) {
             setDrafts(prev => ({ ...prev, [key]: stepData }))
@@ -1283,6 +1367,7 @@ export default function StepWizard() {
           }
         })
         .catch(() => {
+          if (loadNonce !== stepLoadNonceRef.current) return
           const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
           setForm(prev => applyMerge(prev, defaultForStep))
         })
@@ -1363,6 +1448,7 @@ export default function StepWizard() {
       const id = await ensureOffer()
       await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: dataObj }) })
       setDrafts(prev => ({ ...prev, [stepKey]: dataObj }))
+      stepLoadNonceRef.current += 1
       await maybeUpdateOfferTitle(id)
       if (stepKey === 'dateGenerale') {
         if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
@@ -1381,13 +1467,17 @@ export default function StepWizard() {
     }
   }
 
-  function scheduleAutosave(stepKey: string, dataObj: Record<string, any>, delay = 500) {
-    if (showErrors && Object.values(errors).some(Boolean)) return
-    const s = JSON.stringify(dataObj || {})
-    if (s === lastSavedRef.current) return
-    lastSavedRef.current = s
-    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current)
-    saveDebounceRef.current = setTimeout(() => saveStepLive(stepKey, dataObj), delay)
+  /** Actualizare formular în memorie; salvare pe server doar la „Weiter” (onContinue). */
+  function applyFormUpdate(
+    _stepKey: string,
+    v: Record<string, any> | ((prev: Record<string, any>) => Record<string, any>)
+  ) {
+    ensureOffer().catch(() => {})
+    if (typeof v === 'function') {
+      setForm(v as (p: Record<string, any>) => Record<string, any>)
+    } else {
+      setForm(v)
+    }
   }
 
   function validateCurrentStep(): Errors {
@@ -1439,15 +1529,6 @@ export default function StepWizard() {
 
   async function onContinue() {
     if (!step) return
-    if (saveDebounceRef.current) {
-      clearTimeout(saveDebounceRef.current)
-      saveDebounceRef.current = null
-    }
-    if (offerId) {
-      try {
-        await saveStepLive(step.key, form)
-      } catch (_) {}
-    }
     try {
       setSaving(true)
       setValidationError(null)
@@ -1465,11 +1546,9 @@ export default function StepWizard() {
       stashDraft()
 
       if (step.key !== 'upload') {
-        const id = await ensureOffer()
-        const dataToSave = form
-        await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: step.key, data: dataToSave }) })
-        setDrafts(prev => ({ ...prev, [step.key]: dataToSave }))
-        await maybeUpdateOfferTitle(id)
+        try {
+          await saveStepLive(step.key, form)
+        } catch (_) {}
       }
 
       if (!isLast) {
@@ -1544,7 +1623,11 @@ export default function StepWizard() {
       setComputeStartTime(Date.now())
       setComputeRunId(run_id)
       updateRunUrl(id, run_id)
-      window.dispatchEvent(new CustomEvent('offer:compute-started', { detail: { offerId: id, runId: run_id } }))
+      window.dispatchEvent(
+        new CustomEvent('offer:compute-started', {
+          detail: { offerId: id, runId: run_id, flow: roofOnly ? 'dachstuhl' : 'neubau' },
+        }),
+      )
       window.dispatchEvent(new Event('offers:refresh'))
     } catch (err: any) {
       console.error('Finalize failed:', err)
@@ -1730,7 +1813,7 @@ export default function StepWizard() {
               offerId={offerId ?? undefined}
               images={reviewImages.length > 0 ? reviewImages : planReviewImages}
               roofImages={roofReviewImages.length > 0 ? roofReviewImages : undefined}
-              roofOnlyOffer={activeRoofOnlyOffer}
+              roofOnlyOffer={activeRoofOnlyOffer || selectedPackage === 'dachstuhl'}
               onConfirm={async () => {
                 detectionsReviewApprovedRef.current = true
                 roofReviewApprovedRef.current = true
@@ -1850,7 +1933,7 @@ export default function StepWizard() {
               {step.key === 'client' && (!step.fields || step.fields.length === 0) ? (
                 <ClientStep
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave('client', v) }}
+                  setForm={(v) => applyFormUpdate('client', v)}
                   errors={visibleErrors}
                   onEnter={onContinue}
                 />
@@ -1860,7 +1943,7 @@ export default function StepWizard() {
                     stepKey={step.key}
                     fields={step.fields}
                     form={form}
-                    setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave('client', v) }}
+                    setForm={(v) => applyFormUpdate('client', v)}
                     onUpload={onUpload}
                     ensureOffer={ensureOffer}
                     errors={visibleErrors}
@@ -1875,19 +1958,17 @@ export default function StepWizard() {
               ) : step.key === 'structuraCladirii' ? (
                 <BuildingStructureStep
                   form={form}
-                  setForm={(v, shouldAutosave = false) => {
+                  setForm={(v) => {
                     ensureOffer().catch(() => {})
                     const syncWinterBalkone = (next: Record<string, any>) => {
                       if (
                         typeof next.hasWintergarden !== 'undefined' ||
-                        typeof next.hasBalkone !== 'undefined' ||
-                        typeof next.hasGarage !== 'undefined'
+                        typeof next.hasBalkone !== 'undefined'
                       ) {
                         structuraWinterBalkoneRef.current = {
                           ...structuraWinterBalkoneRef.current,
                           ...(typeof next.hasWintergarden !== 'undefined' && { hasWintergarden: next.hasWintergarden }),
                           ...(typeof next.hasBalkone !== 'undefined' && { hasBalkone: next.hasBalkone }),
-                          ...(typeof next.hasGarage !== 'undefined' && { hasGarage: next.hasGarage }),
                         }
                         setWinterBalkoneFlags(prev => ({
                           hasWintergarden: typeof next.hasWintergarden !== 'undefined' ? next.hasWintergarden === true : prev.hasWintergarden,
@@ -1905,10 +1986,8 @@ export default function StepWizard() {
                       syncWinterBalkone(v)
                       setForm(v)
                     }
-                    if (shouldAutosave) scheduleAutosave('structuraCladirii', typeof v === 'function' ? form : v)
                   }}
                   errors={visibleErrors}
-                  onBlur={() => scheduleAutosave('structuraCladirii', form)}
                   hiddenKeysForm={hiddenKeysForm}
                   optionValueToPriceKey={optionValueToPriceKey}
                   customOptionsForm={customOptionsForm}
@@ -1918,7 +1997,7 @@ export default function StepWizard() {
               ) : step.key === 'wandaufbau' ? (
                 <WandaufbauStep
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  setForm={(v) => applyFormUpdate(step.key, v)}
                   errors={visibleErrors}
                   drafts={drafts}
                   optionValueToPriceKey={optionValueToPriceKey}
@@ -1931,7 +2010,7 @@ export default function StepWizard() {
               ) : step.key === 'wintergaertenBalkone' ? (
                 <WintergaertenBalkoneStep
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  setForm={(v) => applyFormUpdate(step.key, v)}
                   errors={visibleErrors}
                   optionValueToPriceKey={optionValueToPriceKey}
                   customOptionsForm={customOptionsForm}
@@ -1943,7 +2022,7 @@ export default function StepWizard() {
               ) : step.key === 'materialeFinisaj' ? (
                 <MaterialeFinisajStep
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  setForm={(v) => applyFormUpdate(step.key, v)}
                   errors={visibleErrors}
                   drafts={drafts}
                   customOptionsForm={customOptionsForm}
@@ -1956,7 +2035,7 @@ export default function StepWizard() {
               ) : step.key === 'bodenDeckeBelag' ? (
                 <BodenDeckeBelagStep
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  setForm={(v) => applyFormUpdate(step.key, v)}
                   errors={visibleErrors}
                   drafts={drafts}
                   tOption={tOption}
@@ -1969,7 +2048,7 @@ export default function StepWizard() {
               ) : step.key === 'projektdaten' ? (
                 <ProjektdatenStepContent
                   form={form}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave('projektdaten', v) }}
+                  setForm={(v) => applyFormUpdate('projektdaten', v)}
                   errors={visibleErrors}
                   onEnter={onContinue}
                   preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
@@ -1980,7 +2059,7 @@ export default function StepWizard() {
                 <DachOnlyDaemmungStepContent
                   form={form}
                   drafts={drafts}
-                  setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                  setForm={(v) => applyFormUpdate(step.key, v)}
                   fields={step.fields}
                   onUpload={onUpload}
                   ensureOffer={ensureOffer}
@@ -1998,7 +2077,7 @@ export default function StepWizard() {
                     stepKey={step.key}
                     fields={step.fields}
                     form={form}
-                    setForm={(v) => { ensureOffer().catch(() => {}); setForm(v); scheduleAutosave(step.key, v) }}
+                    setForm={(v) => applyFormUpdate(step.key, v)}
                     onUpload={onUpload}
                     ensureOffer={ensureOffer}
                     errors={visibleErrors}
@@ -2641,8 +2720,9 @@ function BodenDeckeBelagStep({
               <SelectSun
                 value={form.bodenbelagPod || ''}
                 onChange={(v) => setForm({ ...form, bodenbelagPod: v })}
-                options={['', ...bodenbelagOptions]}
-                displayFor={(opt) => opt === '' ? '—' : displayBodenbelag(opt)}
+                options={bodenbelagOptions}
+                placeholder="— auswählen —"
+                displayFor={displayBodenbelag}
               />
             </label>
           </div>
@@ -2728,7 +2808,7 @@ const FOUNDATION_OPTIONS = ['Kein Keller (nur Bodenplatte)', 'Keller (unbeheizt 
 const FLOOR_HEIGHT_OPTIONS = ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] as const
 const STAIR_TYPE_OPTIONS = ['Standard', 'Holz', 'Beton', 'Metall', 'Sonder'] as const
 
-function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm = new Set<string>(), optionValueToPriceKey = {}, customOptionsForm = {}, paramLabelOverrides = {}, preisdatenbankOptionsByTag = {} }: { form: Record<string, any>; setForm: (v: Record<string, any>, shouldAutosave?: boolean) => void; errors: Errors; onBlur?: () => void; hiddenKeysForm?: Set<string>; optionValueToPriceKey?: Record<string, Record<string, string>>; customOptionsForm?: Record<string, Array<{ label: string; value: string; price_key?: string }>>; paramLabelOverrides?: Record<string, string>; preisdatenbankOptionsByTag?: Record<string, string[]> }) {
+function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set<string>(), optionValueToPriceKey = {}, customOptionsForm = {}, paramLabelOverrides = {}, preisdatenbankOptionsByTag = {} }: { form: Record<string, any>; setForm: (v: Record<string, any> | ((prev: Record<string, any>) => Record<string, any>)) => void; errors: Errors; hiddenKeysForm?: Set<string>; optionValueToPriceKey?: Record<string, Record<string, string>>; customOptionsForm?: Record<string, Array<{ label: string; value: string; price_key?: string }>>; paramLabelOverrides?: Record<string, string>; preisdatenbankOptionsByTag?: Record<string, string[]> }) {
   const [showAddFloorDropdown, setShowAddFloorDropdown] = useState(false)
   const addFloorBtnRef = useRef<HTMLButtonElement>(null)
   const [addFloorPos, setAddFloorPos] = useState<{ left: number; top: number; width: number }>({ left: 0, top: 0, width: 0 })
@@ -2756,7 +2836,24 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when hidden options change
   }, [floorHeightOptions.length, floorHeightOptions.join(','), inaltimeEtaje])
   const etajeIntermediare = listaEtaje.filter((e: string) => e === 'intermediar').length
-  const hasFloorAboveGround = listaEtaje.length > 0
+  const hasFloorAboveGround = listaEtaje.some((e: string) => e !== 'parter')
+  const stairOptsEffective = stairTypeOptions.length > 0 ? stairTypeOptions : Array.from(STAIR_TYPE_OPTIONS)
+  useEffect(() => {
+    if (!hasFloorAboveGround) return
+    const def = stairOptsEffective[0] ?? 'Standard'
+    if (form.treppeTyp == null || String(form.treppeTyp).trim() === '') {
+      setForm((prev: Record<string, any>) => ({ ...prev, treppeTyp: def }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- default treppe when field becomes visible
+  }, [hasFloorAboveGround, stairOptsEffective.join(',')])
+  useEffect(() => {
+    if (!hasFloorAboveGround || stairOptsEffective.length === 0) return
+    const cur = form.treppeTyp != null ? String(form.treppeTyp) : ''
+    if (cur && !stairOptsEffective.includes(cur)) {
+      setForm((prev: Record<string, any>) => ({ ...prev, treppeTyp: stairOptsEffective[0] }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- resync when DB option list changes
+  }, [hasFloorAboveGround, stairOptsEffective.join(','), form.treppeTyp])
   const hasPod = listaEtaje.some((e: string) => e === 'pod')
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const mansardaType = listaEtaje.find((e: string) => e.startsWith('mansarda'))?.split('_')[1] ?? null
@@ -2903,7 +3000,7 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
 
       <div className="flex-1 min-w-0 relative z-10 space-y-4 !pb-0 !mb-0">
         <label className="flex flex-col gap-1" data-field="inaltimeEtaje">
-          <span className="wiz-label text-sun/90">Geschosshöhe</span>
+          <span className="wiz-label text-sun/90">{tFieldLabel('structuraCladirii', 'inaltimeEtaje', undefined)}</span>
           <div className={errors.inaltimeEtaje ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
             <SelectSun
               value={inaltimeEtaje}
@@ -3035,9 +3132,9 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
             <span className="wiz-label text-sun/90">Treppentyp (Preis pro Stück)</span>
             <div className={errors.treppeTyp ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
               <SelectSun
-                value={String(form.treppeTyp || (stairTypeOptions[0] ?? STAIR_TYPE_OPTIONS[0]))}
+                value={String(form.treppeTyp || (stairOptsEffective[0] ?? STAIR_TYPE_OPTIONS[0]))}
                 onChange={(v) => setForm({ ...form, treppeTyp: v })}
-                options={stairTypeOptions.length > 0 ? stairTypeOptions : Array.from(STAIR_TYPE_OPTIONS)}
+                options={stairOptsEffective}
                 placeholder="Wählen Sie eine Option"
                 displayFor={(opt) => {
                   const key = optionValueToPriceKey['stairs_type']?.[opt]
@@ -3070,16 +3167,6 @@ function BuildingStructureStep({ form, setForm, errors, onBlur, hiddenKeysForm =
             />
             <span className="text-sm font-medium text-sun/90">Balkone vorhanden</span>
           </label>
-          <label className="flex items-center gap-2 cursor-pointer select-none" htmlFor="struct-has-garage" data-field="hasGarage">
-            <input
-              id="struct-has-garage"
-              type="checkbox"
-              className="sun-checkbox cursor-pointer"
-              checked={form.hasGarage === true}
-              onChange={(e) => setForm((prev: Record<string, any>) => ({ ...prev, hasGarage: e.target.checked }))}
-            />
-            <span className="text-sm font-medium text-sun/90">Garage / Carport vorhanden</span>
-          </label>
         </div>
         </div>
       </div>
@@ -3095,7 +3182,7 @@ function DynamicFields({
   stepKey: string
   fields: Field[]
   form: Record<string, any>
-  setForm: (v: Record<string, any>) => void
+  setForm: (v: Record<string, any> | ((prev: Record<string, any>) => Record<string, any>)) => void
   onUpload: (name: string, file: File | null) => void
   ensureOffer: () => Promise<string>
   errors: Errors
@@ -3126,7 +3213,7 @@ function DynamicFields({
         if (stepKey === 'daemmungDachdeckung' && f.name === 'dachfensterTyp' && !asBool(form.dachfensterImDach)) {
           return null
         }
-        if (stepKey === 'ferestreUsi' && f.name === 'garageDoorType' && !asBool(form.hasGarage)) {
+        if (stepKey === 'ferestreUsi' && f.name === 'garageDoorType' && !asBool(form.garagentorGewuenscht)) {
           return null
         }
         if (f.type === 'upload') {
@@ -3165,20 +3252,26 @@ function DynamicFields({
               <div className={hasErr ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
                 <SelectSun
                   value={selectValue}
-                  onChange={async v => {
-                    const next = { ...form, [f.name]: v }
-                    setForm(next)
-                    const id = await ensureOffer()
-                    await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: next }) })
-                    window.dispatchEvent(new Event('offers:refresh'))
+                  onChange={(v) => {
+                    ensureOffer().catch(() => {})
+                    setForm(prev => ({ ...prev, [f.name]: v }))
                   }}
                   options={
                     (() => {
                       const tag = (f as any).tag || FIELD_TAG_FALLBACK_BY_NAME[f.name]
                       const fromPreisdatenbank = tag && preisdatenbankOptionsByTag[tag]
-                      if (fromPreisdatenbank && fromPreisdatenbank.length > 0) return fromPreisdatenbank
+                      const schemaOptions = (((f as any).options ?? []) as string[]).filter((o) => o != null && String(o).trim() !== '')
+                      if (fromPreisdatenbank && fromPreisdatenbank.length > 0) {
+                        if (schemaOptions.length > 0) {
+                          const allowed = new Set(schemaOptions.map(String))
+                          const filtered = fromPreisdatenbank.filter((o: string) => allowed.has(String(o)))
+                          if (filtered.length > 0) return filtered
+                          return schemaOptions
+                        }
+                        return fromPreisdatenbank
+                      }
                       return [
-                        ...((f as any).options ?? []).filter((opt: string) => {
+                        ...schemaOptions.filter((opt: string) => {
                           const priceKey = tag && optionValueToPriceKey[tag]?.[opt]
                           return !priceKey || !hiddenKeysForm.has(priceKey)
                         }),
@@ -3217,16 +3310,21 @@ function DynamicFields({
                 type="checkbox"
                 className="sun-checkbox"
                 checked={asBool(form[f.name])}
-                onChange={async e => {
+                onChange={(e) => {
                   const checked = e.target.checked
-                  const next: Record<string, any> = { ...form, [f.name]: checked }
-                  if (f.name === 'dachfensterImDach') {
-                    if (!checked) next.dachfensterTyp = ''
-                    else if (!form.dachfensterTyp) next.dachfensterTyp = 'Standard'
-                  }
-                  setForm(next)
-                  const id = await ensureOffer()
-                  await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: next }) })
+                  ensureOffer().catch(() => {})
+                  setForm(prev => {
+                    const next: Record<string, any> = { ...prev, [f.name]: checked }
+                    if (f.name === 'dachfensterImDach') {
+                      if (!checked) next.dachfensterTyp = ''
+                      else if (!prev.dachfensterTyp) next.dachfensterTyp = 'Standard'
+                    }
+                    if (f.name === 'garagentorGewuenscht') {
+                      if (!checked) next.garageDoorType = ''
+                      else if (!prev.garageDoorType) next.garageDoorType = 'Sektionaltor Standard'
+                    }
+                    return next
+                  })
                 }}
                 onKeyDown={(e) => handleInputEnter(e, onEnter)}
               />

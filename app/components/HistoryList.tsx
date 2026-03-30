@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiFetch } from '../lib/supabaseClient'
+import { inferOfferFlow } from '../lib/offerFlow'
 import { Plus, Loader2, Search, Filter, Trash2, ChevronDown, Check, X } from 'lucide-react'
 import { DatePickerPopover } from './DatePickerPopover'
 
@@ -115,6 +116,7 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
   const offerTypeTriggerRef = useRef<HTMLDivElement>(null)
   const offerTypeMenuRef = useRef<HTMLDivElement>(null)
   const [offerTypeMenuPosition, setOfferTypeMenuPosition] = useState({ top: 0, left: 0, width: 200 })
+  const loadGenerationRef = useRef(0)
 
   const wizardOfferTypes = offerTypes.filter((ot) =>
     WIZARD_OFFER_SLUGS.includes(ot.slug as (typeof WIZARD_OFFER_SLUGS)[number])
@@ -126,6 +128,7 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
   ].filter(Boolean) as OfferType[]
 
   async function load() {
+    const gen = ++loadGenerationRef.current
     setApiError(null)
     try {
       const params = new URLSearchParams()
@@ -136,8 +139,10 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
       if (dateTo) params.set('date_to', dateTo)
       if (selectedUserIds.length) selectedUserIds.forEach((id) => params.append('created_by', id))
       const data = await apiFetch(`/offers?${params.toString()}`)
+      if (gen !== loadGenerationRef.current) return
       setItems((data.items || []) as OfferListItem[])
     } catch (e: any) {
+      if (gen !== loadGenerationRef.current) return
       const isNetwork = e?.message === 'Failed to fetch' || e?.name === 'TypeError'
       setItems([])
       setApiError(

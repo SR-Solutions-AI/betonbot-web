@@ -3,7 +3,7 @@ export type Field =
   | { type: 'text'; name: string; label: string; placeholder?: string }
   | { type: 'textarea'; name: string; label: string; placeholder?: string }
   | { type: 'number'; name: string; label: string; min?: number; max?: number }
-  | { type: 'bool'; name: string; label: string }
+  | { type: 'bool'; name: string; label: string; tag?: string }
   | { type: 'select'; name: string; label: string; options: string[]; tag?: string }
   | { type: 'upload'; name: string; label: string; accept?: string; optional?: boolean; multiple?: boolean }
   | { type: 'price'; name: string; label: string; unit: string; default: number };
@@ -73,10 +73,9 @@ export const formSteps: Step[] = [
     fields: [
       { type: 'select', name: 'tipFundatieBeci', label: 'Untergeschoss / Fundament', options: ['Kein Keller (nur Bodenplatte)', 'Keller (unbeheizt / Nutzkeller)', 'Keller (mit einfachem Ausbau)'] },
       { type: 'bool', name: 'pilons', label: 'Pfahlgründung erforderlich' },
-      { type: 'select', name: 'inaltimeEtaje', label: 'Geschosshöhe', options: ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] },
+      { type: 'select', name: 'inaltimeEtaje', label: 'Raumhöhe', options: ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] },
       { type: 'bool', name: 'hasWintergarden', label: 'Wintergarten vorhanden' },
       { type: 'bool', name: 'hasBalkone', label: 'Balkone vorhanden' },
-      { type: 'bool', name: 'hasGarage', label: 'Garage / Carport vorhanden' },
     ],
   },
 
@@ -109,10 +108,16 @@ export const formSteps: Step[] = [
     label: 'Fenster & Türen',
     fields: [
       { type: 'select', name: 'windowQuality', label: 'Fensterart (Preis 2-/3-fach)', options: ['2-fach verglast', '3-fach verglast', '3-fach verglast, Passiv'] },
-      { type: 'select', name: 'doorMaterialInterior', label: 'Material Innentüren', options: ['Standard', 'Holz', 'Glas', 'Weiß lackiert'] },
-      { type: 'select', name: 'doorMaterialExterior', label: 'Material Außentüren', options: ['Standard', 'Holz', 'Aluminium', 'Kunststoff'] },
-      { type: 'select', name: 'garageDoorType', label: 'Garagentor Typ', options: ['Sektionaltor Standard', 'Sektionaltor Premium', 'Rolltor'], tag: 'garage_door_type' },
-      { type: 'select', name: 'turhohe', label: 'Türhöhe', options: ['Standard (2m)', 'Erhöht / Sondermaß (2,2+ m)'] },
+      { type: 'select', name: 'doorMaterialInterior', label: 'Innentüren (Preis pro Stück)', options: ['Standard', 'Holz', 'Glas', 'Weiß lackiert'], tag: 'door_material_interior' },
+      { type: 'select', name: 'doorMaterialExterior', label: 'Außentüren (Preis pro Stück)', options: ['Standard', 'Holz', 'Aluminium', 'Kunststoff'], tag: 'door_material_exterior' },
+      { type: 'bool', name: 'garagentorGewuenscht', label: 'Garagentor gewünscht' },
+      {
+        type: 'select',
+        name: 'garageDoorType',
+        label: 'Garagentor',
+        options: ['Sektionaltor Standard', 'Sektionaltor Premium', 'Rolltor', 'Schwingtor', 'Seiten-Sektionaltor'],
+        tag: 'garage_door_type',
+      },
     ],
   },
 
@@ -209,6 +214,14 @@ export const formStepsDachstuhl: Step[] = [
       { type: 'select', name: 'unterdach', label: 'Unterdach', options: ['Folie', 'Schalung + Folie'], tag: 'under_roof' },
       { type: 'select', name: 'dachstuhlTyp', label: 'Dachstuhl-Typ', options: ['Sparrendach', 'Pfettendach', 'Kehlbalkendach', 'Sonderkonstruktion'], tag: 'roof_structure_type' },
       { type: 'bool',   name: 'sichtdachstuhl', label: 'Sichtdachstuhl' },
+      { type: 'bool',   name: 'dachfensterImDach', label: 'Dachfenster einplanen', tag: 'roof_skylights' },
+      {
+        type: 'select',
+        name: 'dachfensterTyp',
+        label: 'Dachfenster-Ausführung',
+        options: ['Standard', 'Velux', 'Roto', 'Fakro', 'Sonstiges'],
+        tag: 'roof_skylight_type',
+      },
       { type: 'select', name: 'dachdeckung', label: 'Dachdeckung', options: ['Ziegel', 'Betonstein', 'Blech', 'Schindel', 'Sonstiges'], tag: 'roof_covering' },
     ],
   },
@@ -340,25 +353,41 @@ export const preisdatenbankSteps: Step[] = [
     ],
   },
   {
-    key: 'preis_tueren_aussen',
-    label: 'Außentüren',
-    priceSectionKey: 'stueck_tueren',
-    priceSectionTitle: 'Stückpreise – Türen',
-    priceSectionSubtitle: 'Pauschalpreise pro Tür',
-    fields: [
-      { type: 'price', name: 'tuer', label: 'Türen (Stück)', unit: '€', default: 680 },
-      { type: 'price', name: 'haustuer', label: 'Haustür', unit: '€', default: 1250 },
-      { type: 'price', name: 'terrassentuer', label: 'Terrassentür', unit: '€', default: 980 },
-    ],
-  },
-  {
     key: 'preis_tueren_innen',
     label: 'Innentüren',
     priceSectionKey: 'stueck_tueren',
+    priceSectionTitle: 'Stückpreise – Türen',
+    priceSectionSubtitle: 'Entspricht Innen-/Außentüren im Formular',
     fields: [
-      { type: 'price', name: 'innentuer', label: 'Innentür Standard', unit: '€', default: 320 },
-      { type: 'price', name: 'innentuer_sonder', label: 'Innentür Sonderformat', unit: '€', default: 520 },
-      { type: 'price', name: 'schiebetuer', label: 'Schiebetür', unit: '€', default: 1100 },
+      { type: 'price', name: 'door_interior_standard', label: 'Innen Standard', unit: '€/Stück', default: 320 },
+      { type: 'price', name: 'door_interior_holz', label: 'Innen Holz', unit: '€/Stück', default: 580 },
+      { type: 'price', name: 'door_interior_glas', label: 'Innen Glas', unit: '€/Stück', default: 890 },
+      { type: 'price', name: 'door_interior_weiss_lackiert', label: 'Innen Weiß lackiert', unit: '€/Stück', default: 420 },
+    ],
+  },
+  {
+    key: 'preis_tueren_aussen',
+    label: 'Außentüren',
+    priceSectionKey: 'stueck_tueren',
+    fields: [
+      { type: 'price', name: 'door_exterior_standard', label: 'Außen Standard', unit: '€/Stück', default: 1450 },
+      { type: 'price', name: 'door_exterior_holz', label: 'Außen Holz', unit: '€/Stück', default: 2200 },
+      { type: 'price', name: 'door_exterior_aluminium', label: 'Außen Aluminium', unit: '€/Stück', default: 2800 },
+      { type: 'price', name: 'door_exterior_kunststoff', label: 'Außen Kunststoff', unit: '€/Stück', default: 1600 },
+    ],
+  },
+  {
+    key: 'preis_garagentor',
+    label: 'Garagentor',
+    priceSectionKey: 'stueck_garagentor',
+    priceSectionTitle: 'Stückpreise – Garagentor',
+    priceSectionSubtitle: 'Nur wenn „Garagentor gewünscht“ im Formular',
+    fields: [
+      { type: 'price', name: 'garage_door_sektional_standard_stueck', label: 'Sektionaltor Standard', unit: '€/Stück', default: 2400 },
+      { type: 'price', name: 'garage_door_sektional_premium_stueck', label: 'Sektionaltor Premium', unit: '€/Stück', default: 3200 },
+      { type: 'price', name: 'garage_door_rolltor_stueck', label: 'Rolltor', unit: '€/Stück', default: 2100 },
+      { type: 'price', name: 'garage_door_schwingtor_stueck', label: 'Schwingtor', unit: '€/Stück', default: 1800 },
+      { type: 'price', name: 'garage_door_seiten_sektional_stueck', label: 'Seiten-Sektionaltor', unit: '€/Stück', default: 3800 },
     ],
   },
   {

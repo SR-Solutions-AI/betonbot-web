@@ -1,1 +1,2597 @@
-{"schemaVersion":"1","tenant":"holzbau","flow":"neubau","steps":[{"key":"dateGenerale","label":"Allgemeine Projektdaten (Bezeichnung)","fields":[{"type":"text","name":"referinta","label":"Bezeichnung / Referenz","placeholder":"z.B.: Einfamilienhaus 150 m²"}]},{"key":"client","label":"Kundendaten","fields":[{"type":"text","name":"nume","label":"Vor- und Nachname","placeholder":"z.B. Max Mustermann"},{"type":"text","name":"telefon","label":"Telefonnummer","placeholder":"z.B. +49 123 456789"},{"type":"text","name":"email","label":"E-Mail","placeholder":"z.B. max@beispiel.de"},{"type":"text","name":"localitate","label":"Adresse","placeholder":"Straße, PLZ Ort"}]},{"key":"sistemConstructiv","label":"Allgemeine Projektinformationen","fields":[{"type":"select","name":"tipSistem","label":"Systemtyp","options":["Blockbau","Holzrahmen","Massivholz"]},{"type":"select","name":"nivelOferta","label":"Angebotsumfang","options":["Rohbau/Tragwerk","Tragwerk + Fenster","Schlüsselfertiges Haus"]},{"type":"select","name":"accesSantier","label":"Baustellenzufahrt","options":["Leicht (LKW 40t)","Mittel","Schwierig"]},{"type":"select","name":"teren","label":"Gelände: eben oder Hang?","options":["Eben","Leichte Hanglage","Starke Hanglage"]},{"type":"bool","name":"utilitati","label":"Strom-/Wasseranschluss vorhanden"}],"priceSections":[{"title":"System & Rohbau","subtitle":"Systempreise (CLT, Holzrahmen, Massivholz)","variables":[{"key":"clt_interior_price","label":"CLT Innen (€/m²)","unit":"€/m²","value":0},{"key":"clt_exterior_price","label":"CLT Außen (€/m²)","unit":"€/m²","value":0},{"key":"holzrahmen_interior_price","label":"Holzrahmen Innen (€/m²)","unit":"€/m²","value":0},{"key":"holzrahmen_exterior_price","label":"Holzrahmen Außen (€/m²)","unit":"€/m²","value":0},{"key":"massivholz_interior_price","label":"Massivholz Innen (€/m²)","unit":"€/m²","value":0},{"key":"massivholz_exterior_price","label":"Massivholz Außen (€/m²)","unit":"€/m²","value":0},{"key":"prefab_modifier_santier","label":"Schwierig (Faktor)","unit":"","value":1.25},{"key":"acces_santier_leicht_factor","label":"Leicht (Faktor)","unit":"","value":1},{"key":"acces_santier_mittel_factor","label":"Mittel (Faktor)","unit":"","value":1.1}]}]},{"key":"structuraCladirii","label":"Gebäudestruktur","fields":[{"type":"select","name":"tipFundatieBeci","label":"Untergeschoss / Fundament","options":["Kein Keller (nur Bodenplatte)","Keller (unbeheizt / Nutzkeller)","Keller (mit einfachem Ausbau)"]},{"type":"bool","name":"pilons","label":"Pfahlgründung erforderlich"},{"type":"select","name":"inaltimeEtaje","label":"Geschosshöhe","options":["Standard (2,50 m)","Komfort (2,70 m)","Hoch (2,85+ m)"]}],"priceSections":[{"title":"Fundament","subtitle":"Preise pro m² Fundament","variables":[{"key":"unit_price_placa","label":"Bodenplatte (€/m²)","unit":"€/m²","value":0},{"key":"unit_price_piloti","label":"Pfahlgründung (€/m²)","unit":"€/m²","value":0},{"key":"unit_price_soclu","label":"Sockel (€/m²)","unit":"€/m²","value":0}]},{"title":"Fläche & Treppe","subtitle":"Boden, Decke, Treppe","variables":[{"key":"floor_coeff_per_m2","label":"Boden (€/m²)","unit":"€/m²","value":0},{"key":"ceiling_coeff_per_m2","label":"Decke (€/m²)","unit":"€/m²","value":0},{"key":"price_per_stair_unit","label":"Treppe pro Stufe (€)","unit":"€","value":0},{"key":"railing_price_per_stair","label":"Geländer pro Stufe (€)","unit":"€","value":0}]}]},{"key":"daemmungDachdeckung","label":"Dämmung & Dachdeckung","fields":[{"type":"select","name":"daemmung","label":"Dämmung","options":["Keine","Zwischensparren","Aufsparren","Kombination"]},{"type":"select","name":"unterdach","label":"Unterdach","options":["Folie","Schalung + Folie"]},{"type":"select","name":"dachstuhlTyp","label":"Dachstuhl-Typ","options":["Sparrendach","Pfettendach","Kehlbalkendach","Sonderkonstruktion"]},{"type":"bool","name":"sichtdachstuhl","label":"Sichtdachstuhl"},{"type":"select","name":"dachdeckung","label":"Dachdeckung","options":["Ziegel","Betonstein","Blech","Schindel","Sonstiges"]},{"type":"number","name":"pantaAcoperis","label":"Dachneigung (Grad)","min":15,"max":60}],"priceSections":[{"title":"Dach","subtitle":"Dachdeckung, Dämmung","variables":[{"key":"overhang_m","label":"Dachüberstand (m)","unit":"m","value":0.4},{"key":"sheet_metal_price_per_m","label":"Blech (€/m)","unit":"€/m","value":0},{"key":"insulation_price_per_m2","label":"Dämmung (€/m²)","unit":"€/m²","value":0},{"key":"tile_price_per_m2","label":"Ziegel (€/m²)","unit":"€/m²","value":0},{"key":"metal_price_per_m2","label":"Metall (€/m²)","unit":"€/m²","value":0},{"key":"membrane_price_per_m2","label":"Membran (€/m²)","unit":"€/m²","value":0}]}]},{"key":"ferestreUsi","label":"Fenster & Türen","fields":[{"type":"select","name":"bodentiefeFenster","label":"Bodentiefe Fenster / Glasflächen vorhanden","options":["Nein","Ja – einzelne","Ja – mehrere / große Glasflächen"]},{"type":"select","name":"windowQuality","label":"Fensterart","options":["3-fach verglast","3-fach verglast, Passiv"]},{"type":"select","name":"turhohe","label":"Türhöhe","options":["Standard (2m)","Erhöht / Sondermaß (2,2+ m)"]}],"priceSections":[{"title":"Fenster","subtitle":"Fensterpreise pro m² Glasfläche","variables":[{"key":"window_pvc_price","label":"PVC (€/m²)","unit":"€/m²","value":0},{"key":"window_lemn_price","label":"Holz (€/m²)","unit":"€/m²","value":0},{"key":"window_aluminiu_price","label":"Aluminium (€/m²)","unit":"€/m²","value":0},{"key":"window_lemn_aluminiu_price","label":"Holz-Alu (€/m²)","unit":"€/m²","value":0}]},{"title":"Türen","subtitle":"Innen- und Außentüren","variables":[{"key":"door_int_lemn_price","label":"Innentür Holz (€/m²)","unit":"€/m²","value":0},{"key":"door_ext_lemn_price","label":"Außentür Holz (€/m²)","unit":"€/m²","value":0}]}]},{"key":"materialeFinisaj","label":"Materialien & Ausbaustufe","fields":[],"priceSections":[{"title":"Innenausbau","subtitle":"Innenausbau pro m²","variables":[{"key":"interior_tencuiala","label":"Putz (€/m²)","unit":"€/m²","value":0},{"key":"interior_lemn","label":"Holz (€/m²)","unit":"€/m²","value":0},{"key":"interior_fibrociment","label":"Faserzement (€/m²)","unit":"€/m²","value":0},{"key":"interior_mix","label":"Mix (€/m²)","unit":"€/m²","value":0}]},{"title":"Fassade","subtitle":"Fassade pro m²","variables":[{"key":"exterior_tencuiala","label":"Putz (€/m²)","unit":"€/m²","value":0},{"key":"exterior_lemn","label":"Holz (€/m²)","unit":"€/m²","value":0},{"key":"exterior_fibrociment","label":"Faserzement (€/m²)","unit":"€/m²","value":0},{"key":"exterior_mix","label":"Mix (€/m²)","unit":"€/m²","value":0}]}]},{"key":"performantaEnergetica","label":"Energieeffizienz & Heizung","fields":[{"type":"select","name":"nivelEnergetic","label":"Gewünschtes Energieniveau","options":["Standard","KfW 55","KfW 40","KfW 40+"]},{"type":"select","name":"tipIncalzire","label":"Heizungssystem","options":["Gas","Wärmepumpe","Elektrisch"]},{"type":"bool","name":"ventilatie","label":"Lüftung / Wärmerückgewinnung"},{"type":"select","name":"tipSemineu","label":"Welchen Kamin / Ofen wünscht der Kunde?","options":["Kein Kamin","Klassischer Holzofen","Moderner Design-Kaminofen","Pelletofen (automatisch)","Einbaukamin","Kachel-/wassergeführter Kamin"]}],"priceSections":[{"title":"Haustechnik","subtitle":"Strom, Heizung, Abwasser, Lüftung (€/m²)","variables":[{"key":"electricity_base_price","label":"Strom (€/m²)","unit":"€/m²","value":60},{"key":"heating_base_price","label":"Heizung (€/m²)","unit":"€/m²","value":70},{"key":"sewage_base_price","label":"Abwasser (€/m²)","unit":"€/m²","value":45},{"key":"ventilation_base_price","label":"Lüftung (€/m²)","unit":"€/m²","value":55}]}]},{"key":"upload","label":"Datei-Upload","fields":[{"type":"upload","name":"planArhitectural","label":"Architekturplan","accept":".pdf,.jpg,.jpeg,.png,.dwg","multiple":true},{"type":"upload","name":"fotografii","label":"Fotos / Renderings","accept":".pdf,.jpg,.jpeg,.png","optional":true},{"type":"upload","name":"documentatie","label":"Zusätzliche Dokumentation","accept":".pdf,.jpg,.jpeg,.png,.zip","optional":true}]}]}
+{
+  "_comment_tags": "Fiecare field poate avea 'tag': identificator stabil pentru formula de preț. Formula folosește tag-ul, nu name-ul câmpului, astfel că schimbări de label/opțiuni sau formulare per client nu stric calculul.",
+  "schemaVersion": "1",
+  "tenant": "holzbau",
+  "flow": "neubau",
+  "steps": [
+    {
+      "key": "dateGenerale",
+      "label": "Allgemeine Projektdaten (Bezeichnung)",
+      "fields": [
+        {
+          "type": "text",
+          "name": "referinta",
+          "label": "Bezeichnung / Referenz",
+          "placeholder": "z.B.: Einfamilienhaus 150 m²",
+          "tag": "project_reference"
+        }
+      ]
+    },
+    {
+      "key": "client",
+      "label": "Kundendaten",
+      "fields": [
+        {
+          "type": "text",
+          "name": "nume",
+          "label": "Vor- und Nachname",
+          "placeholder": "z.B. Max Mustermann",
+          "tag": "client_name"
+        },
+        {
+          "type": "text",
+          "name": "telefon",
+          "label": "Telefonnummer",
+          "placeholder": "z.B. +49 123 456789",
+          "tag": "client_phone"
+        },
+        {
+          "type": "text",
+          "name": "email",
+          "label": "E-Mail",
+          "placeholder": "z.B. max@beispiel.de",
+          "tag": "client_email"
+        },
+        {
+          "type": "text",
+          "name": "localitate",
+          "label": "Adresse",
+          "placeholder": "Straße, PLZ Ort",
+          "tag": "client_address"
+        }
+      ]
+    },
+    {
+      "key": "sistemConstructiv",
+      "label": "Allgemeine Projektinformationen",
+      "fields": [
+        {
+          "type": "select",
+          "name": "nivelOferta",
+          "label": "Angebotsumfang",
+          "options": [
+            "Rohbau/Tragwerk",
+            "Tragwerk + Fenster",
+            "Schlüsselfertiges Haus"
+          ],
+          "tag": "offer_scope"
+        },
+        {
+          "type": "select",
+          "name": "accesSantier",
+          "label": "Baustellenzufahrt",
+          "options": [
+            "Leicht (LKW 40t)",
+            "Mittel",
+            "Schwierig"
+          ],
+          "tag": "site_access"
+        },
+        {
+          "type": "select",
+          "name": "teren",
+          "label": "Gelände: eben oder Hang?",
+          "options": [
+            "Eben",
+            "Leichte Hanglage",
+            "Starke Hanglage"
+          ],
+          "tag": "terrain"
+        },
+        {
+          "type": "bool",
+          "name": "utilitati",
+          "label": "Strom-/Wasseranschluss vorhanden",
+          "tag": "utilities_connection"
+        }
+      ],
+      "priceSections": [
+        {
+          "title": "Baustellenzufahrt",
+          "subtitle": "Preise je nach Feld „Baustellenzufahrt“",
+          "fieldTag": "site_access",
+          "variables": [
+            {
+              "key": "acces_santier_leicht_factor",
+              "label": "Leicht (LKW 40t) (Faktor)",
+              "unit": "",
+              "value": 1
+            },
+            {
+              "key": "acces_santier_mittel_factor",
+              "label": "Mittel (Faktor)",
+              "unit": "",
+              "value": 1.1
+            },
+            {
+              "key": "prefab_modifier_santier",
+              "label": "Schwierig (Faktor)",
+              "unit": "",
+              "value": 1.25
+            }
+          ]
+        },
+        {
+          "title": "Gelände",
+          "subtitle": "Preise je nach Feld „Gelände: eben oder Hang?“",
+          "fieldTag": "terrain",
+          "variables": [
+            {
+              "key": "teren_eben_factor",
+              "label": "Eben (Faktor)",
+              "unit": "",
+              "value": 1
+            },
+            {
+              "key": "teren_leichte_hanglage_factor",
+              "label": "Leichte Hanglage (Faktor)",
+              "unit": "",
+              "value": 1.05
+            },
+            {
+              "key": "teren_starke_hanglage_factor",
+              "label": "Starke Hanglage (Faktor)",
+              "unit": "",
+              "value": 1.15
+            }
+          ]
+        },
+        {
+          "title": "Strom-/Wasseranschluss",
+          "subtitle": "Feld „Strom-/Wasseranschluss vorhanden“",
+          "variables": [
+            {
+              "key": "utilitati_anschluss_price",
+              "label": "Anschlusskosten Pauschal (€)",
+              "unit": "€",
+              "value": 2500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "structuraCladirii",
+      "label": "Gebäudestruktur",
+      "fields": [
+        {
+          "type": "select",
+          "name": "tipFundatieBeci",
+          "label": "Untergeschoss / Fundament",
+          "options": [
+            "Kein Keller (nur Bodenplatte)",
+            "Keller (unbeheizt / Nutzkeller)",
+            "Keller (mit einfachem Ausbau)"
+          ],
+          "tag": "foundation_type"
+        },
+        {
+          "type": "bool",
+          "name": "pilons",
+          "label": "Pfahlgründung erforderlich",
+          "tag": "pilings_required"
+        },
+        {
+          "type": "select",
+          "name": "inaltimeEtaje",
+          "label": "Raumhöhe",
+          "options": [
+            "Standard (2,50 m)",
+            "Komfort (2,70 m)",
+            "Hoch (2,85+ m)"
+          ],
+          "tag": "floor_height"
+        },
+        {
+          "type": "select",
+          "name": "treppeTyp",
+          "label": "Treppentyp (Preis pro Stück)",
+          "options": [
+            "Standard",
+            "Holz",
+            "Beton",
+            "Metall",
+            "Sonder"
+          ],
+          "tag": "stairs_type",
+          "optional": true
+        },
+        {
+          "type": "bool",
+          "name": "hasWintergarden",
+          "label": "Wintergarten vorhanden",
+          "tag": "has_wintergarden"
+        },
+        {
+          "type": "bool",
+          "name": "hasBalkone",
+          "label": "Balkone vorhanden",
+          "tag": "has_balkone"
+        }
+      ],
+      "priceSections": [
+        {
+          "title": "Untergeschoss / Fundament",
+          "subtitle": "Preise je nach Feld „Untergeschoss / Fundament“",
+          "fieldTag": "foundation_type",
+          "variables": [
+            {
+              "key": "unit_price_placa",
+              "label": "Kein Keller (nur Bodenplatte) (€/m²)",
+              "unit": "€/m²",
+              "value": 120
+            },
+            {
+              "key": "unit_price_keller_nutzkeller",
+              "label": "Keller (unbeheizt / Nutzkeller) (€/m²)",
+              "unit": "€/m²",
+              "value": 145
+            },
+            {
+              "key": "unit_price_keller_ausbau",
+              "label": "Keller (mit einfachem Ausbau) (€/m²)",
+              "unit": "€/m²",
+              "value": 185
+            }
+          ]
+        },
+        {
+          "title": "Pfahlgründung",
+          "subtitle": "Feld „Pfahlgründung erforderlich“",
+          "variables": [
+            {
+              "key": "unit_price_piloti",
+              "label": "Pfahlgründung (€/m²)",
+              "unit": "€/m²",
+              "value": 180
+            }
+          ]
+        },
+        {
+          "title": "Treppe",
+          "subtitle": "Preis pro Stück",
+          "variables": [
+            {
+              "key": "floor_coeff_per_m2",
+              "label": "Boden (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            },
+            {
+              "key": "ceiling_coeff_per_m2",
+              "label": "Decke (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            },
+            {
+              "key": "price_per_stair_unit",
+              "label": "Treppe pro Stück (€)",
+              "unit": "€",
+              "value": 4500
+            },
+            {
+              "key": "railing_price_per_stair",
+              "label": "Geländer pro Stück (€)",
+              "unit": "€",
+              "value": 800
+            },
+            {
+              "key": "stairs_type_standard_piece_price",
+              "label": "Treppentyp Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 4500
+            },
+            {
+              "key": "stairs_type_holz_piece_price",
+              "label": "Treppentyp Holz (€/Stück)",
+              "unit": "€/Stück",
+              "value": 5200
+            },
+            {
+              "key": "stairs_type_beton_piece_price",
+              "label": "Treppentyp Beton (€/Stück)",
+              "unit": "€/Stück",
+              "value": 5800
+            },
+            {
+              "key": "stairs_type_metall_piece_price",
+              "label": "Treppentyp Metall (€/Stück)",
+              "unit": "€/Stück",
+              "value": 5600
+            },
+            {
+              "key": "stairs_type_sonder_piece_price",
+              "label": "Treppentyp Sonder (€/Stück)",
+              "unit": "€/Stück",
+              "value": 6500
+            }
+          ]
+        },
+        {
+          "title": "Raumhöhe",
+          "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
+          "fieldTag": "floor_height",
+          "variables": [
+            {
+              "key": "inaltime_etaje_standard_m",
+              "label": "Standard (2,50 m)",
+              "unit": "m",
+              "value": 2.5
+            },
+            {
+              "key": "inaltime_etaje_komfort_m",
+              "label": "Komfort (2,70 m)",
+              "unit": "m",
+              "value": 2.7
+            },
+            {
+              "key": "inaltime_etaje_hoch_m",
+              "label": "Hoch (2,85+ m)",
+              "unit": "m",
+              "value": 2.85
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "wintergaertenBalkone",
+      "label": "Wintergärten & Balkone",
+      "fields": [
+        {
+          "type": "select",
+          "name": "wintergartenTyp",
+          "label": "Wintergärten",
+          "options": [
+            "Glaswand",
+            "Plexiglaswand"
+          ],
+          "tag": "wintergarten_type"
+        },
+        {
+          "type": "select",
+          "name": "balkonTyp",
+          "label": "Balkone",
+          "options": [
+            "Holzgeländer",
+            "Stahlgeländer",
+            "Glasgeländer"
+          ],
+          "tag": "balkon_type"
+        }
+      ],
+      "priceSections": [
+        {
+          "title": "Wintergarten",
+          "subtitle": "Wandpreise anpassen",
+          "fieldTag": "wintergarten_type",
+          "variables": [
+            {
+              "key": "wintergarten_glaswand_price",
+              "label": "Glaswand (€/m²)",
+              "unit": "€/m²",
+              "value": 560
+            },
+            {
+              "key": "wintergarten_plexiglaswand_price",
+              "label": "Plexiglaswand (€/m²)",
+              "unit": "€/m²",
+              "value": 150
+            }
+          ]
+        },
+        {
+          "title": "Balkone",
+          "subtitle": "Allgemeiner Quadratmeterpreis, Balkonboden + Geländer",
+          "fieldTag": "balkon_type",
+          "variables": [
+            {
+              "key": "balkon_holzgelander_price",
+              "label": "Holzgeländer (€/m²)",
+              "unit": "€/m²",
+              "value": 560
+            },
+            {
+              "key": "balkon_stahlgelander_price",
+              "label": "Stahlgeländer (€/m²)",
+              "unit": "€/m²",
+              "value": 150
+            },
+            {
+              "key": "balkon_glasgelander_price",
+              "label": "Glasgeländer (€/m²)",
+              "unit": "€/m²",
+              "value": 700
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "daemmungDachdeckung",
+      "label": "Dämmung & Dachdeckung",
+      "fields": [
+        {
+          "type": "select",
+          "name": "daemmung",
+          "label": "Dämmung",
+          "options": [
+            "Keine",
+            "Zwischensparren",
+            "Aufsparren",
+            "Kombination"
+          ],
+          "tag": "roof_insulation"
+        },
+        {
+          "type": "select",
+          "name": "unterdach",
+          "label": "Unterdach",
+          "options": [
+            "Folie",
+            "Schalung + Folie"
+          ],
+          "tag": "under_roof"
+        },
+        {
+          "type": "select",
+          "name": "dachstuhlTyp",
+          "label": "Dachstuhl-Typ",
+          "options": [
+            "Sparrendach",
+            "Pfettendach",
+            "Kehlbalkendach",
+            "Sonderkonstruktion"
+          ],
+          "tag": "roof_structure_type"
+        },
+        {
+          "type": "bool",
+          "name": "sichtdachstuhl",
+          "label": "Sichtdachstuhl",
+          "tag": "visible_roof_structure"
+        },
+        {
+          "type": "bool",
+          "name": "dachfensterImDach",
+          "label": "Dachfenster einplanen",
+          "tag": "roof_skylights"
+        },
+        {
+          "type": "select",
+          "name": "dachfensterTyp",
+          "label": "Dachfenster-Ausführung",
+          "options": [
+            "Standard",
+            "Velux",
+            "Roto",
+            "Fakro",
+            "Sonstiges"
+          ],
+          "tag": "roof_skylight_type"
+        },
+        {
+          "type": "select",
+          "name": "dachdeckung",
+          "label": "Dachdeckung",
+          "options": [
+            "Ziegel",
+            "Betonstein",
+            "Blech",
+            "Schindel",
+            "Sonstiges"
+          ],
+          "tag": "roof_covering"
+        }
+      ],
+      "priceSections": [
+        {
+          "title": "Dämmung",
+          "subtitle": "Welche Dämmungsarten bieten Sie an?",
+          "variables": [
+            {
+              "key": "daemmung_keine_price",
+              "label": "Keine (€/m²)",
+              "unit": "€/m²",
+              "value": 0
+            },
+            {
+              "key": "daemmung_zwischensparren_price",
+              "label": "Zwischensparren (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            },
+            {
+              "key": "daemmung_aufsparren_price",
+              "label": "Aufsparren (€/m²)",
+              "unit": "€/m²",
+              "value": 75
+            },
+            {
+              "key": "insulation_price_per_m2",
+              "label": "Kombination (€/m²)",
+              "unit": "€/m²",
+              "value": 85
+            }
+          ]
+        },
+        {
+          "title": "Unterdach",
+          "subtitle": "Welche Arten Unterdach bieten Sie an?",
+          "variables": [
+            {
+              "key": "unterdach_folie_price",
+              "label": "Folie (€/m²)",
+              "unit": "€/m²",
+              "value": 12
+            },
+            {
+              "key": "unterdach_schalung_folie_price",
+              "label": "Schalung + Folie (€/m²)",
+              "unit": "€/m²",
+              "value": 28
+            }
+          ]
+        },
+        {
+          "title": "Dachstuhl-Typ",
+          "subtitle": "Welche Dachstuhl-Konstruktionen bieten Sie an?",
+          "variables": [
+            {
+              "key": "dachstuhl_sparrendach_price",
+              "label": "Sparrendach (€/m²)",
+              "unit": "€/m²",
+              "value": 95
+            },
+            {
+              "key": "dachstuhl_pfettendach_price",
+              "label": "Pfettendach (€/m²)",
+              "unit": "€/m²",
+              "value": 110
+            },
+            {
+              "key": "dachstuhl_kehlbalkendach_price",
+              "label": "Kehlbalkendach (€/m²)",
+              "unit": "€/m²",
+              "value": 105
+            },
+            {
+              "key": "dachstuhl_sonderkonstruktion_price",
+              "label": "Sonderkonstruktion (€/m²)",
+              "unit": "€/m²",
+              "value": 130
+            }
+          ]
+        },
+        {
+          "title": "Sichtdachstuhl",
+          "subtitle": "Feld „Sichtdachstuhl“",
+          "variables": [
+            {
+              "key": "sichtdachstuhl_zuschlag_price",
+              "label": "Sichtdachstuhl Aufschlag (€/m²)",
+              "unit": "€/m²",
+              "value": 25
+            }
+          ]
+        },
+        {
+          "title": "Dachdeckung",
+          "subtitle": "Welche Dachdeckungen bieten Sie an?",
+          "variables": [
+            {
+              "key": "overhang_m",
+              "label": "Dachüberstand (m)",
+              "unit": "m",
+              "value": 0.4
+            },
+            {
+              "key": "tile_price_per_m2",
+              "label": "Ziegel (€/m²)",
+              "unit": "€/m²",
+              "value": 95
+            },
+            {
+              "key": "roof_ceramic_tile_price_per_m2",
+              "label": "Betonstein (€/m²)",
+              "unit": "€/m²",
+              "value": 75
+            },
+            {
+              "key": "sheet_metal_price_per_m",
+              "label": "Blech (€/m)",
+              "unit": "€/m",
+              "value": 45
+            },
+            {
+              "key": "membrane_price_per_m2",
+              "label": "Schindel (€/m²)",
+              "unit": "€/m²",
+              "value": 65
+            },
+            {
+              "key": "metal_price_per_m2",
+              "label": "Sonstiges (€/m²)",
+              "unit": "€/m²",
+              "value": 70
+            }
+          ]
+        },
+        {
+          "title": "Dachfenster",
+          "subtitle": "Preis pro m² (Anzahl/Fläche aus Dach-Editor)",
+          "fieldTag": "roof_skylight_type",
+          "variables": [
+            {
+              "key": "dachfenster_stueck_standard",
+              "label": "Standard (€/m²)",
+              "unit": "€/m²",
+              "value": 650
+            },
+            {
+              "key": "dachfenster_stueck_velux",
+              "label": "Velux (€/m²)",
+              "unit": "€/m²",
+              "value": 890
+            },
+            {
+              "key": "dachfenster_stueck_roto",
+              "label": "Roto (€/m²)",
+              "unit": "€/m²",
+              "value": 820
+            },
+            {
+              "key": "dachfenster_stueck_fakro",
+              "label": "Fakro (€/m²)",
+              "unit": "€/m²",
+              "value": 850
+            },
+            {
+              "key": "dachfenster_stueck_sonstiges",
+              "label": "Sonstiges (€/m²)",
+              "unit": "€/m²",
+              "value": 750
+            }
+          ]
+        },
+        {
+          "title": "Klempnerarbeiten",
+          "subtitle": "Aufschlag der Klempnerarbeiten zum Dachpreis anpassen",
+          "variables": [
+            {
+              "key": "tinichigerie_percent",
+              "label": "Klempnerarbeiten (%)",
+              "unit": "%",
+              "value": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "ferestreUsi",
+      "label": "Fenster & Türen",
+      "fields": [
+        {
+          "type": "select",
+          "name": "windowQuality",
+          "label": "Fensterart (Preis: 2- oder 3-fach)",
+          "options": [
+            "2-fach verglast",
+            "3-fach verglast",
+            "3-fach verglast, Passiv"
+          ],
+          "tag": "window_quality"
+        },
+        {
+          "type": "select",
+          "name": "doorMaterialInterior",
+          "label": "Innentüren (Preis pro Stück)",
+          "options": [
+            "Standard",
+            "Holz",
+            "Glas",
+            "Weiß lackiert"
+          ],
+          "tag": "door_material_interior"
+        },
+        {
+          "type": "select",
+          "name": "doorMaterialExterior",
+          "label": "Außentüren (Preis pro Stück)",
+          "options": [
+            "Standard",
+            "Holz",
+            "Aluminium",
+            "Kunststoff"
+          ],
+          "tag": "door_material_exterior"
+        },
+        {
+          "type": "bool",
+          "name": "garagentorGewuenscht",
+          "label": "Garagentor gewünscht (Preis pro Stück)",
+          "tag": "garage_door_desired"
+        },
+        {
+          "type": "select",
+          "name": "garageDoorType",
+          "label": "Garagentor",
+          "options": [
+            "Sektionaltor Standard",
+            "Sektionaltor Premium",
+            "Rolltor",
+            "Schwingtor",
+            "Seiten-Sektionaltor"
+          ],
+          "tag": "garage_door_type",
+          "optional": true
+        }
+
+      ],
+      "priceSections": [
+        {
+          "fieldTag": "window_quality",
+          "title": "Fenster",
+          "subtitle": "Preis pro m² Glasfläche (Fensterart: 2- oder 3-fach)",
+          "variables": [
+            {
+              "key": "window_2_fach_price",
+              "label": "2-fach verglast (€/m²)",
+              "unit": "€/m²",
+              "value": 320
+            },
+            {
+              "key": "window_3_fach_price",
+              "label": "3-fach verglast (€/m²)",
+              "unit": "€/m²",
+              "value": 420
+            },
+            {
+              "key": "window_3fach_passiv_price",
+              "label": "3-fach verglast, Passiv (€/m²)",
+              "unit": "€/m²",
+              "value": 580
+            }
+          ]
+        },
+        {
+          "title": "Innentüren",
+          "subtitle": "Stückpreis je nach gewählter Innentür",
+          "fieldTag": "door_material_interior",
+          "variables": [
+            {
+              "key": "door_interior_standard",
+              "label": "Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 320
+            },
+            {
+              "key": "door_interior_holz",
+              "label": "Holz (€/Stück)",
+              "unit": "€/Stück",
+              "value": 580
+            },
+            {
+              "key": "door_interior_glas",
+              "label": "Glas (€/Stück)",
+              "unit": "€/Stück",
+              "value": 890
+            },
+            {
+              "key": "door_interior_weiss_lackiert",
+              "label": "Weiß lackiert (€/Stück)",
+              "unit": "€/Stück",
+              "value": 420
+            }
+          ]
+        },
+        {
+          "title": "Außentüren",
+          "subtitle": "Stückpreis je nach gewählter Außentür",
+          "fieldTag": "door_material_exterior",
+          "variables": [
+            {
+              "key": "door_exterior_standard",
+              "label": "Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1450
+            },
+            {
+              "key": "door_exterior_holz",
+              "label": "Holz (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2200
+            },
+            {
+              "key": "door_exterior_aluminium",
+              "label": "Aluminium (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2800
+            },
+            {
+              "key": "door_exterior_kunststoff",
+              "label": "Kunststoff (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1600
+            }
+          ]
+        },
+        {
+          "title": "Garagentor",
+          "subtitle": "Stückpreis Garagentor (nur wenn „Garagentor gewünscht“)",
+          "fieldTag": "garage_door_type",
+          "variables": [
+            {
+              "key": "garage_door_sektional_standard_stueck",
+              "label": "Sektionaltor Standard (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2400
+            },
+            {
+              "key": "garage_door_sektional_premium_stueck",
+              "label": "Sektionaltor Premium (€/Stück)",
+              "unit": "€/Stück",
+              "value": 3200
+            },
+            {
+              "key": "garage_door_rolltor_stueck",
+              "label": "Rolltor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 2100
+            },
+            {
+              "key": "garage_door_schwingtor_stueck",
+              "label": "Schwingtor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 1800
+            },
+            {
+              "key": "garage_door_seiten_sektional_stueck",
+              "label": "Seiten-Sektionaltor (€/Stück)",
+              "unit": "€/Stück",
+              "value": 3800
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "wandaufbau",
+      "label": "Wandaufbau",
+      "fields": [],
+      "priceSections": [
+        {
+          "title": "Außenwände",
+          "subtitle": "Preise je nach Option (pro m²)",
+          "fieldTag": "wandaufbau_aussen",
+          "variables": [
+            {
+              "key": "wandaufbau_aussen_clt_35",
+              "label": "CLT 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 400
+            },
+            {
+              "key": "wandaufbau_aussen_clt_32",
+              "label": "CLT 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 380
+            },
+            {
+              "key": "wandaufbau_aussen_clt_30",
+              "label": "CLT 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 360
+            },
+            {
+              "key": "wandaufbau_aussen_holzriegel_35",
+              "label": "Holzriegel 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 300
+            },
+            {
+              "key": "wandaufbau_aussen_holzriegel_32",
+              "label": "Holzriegel 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 280
+            },
+            {
+              "key": "wandaufbau_aussen_holzriegel_30",
+              "label": "Holzriegel 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 260
+            },
+            {
+              "key": "wandaufbau_aussen_beton_35",
+              "label": "Beton 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 200
+            },
+            {
+              "key": "wandaufbau_aussen_beton_32",
+              "label": "Beton 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 180
+            },
+            {
+              "key": "wandaufbau_aussen_beton_30",
+              "label": "Beton 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 160
+            }
+          ]
+        },
+        {
+          "title": "Innenwände",
+          "subtitle": "Preise je nach Option (pro m²)",
+          "fieldTag": "wandaufbau_innen",
+          "variables": [
+            {
+              "key": "wandaufbau_innen_clt_35",
+              "label": "CLT 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 400
+            },
+            {
+              "key": "wandaufbau_innen_clt_32",
+              "label": "CLT 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 380
+            },
+            {
+              "key": "wandaufbau_innen_clt_30",
+              "label": "CLT 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 360
+            },
+            {
+              "key": "wandaufbau_innen_holzriegel_35",
+              "label": "Holzriegel 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 300
+            },
+            {
+              "key": "wandaufbau_innen_holzriegel_32",
+              "label": "Holzriegel 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 280
+            },
+            {
+              "key": "wandaufbau_innen_holzriegel_30",
+              "label": "Holzriegel 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 260
+            },
+            {
+              "key": "wandaufbau_innen_beton_35",
+              "label": "Beton 35cm (€/m²)",
+              "unit": "€/m²",
+              "value": 200
+            },
+            {
+              "key": "wandaufbau_innen_beton_32",
+              "label": "Beton 32cm (€/m²)",
+              "unit": "€/m²",
+              "value": 180
+            },
+            {
+              "key": "wandaufbau_innen_beton_30",
+              "label": "Beton 30cm (€/m²)",
+              "unit": "€/m²",
+              "value": 160
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "materialeFinisaj",
+      "label": "Materialien & Ausbaustufe",
+      "fields": [],
+      "priceSections": [
+        {
+          "title": "Innenausbau",
+          "subtitle": "Innenausbau pro m²",
+          "fieldTag": "interior_finish",
+          "variables": [
+            {
+              "key": "interior_tencuiala",
+              "label": "Putz (€/m²)",
+              "unit": "€/m²",
+              "value": 35
+            },
+            {
+              "key": "interior_lemn",
+              "label": "Holz (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            },
+            {
+              "key": "interior_fibrociment",
+              "label": "Faserzement (€/m²)",
+              "unit": "€/m²",
+              "value": 42
+            },
+            {
+              "key": "interior_mix",
+              "label": "Mix (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            }
+          ]
+        },
+        {
+          "title": "Fassade",
+          "subtitle": "Fassade pro m²",
+          "fieldTag": "exterior_facade",
+          "variables": [
+            {
+              "key": "exterior_tencuiala",
+              "label": "Putz (€/m²)",
+              "unit": "€/m²",
+              "value": 85
+            },
+            {
+              "key": "exterior_lemn",
+              "label": "Holz (€/m²)",
+              "unit": "€/m²",
+              "value": 95
+            },
+            {
+              "key": "exterior_fibrociment",
+              "label": "Faserzement (€/m²)",
+              "unit": "€/m²",
+              "value": 78
+            },
+            {
+              "key": "exterior_mix",
+              "label": "Mix (€/m²)",
+              "unit": "€/m²",
+              "value": 88
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "bodenDeckeBelag",
+      "label": "Geschossdecken und Bodenaufbauten",
+      "fields": [],
+      "priceSections": [
+        {
+          "title": "Bodenaufbau",
+          "subtitle": "Geschossdecke / tragende Ebene (€/m²)",
+          "fieldTag": "bodenaufbau",
+          "variables": [
+            {
+              "key": "bodenaufbau_holz_standard_price",
+              "label": "Geschossdecke Holz Standard (€/m²)",
+              "unit": "€/m²",
+              "value": 560
+            },
+            {
+              "key": "bodenaufbau_holz_balken_price",
+              "label": "Holzbalkendecke (€/m²)",
+              "unit": "€/m²",
+              "value": 280
+            },
+            {
+              "key": "bodenaufbau_beton_price",
+              "label": "Massivdecke Stahlbeton (€/m²)",
+              "unit": "€/m²",
+              "value": 320
+            },
+            {
+              "key": "bodenaufbau_bodenplatte_price",
+              "label": "Bodenplatte Beton (€/m²)",
+              "unit": "€/m²",
+              "value": 150
+            }
+          ]
+        },
+        {
+          "title": "Deckenaufbau",
+          "subtitle": "Unterdecke (€/m²)",
+          "fieldTag": "deckenaufbau",
+          "variables": [
+            {
+              "key": "deckenaufbau_gipskarton_price",
+              "label": "Gipskarton Standard (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            },
+            {
+              "key": "deckenaufbau_gipskarton_akustik_price",
+              "label": "Gipskarton Akustik (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            },
+            {
+              "key": "deckenaufbau_sichtschalung_price",
+              "label": "Sichtschalung Holz (€/m²)",
+              "unit": "€/m²",
+              "value": 65
+            },
+            {
+              "key": "deckenaufbau_abgehaengt_price",
+              "label": "Unterdecke abgehängt (€/m²)",
+              "unit": "€/m²",
+              "value": 75
+            }
+          ]
+        },
+        {
+          "title": "Bodenbelag",
+          "subtitle": "Fußbodenbelag (€/m²)",
+          "fieldTag": "bodenbelag",
+          "variables": [
+            {
+              "key": "bodenbelag_estrich_fliesen_price",
+              "label": "Estrich + Fliesen (€/m²)",
+              "unit": "€/m²",
+              "value": 35
+            },
+            {
+              "key": "bodenbelag_parkett_price",
+              "label": "Parkett Eiche (€/m²)",
+              "unit": "€/m²",
+              "value": 42
+            },
+            {
+              "key": "bodenbelag_laminat_price",
+              "label": "Laminat (€/m²)",
+              "unit": "€/m²",
+              "value": 38
+            },
+            {
+              "key": "bodenbelag_teppich_price",
+              "label": "Teppichboden (€/m²)",
+              "unit": "€/m²",
+              "value": 28
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "performantaEnergetica",
+      "label": "Energieeffizienz & Heizung",
+      "fields": [
+        {
+          "type": "select",
+          "name": "nivelEnergetic",
+          "label": "Gewünschtes Energieniveau",
+          "options": [
+            "Standard",
+            "KfW 55",
+            "KfW 40",
+            "KfW 40+"
+          ],
+          "tag": "energy_level"
+        },
+        {
+          "type": "select",
+          "name": "tipIncalzire",
+          "label": "Heizungssystem",
+          "options": [
+            "Gas",
+            "Wärmepumpe",
+            "Elektrisch"
+          ],
+          "tag": "heating_type"
+        },
+        {
+          "type": "bool",
+          "name": "ventilatie",
+          "label": "Lüftung / Wärmerückgewinnung",
+          "tag": "ventilation"
+        },
+        {
+          "type": "select",
+          "name": "tipSemineu",
+          "label": "Welchen Kamin / Ofen wünscht der Kunde?",
+          "options": [
+            "Kein Kamin",
+            "Klassischer Holzofen",
+            "Moderner Design-Kaminofen",
+            "Pelletofen (automatisch)",
+            "Einbaukamin",
+            "Kachel-/wassergeführter Kamin"
+          ],
+          "tag": "fireplace_type"
+        },
+        {
+          "type": "bool",
+          "name": "includeElectricity",
+          "label": "Elektroinstallation hinzufügen",
+          "tag": "include_electricity"
+        },
+        {
+          "type": "bool",
+          "name": "includeSewage",
+          "label": "Abwasser hinzufügen",
+          "tag": "include_sewage"
+        }
+      ],
+      "priceSections": [
+        {
+          "title": "Energieniveau",
+          "subtitle": "Preisaufschläge je nach gewähltem Energiestandard.",
+          "variables": [
+            {
+              "key": "nivel_energetic_standard_price",
+              "label": "Standard (€/m²)",
+              "unit": "€/m²",
+              "value": 0
+            },
+            {
+              "key": "nivel_energetic_kfw55_price",
+              "label": "KfW 55 (€/m²)",
+              "unit": "€/m²",
+              "value": 25
+            },
+            {
+              "key": "nivel_energetic_kfw40_price",
+              "label": "KfW 40 (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            },
+            {
+              "key": "nivel_energetic_kfw40plus_price",
+              "label": "KfW 40+ (€/m²)",
+              "unit": "€/m²",
+              "value": 65
+            }
+          ]
+        },
+        {
+          "title": "Heizungssystem",
+          "subtitle": "Preisaufschläge je nach ausgewähltem Heizungssystem.",
+          "variables": [
+            {
+              "key": "tip_incalzire_gas_price",
+              "label": "Gas (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            },
+            {
+              "key": "tip_incalzire_waermepumpe_price",
+              "label": "Wärmepumpe (€/m²)",
+              "unit": "€/m²",
+              "value": 95
+            },
+            {
+              "key": "tip_incalzire_elektrisch_price",
+              "label": "Elektrisch (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            }
+          ]
+        },
+        {
+          "title": "Lüftung / Wärmerückgewinnung",
+          "subtitle": "Zusatzkosten, wenn eine Lüftungsanlage mit Wärmerückgewinnung gewünscht ist.",
+          "variables": [
+            {
+              "key": "ventilation_base_price",
+              "label": "Lüftung (€/m²)",
+              "unit": "€/m²",
+              "value": 55
+            }
+          ]
+        },
+        {
+          "title": "Kaminabzug",
+          "subtitle": "Schornstein pro Geschoss",
+          "variables": [
+            {
+              "key": "horn_price_per_floor",
+              "label": "Pro Geschoss (€)",
+              "unit": "€",
+              "value": 1500
+            }
+          ]
+        },
+        {
+          "title": "Kamin / Ofen",
+          "subtitle": "Pauschalpreise je nach gewünschter Kamin- oder Ofenlösung.",
+          "variables": [
+            {
+              "key": "tip_semineu_kein_price",
+              "label": "Kein Kamin (€)",
+              "unit": "€",
+              "value": 0
+            },
+            {
+              "key": "tip_semineu_holzofen_price",
+              "label": "Klassischer Holzofen (€)",
+              "unit": "€",
+              "value": 4200
+            },
+            {
+              "key": "tip_semineu_design_price",
+              "label": "Moderner Design-Kaminofen (€)",
+              "unit": "€",
+              "value": 6500
+            },
+            {
+              "key": "tip_semineu_pelletofen_price",
+              "label": "Pelletofen (automatisch) (€)",
+              "unit": "€",
+              "value": 8500
+            },
+            {
+              "key": "tip_semineu_einbaukamin_price",
+              "label": "Einbaukamin (€)",
+              "unit": "€",
+              "value": 7200
+            },
+            {
+              "key": "tip_semineu_kachel_price",
+              "label": "Kachel-/wassergeführter Kamin (€)",
+              "unit": "€",
+              "value": 9500
+            }
+          ]
+        },
+        {
+          "title": "Haustechnik (Basis)",
+          "subtitle": "Nur Werte anpassen (fixe Positionen: Strom, Abwasser).",
+          "variables": [
+            {
+              "key": "electricity_base_price",
+              "label": "Strom (€/m²)",
+              "unit": "€/m²",
+              "value": 60
+            },
+            {
+              "key": "sewage_base_price",
+              "label": "Abwasser (€/m²)",
+              "unit": "€/m²",
+              "value": 45
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "upload",
+      "label": "Datei-Upload",
+      "fields": [
+        {
+          "type": "upload",
+          "name": "planArhitectural",
+          "label": "Einreichplan",
+          "accept": ".pdf,.jpg,.jpeg,.png,.dwg",
+          "multiple": true,
+          "tag": "upload_plans"
+        },
+        {
+          "type": "upload",
+          "name": "fotografii",
+          "label": "Fotos / Renderings",
+          "accept": ".pdf,.jpg,.jpeg,.png",
+          "optional": true,
+          "tag": "upload_photos"
+        },
+        {
+          "type": "upload",
+          "name": "documentatie",
+          "label": "Zusätzliche Dokumentation",
+          "accept": ".pdf,.jpg,.jpeg,.png,.zip",
+          "optional": true,
+          "tag": "upload_docs"
+        }
+      ]
+    }
+  ],
+  "preisdatenbank": {
+    "_comment": "Structură identică cu steps[].priceSections: subsections și variabile potrivate cu câmpurile și opțiunile din steps/fields. Cheile sunt citite de holzbot-engine/pricing/db_loader.py.",
+    "sections": [
+      {
+        "stepKey": "sistemConstructiv",
+        "title": "Allgemeine Projektinformationen",
+        "subsections": [
+          {
+            "title": "Baustellenzufahrt",
+            "subtitle": "Preise je nach Feld „Baustellenzufahrt“",
+            "fieldTag": "site_access",
+            "variables": [
+              {
+                "key": "acces_santier_leicht_factor",
+                "label": "Leicht (LKW 40t) (Faktor)",
+                "unit": "",
+                "value": 1
+              },
+              {
+                "key": "acces_santier_mittel_factor",
+                "label": "Mittel (Faktor)",
+                "unit": "",
+                "value": 1.1
+              },
+              {
+                "key": "prefab_modifier_santier",
+                "label": "Schwierig (Faktor)",
+                "unit": "",
+                "value": 1.25
+              }
+            ]
+          },
+          {
+            "title": "Gelände",
+            "subtitle": "Preise je nach Feld „Gelände: eben oder Hang?“",
+            "fieldTag": "terrain",
+            "variables": [
+              {
+                "key": "teren_eben_factor",
+                "label": "Eben (Faktor)",
+                "unit": "",
+                "value": 1
+              },
+              {
+                "key": "teren_leichte_hanglage_factor",
+                "label": "Leichte Hanglage (Faktor)",
+                "unit": "",
+                "value": 1.05
+              },
+              {
+                "key": "teren_starke_hanglage_factor",
+                "label": "Starke Hanglage (Faktor)",
+                "unit": "",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "title": "Strom-/Wasseranschluss",
+            "subtitle": "Feld „Strom-/Wasseranschluss vorhanden“",
+            "fieldTag": "strom_wasseranschluss",
+            "variables": [
+              {
+                "key": "utilitati_anschluss_price",
+                "label": "Anschlusskosten Pauschal (€)",
+                "unit": "€",
+                "value": 2500
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "structuraCladirii",
+        "title": "Gebäudestruktur",
+        "subsections": [
+          {
+            "title": "Untergeschoss / Fundament",
+            "subtitle": "Preise je nach Feld „Untergeschoss / Fundament“",
+            "fieldTag": "foundation_type",
+            "variables": [
+              {
+                "key": "unit_price_placa",
+                "label": "Kein Keller (nur Bodenplatte) (€/m²)",
+                "unit": "€/m²",
+                "value": 120
+              },
+              {
+                "key": "unit_price_keller_nutzkeller",
+                "label": "Keller (unbeheizt / Nutzkeller) (€/m²)",
+                "unit": "€/m²",
+                "value": 145
+              },
+              {
+                "key": "unit_price_keller_ausbau",
+                "label": "Keller (mit einfachem Ausbau) (€/m²)",
+                "unit": "€/m²",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "title": "Pfahlgründung",
+            "subtitle": "Feld „Pfahlgründung erforderlich“",
+            "fieldTag": "pfahlgrundung",
+            "variables": [
+              {
+                "key": "unit_price_piloti",
+                "label": "Pfahlgründung (€/m²)",
+                "unit": "€/m²",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "title": "Treppe",
+            "subtitle": "Preis pro Stück",
+            "fieldTag": "flache_treppe",
+            "variables": [
+              {
+                "key": "floor_coeff_per_m2",
+                "label": "Boden (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              },
+              {
+                "key": "ceiling_coeff_per_m2",
+                "label": "Decke (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              },
+              {
+                "key": "price_per_stair_unit",
+                "label": "Treppe pro Stück (€)",
+                "unit": "€",
+                "value": 4500
+              },
+              {
+                "key": "railing_price_per_stair",
+                "label": "Geländer pro Stück (€)",
+                "unit": "€",
+                "value": 800
+              },
+              {
+                "key": "stairs_type_standard_piece_price",
+                "label": "Treppentyp Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 4500
+              },
+              {
+                "key": "stairs_type_holz_piece_price",
+                "label": "Treppentyp Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5200
+              },
+              {
+                "key": "stairs_type_beton_piece_price",
+                "label": "Treppentyp Beton (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5800
+              },
+              {
+                "key": "stairs_type_metall_piece_price",
+                "label": "Treppentyp Metall (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5600
+              },
+              {
+                "key": "stairs_type_sonder_piece_price",
+                "label": "Treppentyp Sonder (€/Stück)",
+                "unit": "€/Stück",
+                "value": 6500
+              }
+            ]
+          },
+          {
+            "title": "Raumhöhe",
+            "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
+            "fieldTag": "floor_height",
+            "variables": [
+              {
+                "key": "inaltime_etaje_standard_m",
+                "label": "Standard (2,50 m)",
+                "unit": "m",
+                "value": 2.5
+              },
+              {
+                "key": "inaltime_etaje_komfort_m",
+                "label": "Komfort (2,70 m)",
+                "unit": "m",
+                "value": 2.7
+              },
+              {
+                "key": "inaltime_etaje_hoch_m",
+                "label": "Hoch (2,85+ m)",
+                "unit": "m",
+                "value": 2.85
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "wintergaertenBalkone",
+        "title": "Wintergärten & Balkone",
+        "subsections": [
+          {
+            "title": "Wintergarten",
+            "subtitle": "Wandpreise anpassen",
+            "fieldTag": "wintergarten_type",
+            "variables": [
+              {
+                "key": "wintergarten_glaswand_price",
+                "label": "Glaswand (€/m²)",
+                "unit": "€/m²",
+                "value": 560
+              },
+              {
+                "key": "wintergarten_plexiglaswand_price",
+                "label": "Plexiglaswand (€/m²)",
+                "unit": "€/m²",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "title": "Balkone",
+            "subtitle": "Allgemeiner Quadratmeterpreis, Balkonboden + Geländer",
+            "fieldTag": "balkon_type",
+            "variables": [
+              {
+                "key": "balkon_holzgelander_price",
+                "label": "Holzgeländer (€/m²)",
+                "unit": "€/m²",
+                "value": 560
+              },
+              {
+                "key": "balkon_stahlgelander_price",
+                "label": "Stahlgeländer (€/m²)",
+                "unit": "€/m²",
+                "value": 150
+              },
+              {
+                "key": "balkon_glasgelander_price",
+                "label": "Glasgeländer (€/m²)",
+                "unit": "€/m²",
+                "value": 700
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "daemmungDachdeckung",
+        "title": "Dämmung & Dachdeckung",
+        "subsections": [
+          {
+            "title": "Dämmung",
+            "subtitle": "Welche Dämmungsarten bieten Sie an?",
+            "fieldTag": "roof_insulation",
+            "variables": [
+              {
+                "key": "daemmung_keine_price",
+                "label": "Keine (€/m²)",
+                "unit": "€/m²",
+                "value": 0
+              },
+              {
+                "key": "daemmung_zwischensparren_price",
+                "label": "Zwischensparren (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              },
+              {
+                "key": "daemmung_aufsparren_price",
+                "label": "Aufsparren (€/m²)",
+                "unit": "€/m²",
+                "value": 75
+              },
+              {
+                "key": "insulation_price_per_m2",
+                "label": "Kombination (€/m²)",
+                "unit": "€/m²",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "title": "Unterdach",
+            "subtitle": "Welche Arten Unterdach bieten Sie an?",
+            "fieldTag": "under_roof",
+            "variables": [
+              {
+                "key": "unterdach_folie_price",
+                "label": "Folie (€/m²)",
+                "unit": "€/m²",
+                "value": 12
+              },
+              {
+                "key": "unterdach_schalung_folie_price",
+                "label": "Schalung + Folie (€/m²)",
+                "unit": "€/m²",
+                "value": 28
+              }
+            ]
+          },
+          {
+            "title": "Dachstuhl-Typ",
+            "subtitle": "Welche Dachstuhl-Konstruktionen bieten Sie an?",
+            "fieldTag": "roof_structure_type",
+            "variables": [
+              {
+                "key": "dachstuhl_sparrendach_price",
+                "label": "Sparrendach (€/m²)",
+                "unit": "€/m²",
+                "value": 95
+              },
+              {
+                "key": "dachstuhl_pfettendach_price",
+                "label": "Pfettendach (€/m²)",
+                "unit": "€/m²",
+                "value": 110
+              },
+              {
+                "key": "dachstuhl_kehlbalkendach_price",
+                "label": "Kehlbalkendach (€/m²)",
+                "unit": "€/m²",
+                "value": 105
+              },
+              {
+                "key": "dachstuhl_sonderkonstruktion_price",
+                "label": "Sonderkonstruktion (€/m²)",
+                "unit": "€/m²",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "title": "Sichtdachstuhl",
+            "subtitle": "Feld „Sichtdachstuhl“",
+            "fieldTag": "sichtdachstuhl",
+            "variables": [
+              {
+                "key": "sichtdachstuhl_zuschlag_price",
+                "label": "Sichtdachstuhl Aufschlag (€/m²)",
+                "unit": "€/m²",
+                "value": 25
+              }
+            ]
+          },
+          {
+            "title": "Dachdeckung",
+            "subtitle": "Welche Dachdeckungen bieten Sie an?",
+            "fieldTag": "roof_covering",
+            "variables": [
+              {
+                "key": "overhang_m",
+                "label": "Dachüberstand (m)",
+                "unit": "m",
+                "value": 0.4
+              },
+              {
+                "key": "tile_price_per_m2",
+                "label": "Ziegel (€/m²)",
+                "unit": "€/m²",
+                "value": 95
+              },
+              {
+                "key": "roof_ceramic_tile_price_per_m2",
+                "label": "Betonstein (€/m²)",
+                "unit": "€/m²",
+                "value": 75
+              },
+              {
+                "key": "sheet_metal_price_per_m",
+                "label": "Blech (€/m)",
+                "unit": "€/m",
+                "value": 45
+              },
+              {
+                "key": "membrane_price_per_m2",
+                "label": "Schindel (€/m²)",
+                "unit": "€/m²",
+                "value": 65
+              },
+              {
+                "key": "metal_price_per_m2",
+                "label": "Sonstiges (€/m²)",
+                "unit": "€/m²",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "title": "Dachfenster",
+            "subtitle": "Preis pro m² (Anzahl/Fläche aus Dach-Editor)",
+            "fieldTag": "roof_skylight_type",
+            "variables": [
+              {
+                "key": "dachfenster_stueck_standard",
+                "label": "Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 650
+              },
+              {
+                "key": "dachfenster_stueck_velux",
+                "label": "Velux (€/m²)",
+                "unit": "€/m²",
+                "value": 890
+              },
+              {
+                "key": "dachfenster_stueck_roto",
+                "label": "Roto (€/m²)",
+                "unit": "€/m²",
+                "value": 820
+              },
+              {
+                "key": "dachfenster_stueck_fakro",
+                "label": "Fakro (€/m²)",
+                "unit": "€/m²",
+                "value": 850
+              },
+              {
+                "key": "dachfenster_stueck_sonstiges",
+                "label": "Sonstiges (€/m²)",
+                "unit": "€/m²",
+                "value": 750
+              }
+            ]
+          },
+          {
+            "title": "Klempnerarbeiten",
+            "subtitle": "Aufschlag der Klempnerarbeiten zum Dachpreis anpassen",
+            "variables": [
+              {
+                "key": "tinichigerie_percent",
+                "label": "Klempnerarbeiten (%)",
+                "unit": "%",
+                "value": 5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "ferestreUsi",
+        "title": "Fenster & Türen",
+        "subsections": [
+          {
+            "title": "Fenster",
+            "subtitle": "Preis pro m² Glasfläche (Fensterart: 2- oder 3-fach)",
+            "fieldTag": "window_quality",
+            "variables": [
+              {
+                "key": "window_2_fach_price",
+                "label": "2-fach verglast (€/m²)",
+                "unit": "€/m²",
+                "value": 320
+              },
+              {
+                "key": "window_3_fach_price",
+                "label": "3-fach verglast (€/m²)",
+                "unit": "€/m²",
+                "value": 420
+              },
+              {
+                "key": "window_3fach_passiv_price",
+                "label": "3-fach verglast, Passiv (€/m²)",
+                "unit": "€/m²",
+                "value": 580
+              }
+            ]
+          },
+          {
+            "title": "Innentüren",
+            "subtitle": "Stückpreis je nach gewählter Innentür",
+            "fieldTag": "door_material_interior",
+            "variables": [
+              {
+                "key": "door_interior_standard",
+                "label": "Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 320
+              },
+              {
+                "key": "door_interior_holz",
+                "label": "Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 580
+              },
+              {
+                "key": "door_interior_glas",
+                "label": "Glas (€/Stück)",
+                "unit": "€/Stück",
+                "value": 890
+              },
+              {
+                "key": "door_interior_weiss_lackiert",
+                "label": "Weiß lackiert (€/Stück)",
+                "unit": "€/Stück",
+                "value": 420
+              }
+            ]
+          },
+          {
+            "title": "Außentüren",
+            "subtitle": "Stückpreis je nach gewählter Außentür",
+            "fieldTag": "door_material_exterior",
+            "variables": [
+              {
+                "key": "door_exterior_standard",
+                "label": "Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1450
+              },
+              {
+                "key": "door_exterior_holz",
+                "label": "Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2200
+              },
+              {
+                "key": "door_exterior_aluminium",
+                "label": "Aluminium (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2800
+              },
+              {
+                "key": "door_exterior_kunststoff",
+                "label": "Kunststoff (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1600
+              }
+            ]
+          },
+          {
+            "title": "Garagentor",
+            "subtitle": "Stückpreis Garagentor (nur wenn „Garagentor gewünscht“)",
+            "fieldTag": "garage_door_type",
+            "variables": [
+              {
+                "key": "garage_door_sektional_standard_stueck",
+                "label": "Sektionaltor Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2400
+              },
+              {
+                "key": "garage_door_sektional_premium_stueck",
+                "label": "Sektionaltor Premium (€/Stück)",
+                "unit": "€/Stück",
+                "value": 3200
+              },
+              {
+                "key": "garage_door_rolltor_stueck",
+                "label": "Rolltor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2100
+              },
+              {
+                "key": "garage_door_schwingtor_stueck",
+                "label": "Schwingtor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 1800
+              },
+              {
+                "key": "garage_door_seiten_sektional_stueck",
+                "label": "Seiten-Sektionaltor (€/Stück)",
+                "unit": "€/Stück",
+                "value": 3800
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "wandaufbau",
+        "title": "Wandaufbau",
+        "subsections": [
+          {
+            "title": "Außenwände",
+            "subtitle": "Preise je nach Option (pro m²)",
+            "fieldTag": "wandaufbau_aussen",
+            "variables": [
+              {
+                "key": "wandaufbau_aussen_clt_35",
+                "label": "CLT 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 400
+              },
+              {
+                "key": "wandaufbau_aussen_clt_32",
+                "label": "CLT 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 380
+              },
+              {
+                "key": "wandaufbau_aussen_clt_30",
+                "label": "CLT 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 360
+              },
+              {
+                "key": "wandaufbau_aussen_holzriegel_35",
+                "label": "Holzriegel 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 300
+              },
+              {
+                "key": "wandaufbau_aussen_holzriegel_32",
+                "label": "Holzriegel 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 280
+              },
+              {
+                "key": "wandaufbau_aussen_holzriegel_30",
+                "label": "Holzriegel 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 260
+              },
+              {
+                "key": "wandaufbau_aussen_beton_35",
+                "label": "Beton 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 200
+              },
+              {
+                "key": "wandaufbau_aussen_beton_32",
+                "label": "Beton 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 180
+              },
+              {
+                "key": "wandaufbau_aussen_beton_30",
+                "label": "Beton 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "title": "Innenwände",
+            "subtitle": "Preise je nach Option (pro m²)",
+            "fieldTag": "wandaufbau_innen",
+            "variables": [
+              {
+                "key": "wandaufbau_innen_clt_35",
+                "label": "CLT 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 400
+              },
+              {
+                "key": "wandaufbau_innen_clt_32",
+                "label": "CLT 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 380
+              },
+              {
+                "key": "wandaufbau_innen_clt_30",
+                "label": "CLT 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 360
+              },
+              {
+                "key": "wandaufbau_innen_holzriegel_35",
+                "label": "Holzriegel 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 300
+              },
+              {
+                "key": "wandaufbau_innen_holzriegel_32",
+                "label": "Holzriegel 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 280
+              },
+              {
+                "key": "wandaufbau_innen_holzriegel_30",
+                "label": "Holzriegel 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 260
+              },
+              {
+                "key": "wandaufbau_innen_beton_35",
+                "label": "Beton 35cm (€/m²)",
+                "unit": "€/m²",
+                "value": 200
+              },
+              {
+                "key": "wandaufbau_innen_beton_32",
+                "label": "Beton 32cm (€/m²)",
+                "unit": "€/m²",
+                "value": 180
+              },
+              {
+                "key": "wandaufbau_innen_beton_30",
+                "label": "Beton 30cm (€/m²)",
+                "unit": "€/m²",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "materialeFinisaj",
+        "title": "Materialien & Ausbaustufe",
+        "subsections": [
+          {
+            "title": "Innenausbau",
+            "subtitle": "Innenausbau pro m²",
+            "fieldTag": "interior_finish",
+            "variables": [
+              {
+                "key": "interior_tencuiala",
+                "label": "Putz (€/m²)",
+                "unit": "€/m²",
+                "value": 35
+              },
+              {
+                "key": "interior_lemn",
+                "label": "Holz (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              },
+              {
+                "key": "interior_fibrociment",
+                "label": "Faserzement (€/m²)",
+                "unit": "€/m²",
+                "value": 42
+              },
+              {
+                "key": "interior_mix",
+                "label": "Mix (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              }
+            ]
+          },
+          {
+            "title": "Fassade",
+            "subtitle": "Fassade pro m²",
+            "fieldTag": "exterior_facade",
+            "variables": [
+              {
+                "key": "exterior_tencuiala",
+                "label": "Putz (€/m²)",
+                "unit": "€/m²",
+                "value": 85
+              },
+              {
+                "key": "exterior_lemn",
+                "label": "Holz (€/m²)",
+                "unit": "€/m²",
+                "value": 95
+              },
+              {
+                "key": "exterior_fibrociment",
+                "label": "Faserzement (€/m²)",
+                "unit": "€/m²",
+                "value": 78
+              },
+              {
+                "key": "exterior_mix",
+                "label": "Mix (€/m²)",
+                "unit": "€/m²",
+                "value": 88
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stepKey": "bodenDeckeBelag",
+        "title": "Geschossdecken und Bodenaufbauten",
+        "subsections": [
+          {
+            "title": "Bodenaufbau",
+            "subtitle": "Geschossdecke / tragende Ebene (€/m²)",
+            "fieldTag": "bodenaufbau",
+            "variables": [
+              {
+                "key": "bodenaufbau_holz_standard_price",
+                "label": "Geschossdecke Holz Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 560
+              },
+              {
+                "key": "bodenaufbau_2_price",
+                "label": "Boden 2 (€/m²)",
+                "unit": "€/m²",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "title": "Deckenaufbau",
+            "subtitle": "Unterdecke (€/m²)",
+            "fieldTag": "deckenaufbau",
+            "variables": [
+              {
+                "key": "deckenaufbau_1_price",
+                "label": "Decke 1 (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              },
+              {
+                "key": "deckenaufbau_2_price",
+                "label": "Decke 2 (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "title": "Bodenbelag",
+            "subtitle": "Fußbodenbelag (€/m²)",
+            "fieldTag": "bodenbelag",
+            "variables": [
+              {
+                "key": "bodenbelag_1_price",
+                "label": "Bodenbelag 1 (€/m²)",
+                "unit": "€/m²",
+                "value": 35
+              },
+              {
+                "key": "bodenbelag_2_price",
+                "label": "Bodenbelag 2 (€/m²)",
+                "unit": "€/m²",
+                "value": 42
+              }
+            ]
+          }
+        ],
+        "subtitle": "Welche Arten von Bodenaufbau, Deckenaufbau und Bodenbelägen bietet Ihr Unternehmen an?"
+      },
+      {
+        "stepKey": "performantaEnergetica",
+        "title": "Energieeffizienz & Heizung",
+        "subsections": [
+          {
+            "title": "Energieniveau",
+            "subtitle": "Preisaufschläge je nach gewähltem Energiestandard.",
+            "fieldTag": "energy_level",
+            "variables": [
+              {
+                "key": "nivel_energetic_standard_price",
+                "label": "Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 0
+              },
+              {
+                "key": "nivel_energetic_kfw55_price",
+                "label": "KfW 55 (€/m²)",
+                "unit": "€/m²",
+                "value": 25
+              },
+              {
+                "key": "nivel_energetic_kfw40_price",
+                "label": "KfW 40 (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              },
+              {
+                "key": "nivel_energetic_kfw40plus_price",
+                "label": "KfW 40+ (€/m²)",
+                "unit": "€/m²",
+                "value": 65
+              }
+            ]
+          },
+          {
+            "title": "Heizungssystem",
+            "subtitle": "Preisaufschläge je nach ausgewähltem Heizungssystem.",
+            "fieldTag": "heating_type",
+            "variables": [
+              {
+                "key": "tip_incalzire_gas_price",
+                "label": "Gas (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              },
+              {
+                "key": "tip_incalzire_waermepumpe_price",
+                "label": "Wärmepumpe (€/m²)",
+                "unit": "€/m²",
+                "value": 95
+              },
+              {
+                "key": "tip_incalzire_elektrisch_price",
+                "label": "Elektrisch (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              }
+            ]
+          },
+          {
+            "title": "Lüftung / Wärmerückgewinnung",
+            "subtitle": "Zusatzkosten, wenn eine Lüftungsanlage mit Wärmerückgewinnung gewünscht ist.",
+            "fieldTag": "ventilation",
+            "variables": [
+              {
+                "key": "ventilation_base_price",
+                "label": "Lüftung (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "title": "Kaminabzug",
+            "subtitle": "Schornstein pro Geschoss",
+            "variables": [
+              {
+                "key": "horn_price_per_floor",
+                "label": "Pro Geschoss (€)",
+                "unit": "€",
+                "value": 1500
+              }
+            ]
+          },
+          {
+            "title": "Kamin / Ofen",
+            "subtitle": "Pauschalpreise je nach gewünschter Kamin- oder Ofenlösung.",
+            "fieldTag": "fireplace_type",
+            "variables": [
+              {
+                "key": "tip_semineu_kein_price",
+                "label": "Kein Kamin (€)",
+                "unit": "€",
+                "value": 0
+              },
+              {
+                "key": "tip_semineu_holzofen_price",
+                "label": "Klassischer Holzofen (€)",
+                "unit": "€",
+                "value": 4200
+              },
+              {
+                "key": "tip_semineu_design_price",
+                "label": "Moderner Design-Kaminofen (€)",
+                "unit": "€",
+                "value": 6500
+              },
+              {
+                "key": "tip_semineu_pelletofen_price",
+                "label": "Pelletofen (automatisch) (€)",
+                "unit": "€",
+                "value": 8500
+              },
+              {
+                "key": "tip_semineu_einbaukamin_price",
+                "label": "Einbaukamin (€)",
+                "unit": "€",
+                "value": 7200
+              },
+              {
+                "key": "tip_semineu_kachel_price",
+                "label": "Kachel-/wassergeführter Kamin (€)",
+                "unit": "€",
+                "value": 9500
+              }
+            ]
+          },
+          {
+            "title": "Haustechnik (Basis)",
+            "subtitle": "Nur Werte anpassen (fixe Positionen: Strom, Abwasser).",
+            "fieldTag": "haustechnik_basis",
+            "variables": [
+              {
+                "key": "electricity_base_price",
+                "label": "Strom (€/m²)",
+                "unit": "€/m²",
+                "value": 60
+              },
+              {
+                "key": "sewage_base_price",
+                "label": "Abwasser (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              }
+            ]
+          }
+        ],
+        "subtitle": "Preise für Energiestandard, Heiztechnik und optionale Haustechnik-Leistungen."
+      },
+      {
+        "stepKey": "projektdaten",
+        "title": "Dachstuhl Projekte",
+        "subtitle": "Parameter für Dachstuhl-Angebote (roof-only)",
+        "subsections": [
+          {
+            "title": "Dämmung",
+            "subtitle": "Welche Dämmungsarten bieten Sie an?",
+            "fieldTag": "roof_insulation",
+            "variables": [
+              {
+                "key": "roofonly_daemmung_keine_price",
+                "label": "Keine (€/m²)",
+                "unit": "€/m²",
+                "value": 0
+              },
+              {
+                "key": "roofonly_daemmung_zwischensparren_price",
+                "label": "Zwischensparren (€/m²)",
+                "unit": "€/m²",
+                "value": 62
+              },
+              {
+                "key": "roofonly_daemmung_aufsparren_price",
+                "label": "Aufsparren (€/m²)",
+                "unit": "€/m²",
+                "value": 92
+              },
+              {
+                "key": "roofonly_daemmung_kombination_price",
+                "label": "Kombination (€/m²)",
+                "unit": "€/m²",
+                "value": 108
+              }
+            ]
+          },
+          {
+            "title": "Unterdach",
+            "subtitle": "Welche Arten Unterdach bieten Sie an?",
+            "fieldTag": "under_roof",
+            "variables": [
+              {
+                "key": "roofonly_unterdach_folie_price",
+                "label": "Folie (€/m²)",
+                "unit": "€/m²",
+                "value": 14
+              },
+              {
+                "key": "roofonly_unterdach_schalung_folie_price",
+                "label": "Schalung + Folie (€/m²)",
+                "unit": "€/m²",
+                "value": 32
+              }
+            ]
+          },
+          {
+            "title": "Dachstuhl-Typ",
+            "subtitle": "Welche Dachstuhl-Konstruktionen bieten Sie an?",
+            "fieldTag": "roof_structure_type",
+            "variables": [
+              {
+                "key": "roofonly_dachstuhl_sparrendach_price",
+                "label": "Sparrendach (€/m²)",
+                "unit": "€/m²",
+                "value": 96
+              },
+              {
+                "key": "roofonly_dachstuhl_pfettendach_price",
+                "label": "Pfettendach (€/m²)",
+                "unit": "€/m²",
+                "value": 114
+              },
+              {
+                "key": "roofonly_dachstuhl_kehlbalkendach_price",
+                "label": "Kehlbalkendach (€/m²)",
+                "unit": "€/m²",
+                "value": 108
+              },
+              {
+                "key": "roofonly_dachstuhl_sonderkonstruktion_price",
+                "label": "Sonderkonstruktion (€/m²)",
+                "unit": "€/m²",
+                "value": 138
+              }
+            ]
+          },
+          {
+            "title": "Sichtdachstuhl",
+            "subtitle": "Fixpreis je m² gedämmter Fläche (ohne Überstand)",
+            "fieldTag": "visible_roof_structure_fixed",
+            "variables": [
+              {
+                "key": "roofonly_sichtdachstuhl_price",
+                "label": "Sichtdachstuhl (€/m²)",
+                "unit": "€/m²",
+                "value": 36
+              }
+            ]
+          },
+          {
+            "title": "Dachdeckung",
+            "subtitle": "Welche Dachdeckungen bieten Sie an?",
+            "fieldTag": "roof_covering",
+            "variables": [
+              {
+                "key": "roofonly_dachdeckung_ziegel_price",
+                "label": "Ziegel (€/m²)",
+                "unit": "€/m²",
+                "value": 84
+              },
+              {
+                "key": "roofonly_dachdeckung_betonstein_price",
+                "label": "Betonstein (€/m²)",
+                "unit": "€/m²",
+                "value": 74
+              },
+              {
+                "key": "roofonly_dachdeckung_blech_price",
+                "label": "Blech (€/m²)",
+                "unit": "€/m²",
+                "value": 69
+              },
+              {
+                "key": "roofonly_dachdeckung_schindel_price",
+                "label": "Schindel (€/m²)",
+                "unit": "€/m²",
+                "value": 89
+              },
+              {
+                "key": "roofonly_dachdeckung_sonstiges_price",
+                "label": "Sonstiges (€/m²)",
+                "unit": "€/m²",
+                "value": 78
+              }
+            ]
+          },
+          {
+            "title": "Dachfenster",
+            "subtitle": "Preis pro m² (Anzahl/Fläche aus Dach-Editor)",
+            "fieldTag": "roof_skylight_type",
+            "variables": [
+              {
+                "key": "roofonly_dachfenster_stueck_standard",
+                "label": "Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 650
+              },
+              {
+                "key": "roofonly_dachfenster_stueck_velux",
+                "label": "Velux (€/m²)",
+                "unit": "€/m²",
+                "value": 890
+              },
+              {
+                "key": "roofonly_dachfenster_stueck_roto",
+                "label": "Roto (€/m²)",
+                "unit": "€/m²",
+                "value": 820
+              },
+              {
+                "key": "roofonly_dachfenster_stueck_fakro",
+                "label": "Fakro (€/m²)",
+                "unit": "€/m²",
+                "value": 850
+              },
+              {
+                "key": "roofonly_dachfenster_stueck_sonstiges",
+                "label": "Sonstiges (€/m²)",
+                "unit": "€/m²",
+                "value": 750
+              }
+            ]
+          },
+          {
+            "title": "Decken-Innenausbau",
+            "subtitle": "Nur bei Nutzung Dachraum = Wohnraum / ausgebaut, je m² ohne Überstand",
+            "fieldTag": "decke_innenausbau",
+            "variables": [
+              {
+                "key": "roofonly_decken_innenausbau_standard_price",
+                "label": "Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 38
+              },
+              {
+                "key": "roofonly_decken_innenausbau_premium_price",
+                "label": "Premium (€/m²)",
+                "unit": "€/m²",
+                "value": 56
+              },
+              {
+                "key": "roofonly_decken_innenausbau_exklusiv_price",
+                "label": "Exklusiv (€/m²)",
+                "unit": "€/m²",
+                "value": 74
+              }
+            ]
+          },
+          {
+            "title": "Klempnerarbeiten",
+            "subtitle": "Aufschlag der Klempnerarbeiten zum Dachpreis anpassen",
+            "variables": [
+              {
+                "key": "roofonly_tinichigerie_percent",
+                "label": "Klempnerarbeiten (%)",
+                "unit": "%",
+                "value": 5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

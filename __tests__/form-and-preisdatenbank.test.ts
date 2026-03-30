@@ -3,7 +3,6 @@
  * Plus: cardul unic Kamin / Ofen cu două subsecțiuni (Kaminabzug apoi tipurile de semineu).
  */
 import { buildFormFromJson, buildPriceSectionsFromFormStepsJson } from '../lib/buildFormFromJson'
-// @ts-expect-error JSON import
 import holzbauSchema from '../data/form-schema/holzbau-form-steps.json'
 
 const { priceSections } = buildFormFromJson(holzbauSchema)
@@ -138,7 +137,8 @@ describe('Preisdatenbank – acoperire completă', () => {
       'acces_santier_leicht_factor',
       'unit_price_keller_nutzkeller',
       'window_2_fach_price',
-      'door_interior_price',
+      // Innentüren are split by type (piece prices)
+      'door_interior_standard',
       'wandaufbau_aussen_clt_35',
       'nivel_energetic_standard_price',
       'bodenaufbau_holz_standard_price',

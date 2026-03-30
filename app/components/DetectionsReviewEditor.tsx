@@ -35,18 +35,6 @@ function normalizeDoorType(type: string | undefined): string {
   return 'door'
 }
 
-function enforceMaxOneStair(doors: DoorRect[], preferredStairIndex?: number): DoorRect[] {
-  let kept = false
-  return doors.map((d, i) => {
-    if (normalizeDoorType(d.type) !== 'stairs') return d
-    if (!kept && (preferredStairIndex == null || i === preferredStairIndex)) {
-      kept = true
-      return { ...d, type: 'stairs' }
-    }
-    return { ...d, type: 'door' }
-  })
-}
-
 function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   if (!points?.length || points.length < 3) return points ?? []
   const out: Point[] = [points[0]]
@@ -78,6 +66,16 @@ const isEditableOpeningType = (t?: string) => {
   return nt === 'door' || nt === 'window' || nt === 'garage_door'
 }
 const round2 = (v: number) => Math.round(v * 100) / 100
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const isTooManyRequestsError = (err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  return /too many requests|throttle/i.test(msg)
+}
+
+const DETECTIONS_PATCH_MAX_ATTEMPTS = 10
+function detectionsPatchBackoffMs(attempt: number): number {
+  return Math.min(5000, 400 * 2 ** attempt)
+}
 
 function computeOpeningWidthMeters(door: DoorRect, metersPerPixel: number | null | undefined): number | null {
   const [x1, y1, x2, y2] = door.bbox
@@ -193,7 +191,7 @@ export function DetectionsReviewEditor({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleUndo])
 
-  const ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Sonstige'] as const
+  const ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum'] as const
   type RoomTypeOption = typeof ROOM_TYPE_OPTIONS[number]
 
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
@@ -237,7 +235,7 @@ export function DetectionsReviewEditor({
     setLoading(true)
     const fetchWithRetry = async () => {
       let lastPlans: PlanData[] = []
-      for (let attempt = 0; attempt < 12 && !cancelled; attempt++) {
+      for (let attempt = 0; attempt < 8 && !cancelled; attempt++) {
         try {
           const res = (await apiFetch(`/offers/${offerId}/compute/detections-review-data?ts=${Date.now()}`)) as {
             plans?: PlanData[]
@@ -267,14 +265,17 @@ export function DetectionsReviewEditor({
             setLoading(false)
             return
           }
-        } catch (_) {
-          if (attempt === 11 && !cancelled) {
+        } catch (e) {
+          if (isTooManyRequestsError(e)) {
+            await sleep(1200 + attempt * 600)
+          }
+          if (attempt === 7 && !cancelled) {
             setPlansData(lastPlans)
             setLoading(false)
             return
           }
         }
-        await new Promise((r) => setTimeout(r, 450))
+        await sleep(Math.min(3000, 500 + attempt * 250))
       }
       if (!cancelled) setLoading(false)
     }
@@ -282,26 +283,72 @@ export function DetectionsReviewEditor({
     return () => { cancelled = true }
   }, [offerId, images.length])
 
-  const saveDetectionsToServer = useCallback(async (): Promise<boolean> => {
+  const detSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null)
+  const pendingAutosaveRef = useRef(false)
+  const lastSavedPayloadRef = useRef<string>('')
+  const buildDetectionsPayload = useCallback((snapshot: PlanData[]) => {
+    return JSON.stringify({
+      plans: snapshot.map((p) => ({ rooms: p.rooms, doors: p.doors })),
+    })
+  }, [])
+  const persistDetectionsPayload = useCallback(async (payload: string): Promise<boolean> => {
+    if (!offerId) return false
+    for (let attempt = 0; attempt < DETECTIONS_PATCH_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = (await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          timeoutMs: 25_000,
+        })) as { ok?: boolean }
+        if (res?.ok === true) return true
+      } catch (e) {
+        if (isTooManyRequestsError(e)) {
+          await sleep(1200 + attempt * 400)
+        }
+      }
+      if (attempt < DETECTIONS_PATCH_MAX_ATTEMPTS - 1) {
+        await sleep(detectionsPatchBackoffMs(attempt))
+      }
+    }
+    return false
+  }, [offerId])
+  const saveDetectionsToServer = useCallback(async (force = false): Promise<boolean> => {
     if (!offerId) return false
     const snapshot = plansDataRef.current
     if (snapshot.length === 0) return false
-    try {
-      const res = (await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plans: snapshot.map((p) => ({ rooms: p.rooms, doors: p.doors })),
-        }),
-      })) as { ok?: boolean }
-      return res?.ok === true
-    } catch (e) {
-      console.error('[DetectionsReviewEditor] PATCH detections-review-data failed', e)
-      return false
-    }
-  }, [offerId])
+    const payload = buildDetectionsPayload(snapshot)
+    if (!force && payload === lastSavedPayloadRef.current) return true
 
-  const detSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    if (saveInFlightRef.current) {
+      if (!force) {
+        pendingAutosaveRef.current = true
+        return true
+      }
+      await saveInFlightRef.current
+    }
+
+    const requestPromise = persistDetectionsPayload(payload)
+    saveInFlightRef.current = requestPromise
+    const ok = await requestPromise
+    if (saveInFlightRef.current === requestPromise) saveInFlightRef.current = null
+
+    if (ok) {
+      lastSavedPayloadRef.current = payload
+    } else {
+      console.error('[DetectionsReviewEditor] PATCH detections-review-data failed')
+    }
+
+    if (!force && pendingAutosaveRef.current && !saveInFlightRef.current) {
+      pendingAutosaveRef.current = false
+      const latestPayload = buildDetectionsPayload(plansDataRef.current)
+      if (latestPayload !== lastSavedPayloadRef.current) {
+        void saveDetectionsToServer(false)
+      }
+    }
+    return ok
+  }, [offerId, buildDetectionsPayload, persistDetectionsPayload])
   useEffect(() => {
     if (!offerId || loading || plansData.length === 0) return
     if (detSaveDebounceRef.current) clearTimeout(detSaveDebounceRef.current)
@@ -327,7 +374,7 @@ export function DetectionsReviewEditor({
       const next = [...prev]
       if (planIdx >= next.length) return next
       const plan = next[planIdx]
-      next[planIdx] = { ...plan, doors: withAutoDoorDimensions(enforceMaxOneStair(doors), plan?.metersPerPixel) }
+      next[planIdx] = { ...plan, doors: withAutoDoorDimensions(doors, plan?.metersPerPixel) }
       return next
     })
   }, [])
@@ -338,30 +385,31 @@ export function DetectionsReviewEditor({
       return
     }
     await roofEditorRef.current?.flushSave()
-    try {
-      if (plansData.length > 0) {
-        await apiFetch(`/offers/${offerId}/compute/detections-review-data`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            plans: plansData.map((p) => ({ rooms: p.rooms, doors: p.doors })),
-          }),
-          timeoutMs: 20_000,
-        })
+    let saved = true
+    if (plansData.length > 0) {
+      saved = await saveDetectionsToServer(true)
+      if (!saved) {
+        await sleep(900)
+        saved = await saveDetectionsToServer(true)
       }
-    } catch {
+    }
+    if (!saved) {
       alert('Speichern der Räume/Türen ist fehlgeschlagen. Bitte erneut versuchen.')
       return
     }
-    let detRes: { ok?: boolean; error?: string } = { ok: true }
-    try {
-      detRes = (await apiFetch(`/offers/${offerId}/compute/detections-review-approved`, {
-        method: 'POST',
-        timeoutMs: 20_000,
-      })) as { ok?: boolean; error?: string }
-    } catch {
-      alert('Bestätigung konnte nicht gesendet werden.')
-      return
+    let detRes: { ok?: boolean; error?: string } = { ok: false }
+    const APPROVE_POST_ATTEMPTS = 8
+    for (let a = 0; a < APPROVE_POST_ATTEMPTS; a++) {
+      try {
+        detRes = (await apiFetch(`/offers/${offerId}/compute/detections-review-approved`, {
+          method: 'POST',
+          timeoutMs: 25_000,
+        })) as { ok?: boolean; error?: string }
+        if (detRes?.ok === true) break
+      } catch {
+        /* retry */
+      }
+      if (a < APPROVE_POST_ATTEMPTS - 1) await sleep(detectionsPatchBackoffMs(a))
     }
     if (detRes?.ok !== true) {
       alert(typeof detRes?.error === 'string' && detRes.error ? detRes.error : 'Validierung fehlgeschlagen.')
@@ -373,7 +421,7 @@ export function DetectionsReviewEditor({
       // roof flag best-effort; engine poate depinde doar de detections flag
     }
     await onConfirm()
-  }, [offerId, plansData, onConfirm])
+  }, [offerId, plansData, onConfirm, saveDetectionsToServer])
 
   const handleRemoveSelected = useCallback((index?: number) => {
     const idx = index ?? selectedPolygonIndex
@@ -447,10 +495,7 @@ export function DetectionsReviewEditor({
     const plan = plansData[planIndexClamped]
     if (!plan || getTabForPlan(planIndexClamped) !== 'doors' || selectedPolygonIndex >= plan.doors.length) return
     pushHistory()
-    const next = enforceMaxOneStair(
-      plan.doors.map((d, i) => i !== selectedPolygonIndex ? d : { ...d, type: doorType }),
-      doorType === 'stairs' ? selectedPolygonIndex : undefined,
-    )
+    const next = plan.doors.map((d, i) => (i !== selectedPolygonIndex ? d : { ...d, type: doorType }))
     setDoors(planIndexClamped, next)
   }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors, pushHistory])
 
@@ -506,14 +551,12 @@ export function DetectionsReviewEditor({
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
     const plan = plansData[planIndexClamped]
     if (!plan) return
-    const alreadyHasStair = plan.doors.some((d) => normalizeDoorType(d.type) === 'stairs')
-    const safeNewType: DoorType = newDoorType === 'stairs' && alreadyHasStair ? 'door' : newDoorType
     pushHistory()
     setDoors(planIndexClamped, [
       ...plan.doors,
       {
         bbox: pendingNewDoorBbox,
-        type: safeNewType,
+        type: newDoorType,
         width_m: width,
         height_m: height,
         dimensionsEdited: true,
@@ -556,7 +599,7 @@ export function DetectionsReviewEditor({
     <div className="relative w-full flex flex-col items-stretch gap-3 flex-1 min-h-0">
       <div className="shrink-0 px-2 pt-1 pb-1">
         <h2 className="text-white font-semibold text-base text-center">
-          {roofOnlyOffer ? 'Dach prüfen' : 'Erkennung prüfen – Räume, Fenster/Türen und Dach'}
+          {roofOnlyOffer ? 'Dach konfigurieren' : 'Erkennung prüfen – Räume, Fenster/Türen und Dach'}
         </h2>
       </div>
 

@@ -45,6 +45,12 @@ function labelWithoutUnit(label: string): string {
   return label.replace(/\s*\((?:€\/m²|€\/m|€|Faktor!?|Stufe)\)\s*$/i, '').trim() || label
 }
 
+/** Titlu card în UI (alias pentru redenumiri; cheile din JSON pot rămâne vechi în cache). */
+function displayPriceCardTitle(title: string): string {
+  if (title === 'Geschosshöhe') return 'Raumhöhe'
+  return title
+}
+
 function canAddOptionsForFieldTag(fieldTag?: string): boolean {
   return !!fieldTag && fieldTag !== 'foundation_type' && fieldTag !== 'visible_roof_structure_fixed' && fieldTag !== 'haustechnik_basis'
 }
@@ -76,14 +82,16 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Pfahlgründung': 'Preis €/m² bei Pfahlgründung',
   'Fläche & Treppe': 'Preis pro Stück',
   'Treppe': 'Preis pro Stück',
-  'Geschosshöhe': 'Geschosshöhen die Ihr Unternehmen anbietet.',
+  'Raumhöhe': 'Raumhöhen die Ihr Unternehmen anbietet.',
   'Dämmung': 'Welche Dämmungsarten bieten Sie an?',
   'Unterdach': 'Welche Arten Unterdach bieten Sie an?',
   'Dachstuhl-Typ': 'Welche Dachstuhl-Konstruktionen bieten Sie an?',
   'Sichtdachstuhl': 'Aufschlag €/m² bei Sichtdachstuhl',
   'Dachdeckung': 'Welche Dachdeckungen bieten Sie an?',
   'Fensterart': '3-fach verglast oder Passiv – €/m² Glasfläche',
-  'Türhöhe': 'Standard 2 m oder Erhöht 2,2+ m – €/m²',
+  'Türtyp Innentüren': 'Stückpreis je nach gewähltem Typ',
+  'Türtyp Außentüren': 'Stückpreis je nach gewähltem Typ',
+  'Garagentor gewünscht': 'Wenn ja: Typ und Stückpreis aus Preisdatenbank',
   'Innenausbau': 'Putz, Holz, Faserzement, Mix – €/m²',
   'Fassade': 'Putz, Holz, Faserzement, Mix – €/m²',
   'Energieniveau': 'Preisaufschläge je nach gewähltem Energiestandard.',
@@ -98,13 +106,14 @@ const CARD_SUBTITLES: Record<string, string> = {
 }
 
 function cardSubtitle(cardTitle: string, _rawSubtitle?: string | null): string {
-  return CARD_SUBTITLES[cardTitle] ?? 'Preise anpassen'
+  const key = cardTitle === 'Geschosshöhe' ? 'Raumhöhe' : cardTitle
+  return CARD_SUBTITLES[key] ?? CARD_SUBTITLES[cardTitle] ?? 'Preise anpassen'
 }
 
 /** Subtitlu alb pentru fiecare pas de formular (stepKey). */
 const STEP_SUBTITLES: Record<string, string> = {
   sistemConstructiv: 'Baustellenzufahrt, Gelände und Anschlüsse',
-  structuraCladirii: 'Fundament, Geschosshöhe, Flächen und Treppen',
+  structuraCladirii: 'Fundament, Raumhöhe, Flächen und Treppen',
   daemmungDachdeckung: 'Dämmung, Unterdach, Dachstuhl und Dachdeckung',
   ferestreUsi: 'Fenster, Türen und Glasflächen',
   materialeFinisaj: 'Innenausbau und Fassade',
@@ -714,7 +723,7 @@ export default function PreisdatenbankPage() {
                           className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 flex flex-col min-w-0 w-full"
                         >
                           <div className="border-b border-white/10 pb-2 mb-2">
-                            <h3 className="text-sm font-semibold text-[#E5B800]">{sub.title}</h3>
+                            <h3 className="text-sm font-semibold text-[#E5B800]">{displayPriceCardTitle(sub.title)}</h3>
                             <p className="text-white/90 text-xs mt-0.5">{cardSubtitle(sub.title, sub.subtitle)}</p>
                           </div>
                           <div className="grid grid-cols-1 gap-2">
@@ -788,7 +797,7 @@ export default function PreisdatenbankPage() {
                       <div className="flex flex-col gap-6">
                         {item.subs.map(({ sub, subsectionIndex }) => (
                           <div key={sub.title} className="flex flex-col gap-2">
-                            <h4 className="text-sm font-medium text-sand/80 border-b border-white/10 pb-1">{sub.title}</h4>
+                            <h4 className="text-sm font-medium text-sand/80 border-b border-white/10 pb-1">{displayPriceCardTitle(sub.title)}</h4>
                             <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
                               {sub.variables.map((v) => (
                                 <div key={v.id} className="flex flex-col gap-1 group" data-field={v.id}>
@@ -853,7 +862,7 @@ export default function PreisdatenbankPage() {
                   >
                     <div className="border-b border-white/10 pb-3 mb-3">
                       <h3 className="text-base font-semibold text-[#E5B800]">
-                        {item.sub.title}
+                        {displayPriceCardTitle(item.sub.title)}
                       </h3>
                       <p className="text-white/90 text-sm mt-1">
                         {cardSubtitle(item.sub.title, item.sub.subtitle)}
