@@ -261,7 +261,7 @@ const SAFE_GAP_BETWEEN_ITEMS_MS = 0
 const EXTRA_MARGIN_AFTER_IMAGE_MS = 500
 
 /* ========= UTILS & COMPONENTS ========= */
-type FeedFile = { url: string; mime?: string; caption?: string }
+type FeedFile = { url: string; mime?: string; caption?: string; path?: string; name?: string }
 type TextItem = { kind: 'text'; stage: string; role: 'ai'|'formula'|'rezultat'; text: string; __id: string }
 type SpinnerItem = { kind: 'spinner'; stage: string; __id: string }
 type ImageItem = { kind: 'image'; stage: string; files: FeedFile[]; __id: string }
