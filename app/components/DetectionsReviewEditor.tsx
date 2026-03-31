@@ -150,6 +150,8 @@ export function DetectionsReviewEditor({
   const [roomTypePopoverIndex, setRoomTypePopoverIndex] = useState<number | null>(null)
   const [hoverDoorInfo, setHoverDoorInfo] = useState<{ index: number; x: number; y: number } | null>(null)
   const [newDoorDims, setNewDoorDims] = useState<{ width: string; height: string }>({ width: '', height: '' })
+  const newDoorWidthInputRef = useRef<HTMLInputElement>(null)
+  const newDoorHeightInputRef = useRef<HTMLInputElement>(null)
   const [isConfirming, setIsConfirming] = useState(false)
   const [history, setHistory] = useState<PlanData[][]>([])
   const historyLimit = 50
@@ -543,6 +545,16 @@ export function DetectionsReviewEditor({
     setNewPolygonPoints(null)
   }, [newPolygonPoints, planIndexClamped, getTabForPlan])
 
+  useEffect(() => {
+    if (!pendingNewDoorBbox) return
+    const id = window.requestAnimationFrame(() => {
+      const el = newDoorWidthInputRef.current
+      el?.focus()
+      el?.select()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [pendingNewDoorBbox])
+
   const activeTab = getTabForPlan(planIndexClamped)
   const handleCreateNewDoorWithDimensions = useCallback(() => {
     if (!pendingNewDoorBbox || planIndexClamped >= plansData.length) return
@@ -897,21 +909,34 @@ export function DetectionsReviewEditor({
                             <span className="text-white text-sm font-medium w-full text-center">Maße für neues Element (m):</span>
                             <div className="w-full flex items-center gap-2">
                               <input
+                                ref={newDoorWidthInputRef}
                                 type="number"
                                 min={0.01}
                                 step={0.01}
                                 placeholder="Breite (m)"
                                 value={newDoorDims.width}
                                 onChange={(e) => setNewDoorDims((prev) => ({ ...prev, width: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter') return
+                                  e.preventDefault()
+                                  newDoorHeightInputRef.current?.focus()
+                                  newDoorHeightInputRef.current?.select()
+                                }}
                                 className="w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
                               />
                               <input
+                                ref={newDoorHeightInputRef}
                                 type="number"
                                 min={0.01}
                                 step={0.01}
                                 placeholder="Höhe (m)"
                                 value={newDoorDims.height}
                                 onChange={(e) => setNewDoorDims((prev) => ({ ...prev, height: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter') return
+                                  e.preventDefault()
+                                  handleCreateNewDoorWithDimensions()
+                                }}
                                 className="w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
                               />
                             </div>

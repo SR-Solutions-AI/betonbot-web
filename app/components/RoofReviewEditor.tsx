@@ -192,6 +192,8 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
   const [dialogType, setDialogType] = useState<RoofTypeId>(DEFAULT_ROOF_TYPE)
   const [pendingNewRoofWindowBbox, setPendingNewRoofWindowBbox] = useState<[number, number, number, number] | null>(null)
   const [newRoofWindowDims, setNewRoofWindowDims] = useState({ width: '', height: '' })
+  const roofWindowWidthInputRef = useRef<HTMLInputElement>(null)
+  const roofWindowHeightInputRef = useRef<HTMLInputElement>(null)
 
   const thumbFilter =
     roofUiVariant === 'betonbot' ? 'hue-rotate(-18deg) saturate(0.85) brightness(1.08)' : undefined
@@ -613,6 +615,16 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     setPlanDoors,
   ])
 
+  useEffect(() => {
+    if (!pendingNewRoofWindowBbox) return
+    const id = window.requestAnimationFrame(() => {
+      const el = roofWindowWidthInputRef.current
+      el?.focus()
+      el?.select()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [pendingNewRoofWindowBbox])
+
   const selectedRect =
     roofSurfaceTab === 'surfaces' && selectedPolygonIndex != null && currentPlan
       ? currentPlan.rectangles[selectedPolygonIndex]
@@ -805,24 +817,37 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                         <label className="text-sand/70 text-xs">
                           Breite (cm)
                           <input
+                            ref={roofWindowWidthInputRef}
                             type="number"
                             min={1}
                             step={1}
                             placeholder="z. B. 90"
                             value={newRoofWindowDims.width}
                             onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, width: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter') return
+                              e.preventDefault()
+                              roofWindowHeightInputRef.current?.focus()
+                              roofWindowHeightInputRef.current?.select()
+                            }}
                             className="mt-0.5 w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
                           />
                         </label>
                         <label className="text-sand/70 text-xs">
                           Länge (cm)
                           <input
+                            ref={roofWindowHeightInputRef}
                             type="number"
                             min={1}
                             step={1}
                             placeholder="z. B. 120"
                             value={newRoofWindowDims.height}
                             onChange={(e) => setNewRoofWindowDims((p) => ({ ...p, height: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter') return
+                              e.preventDefault()
+                              handleCreateRoofWindow()
+                            }}
                             className="mt-0.5 w-full rounded-md bg-black/40 border border-white/20 text-white px-2 py-1 text-sm"
                           />
                         </label>
