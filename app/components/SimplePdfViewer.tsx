@@ -3,6 +3,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadPdfDocument } from '../lib/pdfDocumentLoader'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PdfDocumentLike = any
+
 type Props = {
   /** URL sau ArrayBuffer pentru PDF */
   src: string | ArrayBuffer | null
@@ -11,6 +14,7 @@ type Props = {
   className?: string
   /** densitatea de pixeli; 1–2 recomandat */
   pixelRatio?: number
+  singlePageMode?: boolean
 }
 
 /** Canvas pentru o singură pagină (lazy render cu IntersectionObserver) */
@@ -20,14 +24,14 @@ function PageCanvas({
   containerWidth,
   pixelRatio,
 }: {
-  pdf: any
+  pdf: PdfDocumentLike
   pageNumber: number
   containerWidth: number
   pixelRatio: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const holderRef = useRef<HTMLDivElement | null>(null)
-  const renderTaskRef = useRef<any | null>(null)
+  const renderTaskRef = useRef<PdfDocumentLike | null>(null)
   const mountedRef = useRef(true)
   const isRenderingRef = useRef(false) // Flag pentru a preveni rendering-ul dublu
   const [rendered, setRendered] = useState(false)
@@ -43,7 +47,7 @@ function PageCanvas({
     if (renderTaskRef.current) {
       try { 
         renderTaskRef.current.cancel() 
-      } catch (e) {
+      } catch {
         // Ignorăm erorile de anulare
       }
       renderTaskRef.current = null
@@ -83,10 +87,11 @@ function PageCanvas({
         isRenderingRef.current = false
         return
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Dacă documentul a fost distrus, nu mai continuăm
       isRenderingRef.current = false
-      if (e?.message?.includes('destroyed') || e?.message?.includes('Transport destroyed')) {
+      const message = e instanceof Error ? e.message : ''
+      if (message.includes('destroyed') || message.includes('Transport destroyed')) {
         return
       }
       throw e
@@ -131,7 +136,7 @@ function PageCanvas({
     
     console.log(`PageCanvas ${pageNumber}: Rendering - canvas: ${canvas.width}x${canvas.height}, CSS: ${canvas.style.width}x${canvas.style.height}, viewport: ${viewport.width.toFixed(1)}x${viewport.height.toFixed(1)}, scale: ${outputScale.toFixed(2)}`)
     
-    const renderOptions: any = {
+    const renderOptions: Record<string, unknown> = {
       canvasContext: ctx,
       viewport,
     }
@@ -151,8 +156,10 @@ function PageCanvas({
         console.log(`PageCanvas: Successfully rendered page ${pageNumber}`)
         setRendered(true)
       }
-    } catch (e: any) {
-      if (e?.name !== 'RenderingCancelledException' && e?.message !== 'Transport destroyed') {
+    } catch (e: unknown) {
+      const name = e instanceof Error ? e.name : ''
+      const message = e instanceof Error ? e.message : ''
+      if (name !== 'RenderingCancelledException' && message !== 'Transport destroyed') {
         console.error(`PageCanvas: Render error for page ${pageNumber}:`, e)
       }
     } finally {
@@ -278,28 +285,24 @@ export default function SimplePdfViewer({
   maxHeight = '75vh',
   className = '',
   pixelRatio = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1.5 : 1.5),
+  singlePageMode = false,
 }: Props) {
-  // Guard: nu executăm nimic pe server
-  if (typeof window === 'undefined') {
-    return <div className="py-10 text-center text-neutral-200">PDF wird generiert…</div>
-  }
-
   // If maxHeight is "100%" or "none", use full height without maxHeight constraint
   const useFullHeight = maxHeight === '100%' || maxHeight === 'none'
   const wrapRef = useRef<HTMLDivElement | null>(null)
-  const [pdf, setPdf] = useState<any | null>(null)
+  const [pdf, setPdf] = useState<PdfDocumentLike | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [containerWidth, setContainerWidth] = useState(820) // fallback
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [isWideScreen, setIsWideScreen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     if (!src) { setPdf(null); setNumPages(0); return }
     let canceled = false
     setLoading(true); setError(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let currentDoc: any = null
+    let currentDoc: PdfDocumentLike = null
 
     // Folosim o funcție async separată pentru a evita analiza statică de Turbopack
     const loadDocument = async () => {
@@ -316,11 +319,12 @@ export default function SimplePdfViewer({
           console.log(`SimplePdfViewer: PDF loaded successfully, ${doc.numPages} pages`)
           setPdf(doc)
           setNumPages(doc.numPages)
+          setCurrentPage(1)
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!canceled) {
           console.error('SimplePdfViewer: PDF load error:', e)
-          setError(e?.message || 'Nu am putut încărca PDF-ul.')
+          setError(e instanceof Error && e.message ? e.message : 'Nu am putut încărca PDF-ul.')
         }
       } finally {
         if (!canceled) setLoading(false)
@@ -364,8 +368,14 @@ export default function SimplePdfViewer({
 
   const pages = useMemo(() => {
     if (!pdf || !numPages) return []
+    if (singlePageMode) return [Math.min(currentPage, numPages)]
     return new Array(numPages).fill(0).map((_, i) => i + 1)
-  }, [pdf, numPages])
+  }, [currentPage, numPages, pdf, singlePageMode])
+
+  // Guard: nu executăm nimic pe server
+  if (typeof window === 'undefined') {
+    return <div className="py-10 text-center text-neutral-200">PDF wird generiert…</div>
+  }
 
   return (
     <div
@@ -385,18 +395,43 @@ export default function SimplePdfViewer({
         </div>
       )}
       {pdf && (
-        <div className={isWideScreen ? 'grid grid-cols-2 gap-6' : 'flex flex-col'}>
+        <>
+        <div className={singlePageMode ? 'flex justify-center' : isWideScreen ? 'grid grid-cols-2 gap-6' : 'flex flex-col'}>
           {pages.map((p) => (
             <div key={p} className={!isWideScreen && p > 1 ? 'mt-6' : ''}>
               <PageCanvas
                 pdf={pdf}
                 pageNumber={p}
-                containerWidth={isWideScreen ? Math.floor((containerWidth - 24) / 2) : containerWidth}
+                containerWidth={singlePageMode ? containerWidth : isWideScreen ? Math.floor((containerWidth - 24) / 2) : containerWidth}
                 pixelRatio={pixelRatio}
               />
             </div>
           ))}
         </div>
+          {singlePageMode && (
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage <= 1}
+                className="rounded-xl border border-white/15 bg-white/8 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Zuruck
+              </button>
+              <div className="min-w-[90px] text-center text-sm text-white/80">
+                {currentPage} / {numPages}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(numPages, prev + 1))}
+                disabled={currentPage >= numPages}
+                className="rounded-xl border border-white/15 bg-white/8 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Weiter
+              </button>
+            </div>
+          )}
+        </>
       )}
       {!loading && !error && !pdf && (
         <div className="py-8 text-center text-neutral-300">Es gab ein Problem beim erstellen des PDFs...</div>

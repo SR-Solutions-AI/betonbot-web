@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut, User, Database, Settings, ChevronDown, Building2 } from 'lucide-react'
+import { LogOut, User, Database, Settings, ChevronDown, Building2, FileText } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFetch } from '../lib/supabaseClient'
 import { useEffect, useState, useRef } from 'react'
@@ -173,6 +173,16 @@ export default function DashboardHeader() {
                         >
                           <Building2 size={18} className="shrink-0 text-sand/80" />
                           <span className="leading-snug">Organisationseinstellungen</span>
+                        </Link>
+                      )}
+                      {canSeeOrgSettings && (
+                        <Link
+                          href="/dashboard/settings/angebotsanpassung"
+                          onClick={() => setSettingsOpen(false)}
+                          className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
+                        >
+                          <FileText size={18} className="shrink-0 text-sand/80" />
+                          <span className="leading-snug">Angebotsanpassung</span>
                         </Link>
                       )}
                       {canSeePreisdatenbank && (

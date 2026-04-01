@@ -1,20 +1,10 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Save, Loader2, CheckCircle2, AlertCircle, Upload, Plus, Pencil, Trash2, UserPlus, ChevronDown, Check } from 'lucide-react'
+import { Loader2, Pencil, Trash2, UserPlus, ChevronDown, Check } from 'lucide-react'
 import { apiFetch } from '../../../lib/supabaseClient'
-
-type CompanyInfo = {
-  companyName: string
-  companyAddress: string
-  email: string
-  phone: string
-  fax: string
-  website: string
-  logoUrl: string
-}
 
 type OrgMember = {
   id: string
@@ -22,6 +12,10 @@ type OrgMember = {
   full_name: string | null
   role: string | null
   created_at: string
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 function RoleDropdown({
@@ -92,7 +86,7 @@ function RoleDropdown({
           <div
             ref={menuRef}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9998] rounded-xl bg-coffee-850 border border-white/20 shadow-xl shadow-black/40 overflow-hidden py-1.5"
+            className="fixed z-9998 rounded-xl bg-coffee-850 border border-white/20 shadow-xl shadow-black/40 overflow-hidden py-1.5"
             style={{ top: pos.top, left: pos.left, width: pos.width }}
           >
             {(['user', 'org_leader'] as const).map((opt) => {
@@ -125,20 +119,6 @@ export default function OrganisationSettingsPage() {
   const router = useRouter()
   const [ready, setReady] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({
-    companyName: '',
-    companyAddress: '',
-    email: '',
-    phone: '',
-    fax: '',
-    website: '',
-    logoUrl: '',
-  })
-  const [companyInfoSaving, setCompanyInfoSaving] = useState(false)
-  const [companyInfoMessage, setCompanyInfoMessage] = useState<'success' | 'error' | null>(null)
-  const [logoUploading, setLogoUploading] = useState(false)
-  const logoInputRef = useRef<HTMLInputElement>(null)
-
   const [members, setMembers] = useState<OrgMember[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
@@ -160,9 +140,9 @@ export default function OrganisationSettingsPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const me = await apiFetch('/me')
-        const role = (me?.user as any)?.role
-        const canManageOrg = (me?.user as any)?.can_manage_org === true
+        const me = await apiFetch('/me') as { user?: { role?: string; can_manage_org?: boolean } }
+        const role = me?.user?.role
+        const canManageOrg = me?.user?.can_manage_org === true
         const canSeeOrgSettings = role === 'org_leader' || canManageOrg
         if (!cancelled) {
           setIsAdmin(canSeeOrgSettings)
@@ -171,23 +151,12 @@ export default function OrganisationSettingsPage() {
             return
           }
         }
-        const config = await apiFetch('/tenant-config').catch(() => null)
-        if (!cancelled && config && typeof config === 'object') {
-          setCompanyInfo({
-            companyName: (config as CompanyInfo).companyName ?? '',
-            companyAddress: (config as CompanyInfo).companyAddress ?? '',
-            email: (config as CompanyInfo).email ?? '',
-            phone: (config as CompanyInfo).phone ?? '',
-            fax: (config as CompanyInfo).fax ?? '',
-            website: (config as CompanyInfo).website ?? '',
-            logoUrl: (config as CompanyInfo).logoUrl ?? '',
-          })
+
+        const membersRes = await apiFetch('/organisation/members').catch((): { items: OrgMember[] } => ({ items: [] })) as { items: OrgMember[] }
+        if (!cancelled && Array.isArray(membersRes.items)) {
+          setMembers(membersRes.items)
         }
-        const membersRes = await apiFetch('/organisation/members').catch(() => ({ items: [] }))
-        if (!cancelled && (membersRes as any)?.items) {
-          setMembers((membersRes as { items: OrgMember[] }).items)
-        }
-      } catch (_) {
+      } catch {
         if (!cancelled) router.replace('/dashboard')
       } finally {
         if (!cancelled) {
@@ -198,58 +167,6 @@ export default function OrganisationSettingsPage() {
     })()
     return () => { cancelled = true }
   }, [router])
-
-  const handleSaveCompanyInfo = async () => {
-    setCompanyInfoSaving(true)
-    setCompanyInfoMessage(null)
-    try {
-      await apiFetch('/tenant-config', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          companyName: companyInfo.companyName.trim(),
-          companyAddress: companyInfo.companyAddress.trim(),
-          email: companyInfo.email.trim(),
-          phone: companyInfo.phone.trim(),
-          fax: companyInfo.fax.trim(),
-          website: companyInfo.website.trim(),
-        }),
-      })
-      setCompanyInfoMessage('success')
-      setTimeout(() => setCompanyInfoMessage(null), 3000)
-      window.dispatchEvent(new CustomEvent('tenant-config:saved'))
-    } catch {
-      setCompanyInfoMessage('error')
-    } finally {
-      setCompanyInfoSaving(false)
-    }
-  }
-
-  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !file.type.startsWith('image/')) return
-    setLogoUploading(true)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = (await apiFetch('/tenant-config/logo', {
-        method: 'POST',
-        body: form,
-        headers: {},
-      })) as { logoUrl?: string }
-      if (res?.logoUrl) {
-        setCompanyInfo((prev) => ({ ...prev, logoUrl: res.logoUrl! }))
-        setCompanyInfoMessage('success')
-        setTimeout(() => setCompanyInfoMessage(null), 3000)
-        window.dispatchEvent(new CustomEvent('tenant-config:saved'))
-      }
-    } catch {
-      setCompanyInfoMessage('error')
-    } finally {
-      setLogoUploading(false)
-      e.target.value = ''
-      if (logoInputRef.current) logoInputRef.current.value = ''
-    }
-  }
 
   const handleAddMember = async () => {
     setAddError(null)
@@ -279,8 +196,8 @@ export default function OrganisationSettingsPage() {
       setAddFullName('')
       setAddPassword('')
       setAddRole('user')
-    } catch (err: any) {
-      setAddError(err?.message || 'Fehler beim Anlegen des Benutzers.')
+    } catch (error: unknown) {
+      setAddError(getErrorMessage(error, 'Fehler beim Anlegen des Benutzers.'))
     } finally {
       setAddSaving(false)
     }
@@ -303,7 +220,7 @@ export default function OrganisationSettingsPage() {
       setEditFullName('')
       setEditRole('user')
       setEditPassword('')
-    } catch (_) {
+    } catch {
       // keep form open on error
     } finally {
       setEditSaving(false)
@@ -316,8 +233,9 @@ export default function OrganisationSettingsPage() {
       await apiFetch(`/organisation/members/${id}`, { method: 'DELETE' })
       setMembers((prev) => prev.filter((m) => m.id !== id))
       setDeleteConfirmId(null)
-    } catch (_) {}
-    finally {
+    } catch {
+      // ignore
+    } finally {
       setDeleteSaving(false)
     }
   }
@@ -325,127 +243,39 @@ export default function OrganisationSettingsPage() {
   if (!ready || !isAdmin) return null
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <div className="p-6 w-full max-w-[140rem] mx-auto flex-1 min-h-0 overflow-y-auto">
-        <div className="w-full max-w-6xl mx-auto">
-          <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 text-center">Organisationseinstellungen</h1>
-          <p className="text-sand/80 text-base mb-6 text-center">
-            Allgemeine Firmenangaben und Benutzer der Organisation verwalten.
-          </p>
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+.preisdatenbank-scroll {
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #E5B800 transparent !important;
+}
+.preisdatenbank-scroll::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+.preisdatenbank-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.preisdatenbank-scroll::-webkit-scrollbar-thumb {
+  background: #E5B800 !important;
+  border-radius: 9999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  min-height: 40px !important;
+}
+`,
+        }}
+      />
+      <div className="h-full flex flex-col min-h-0">
+        <div className="preisdatenbank-scroll px-4 py-4 md:px-5 md:py-5 w-full flex-1 min-h-0 overflow-y-auto">
+          <div className="w-full max-w-4xl mx-auto">
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 text-center">Organisationseinstellungen</h1>
+            <p className="text-sand/80 text-base mb-6 text-center">Benutzer der Organisation verwalten.</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 justify-center items-start mx-auto max-w-5xl">
-          {/* Left: Allgemeine Informationen */}
-          <div className="flex flex-col gap-4">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 md:p-6">
-              <h2 className="text-xl font-bold text-[#E5B800] mb-1">Allgemeine Informationen</h2>
-              <p className="text-white/80 text-sm mb-4">Diese Angaben erscheinen im PDF-Angebot.</p>
-              <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-sun/90">Logo Upload</label>
-                    <div className="flex items-center gap-4 mt-1">
-                      <div className="w-20 h-20 rounded-lg border border-white/20 bg-white/5 flex items-center justify-center overflow-hidden shrink-0">
-                        {companyInfo.logoUrl ? (
-                          <img src={companyInfo.logoUrl} alt="Logo" className="w-full h-full object-contain" />
-                        ) : (
-                          <Upload className="w-8 h-8 text-sand/50" />
-                        )}
-                      </div>
-                      <div>
-                        <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
-                        <button
-                          type="button"
-                          disabled={logoUploading}
-                          onClick={() => logoInputRef.current?.click()}
-                          className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm"
-                        >
-                          {logoUploading ? 'Wird hochgeladen…' : 'Logo auswählen'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-sun/90">Firmenname</label>
-                    <input
-                      type="text"
-                      value={companyInfo.companyName}
-                      onChange={(e) => setCompanyInfo((p) => ({ ...p, companyName: e.target.value }))}
-                      className="sun-input w-full mt-1"
-                      placeholder="z. B. Muster GmbH"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-sun/90">Firmenadresse</label>
-                  <textarea
-                    value={companyInfo.companyAddress}
-                    onChange={(e) => setCompanyInfo((p) => ({ ...p, companyAddress: e.target.value }))}
-                    className="sun-input w-full min-h-[80px] mt-1"
-                    placeholder="Straße, PLZ Ort"
-                    rows={2}
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-sun/90">E-Mail</label>
-                    <input
-                      type="email"
-                      value={companyInfo.email}
-                      onChange={(e) => setCompanyInfo((p) => ({ ...p, email: e.target.value }))}
-                      className="sun-input w-full mt-1"
-                      placeholder="info@firma.de"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-sun/90">Telefon</label>
-                    <input
-                      type="tel"
-                      value={companyInfo.phone}
-                      onChange={(e) => setCompanyInfo((p) => ({ ...p, phone: e.target.value }))}
-                      className="sun-input w-full mt-1"
-                      placeholder="+49 123 456789"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-sun/90">Fax</label>
-                    <input
-                      type="tel"
-                      value={companyInfo.fax}
-                      onChange={(e) => setCompanyInfo((p) => ({ ...p, fax: e.target.value }))}
-                      className="sun-input w-full mt-1"
-                      placeholder="+49 123 456789-11"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-sun/90">Website</label>
-                  <input
-                    type="url"
-                    value={companyInfo.website}
-                    onChange={(e) => setCompanyInfo((p) => ({ ...p, website: e.target.value }))}
-                    className="sun-input w-full mt-1"
-                    placeholder="https://www.firma.de"
-                  />
-                </div>
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    disabled={companyInfoSaving}
-                    onClick={handleSaveCompanyInfo}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-[#E5B800] hover:bg-[#F5D030] text-white disabled:opacity-60"
-                  >
-                    {companyInfoSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                    Angaben speichern
-                  </button>
-                  {companyInfoMessage === 'success' && <span className="flex items-center gap-1.5 text-yellow-400 text-sm"><CheckCircle2 size={18} /> Gespeichert</span>}
-                  {companyInfoMessage === 'error' && <span className="flex items-center gap-1.5 text-yellow-400 text-sm"><AlertCircle size={18} /> Fehler</span>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Organisation members */}
-          <div className="flex flex-col gap-4">
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 md:p-6">
               <h2 className="text-xl font-bold text-[#E5B800] mb-1">Benutzer der Organisation</h2>
               <p className="text-white/80 text-sm mb-4">E-Mail, Name und Rolle verwalten. Admins können alle Einstellungen ändern.</p>
@@ -459,13 +289,7 @@ export default function OrganisationSettingsPage() {
                         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
                             <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Name</label>
-                            <input
-                              type="text"
-                              value={editFullName}
-                              onChange={(e) => setEditFullName(e.target.value)}
-                              className="sun-input text-sm mt-1"
-                              placeholder="Name"
-                            />
+                            <input type="text" value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className="sun-input text-sm mt-1" placeholder="Name" />
                           </div>
                           <div>
                             <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Rolle</label>
@@ -475,21 +299,10 @@ export default function OrganisationSettingsPage() {
                           </div>
                           <div className="col-span-2">
                             <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Passwort</label>
-                            <input
-                              type="password"
-                              value={editPassword}
-                              onChange={(e) => setEditPassword(e.target.value)}
-                              className="sun-input text-sm mt-1 w-full"
-                              placeholder="Neues Passwort (leer = unverändert)"
-                            />
+                            <input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} className="sun-input text-sm mt-1 w-full" placeholder="Neues Passwort (leer = unverändert)" />
                           </div>
                           <div className="col-span-2 flex gap-2">
-                            <button
-                              type="button"
-                              disabled={editSaving}
-                              onClick={() => handleUpdateMember(m.id)}
-                              className="px-3 py-1.5 rounded-lg bg-[#E5B800] text-white text-sm font-medium"
-                            >
+                            <button type="button" disabled={editSaving} onClick={() => handleUpdateMember(m.id)} className="px-3 py-1.5 rounded-lg bg-[#E5B800] text-white text-sm font-medium">
                               {editSaving ? <Loader2 size={14} className="animate-spin" /> : 'Speichern'}
                             </button>
                             <button type="button" onClick={() => { setEditingId(null); setEditPassword('') }} className="px-3 py-1.5 rounded-lg border border-white/20 text-sand/80 text-sm">Abbrechen</button>
@@ -498,12 +311,7 @@ export default function OrganisationSettingsPage() {
                       ) : deleteConfirmId === m.id ? (
                         <div className="flex-1 flex items-center gap-2">
                           <span className="text-sm text-yellow-200">Wirklich löschen?</span>
-                          <button
-                            type="button"
-                            disabled={deleteSaving}
-                            onClick={() => handleDeleteMember(m.id)}
-                            className="px-2 py-1 rounded bg-red-600 text-white text-sm"
-                          >
+                          <button type="button" disabled={deleteSaving} onClick={() => handleDeleteMember(m.id)} className="px-2 py-1 rounded bg-red-600 text-white text-sm">
                             {deleteSaving ? <Loader2 size={14} className="animate-spin" /> : 'Ja'}
                           </button>
                           <button type="button" onClick={() => setDeleteConfirmId(null)} className="px-2 py-1 rounded border border-white/20 text-sm">Nein</button>
@@ -529,12 +337,7 @@ export default function OrganisationSettingsPage() {
                             >
                               <Pencil size={16} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirmId(m.id)}
-                              className="p-2 rounded text-sand/70 hover:text-red-400"
-                              title="Löschen"
-                            >
+                            <button type="button" onClick={() => setDeleteConfirmId(m.id)} className="p-2 rounded text-sand/70 hover:text-red-400" title="Löschen">
                               <Trash2 size={16} />
                             </button>
                           </div>
@@ -542,37 +345,20 @@ export default function OrganisationSettingsPage() {
                       )}
                     </div>
                   ))}
+
                   {addOpen ? (
                     <div className="pt-4 border-t border-white/10 space-y-3">
                       <div>
                         <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">E-Mail</label>
-                        <input
-                          type="email"
-                          value={addEmail}
-                          onChange={(e) => setAddEmail(e.target.value)}
-                          className="sun-input w-full mt-1"
-                          placeholder="E-Mail"
-                        />
+                        <input type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} className="sun-input w-full mt-1" placeholder="E-Mail" />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Name</label>
-                        <input
-                          type="text"
-                          value={addFullName}
-                          onChange={(e) => setAddFullName(e.target.value)}
-                          className="sun-input w-full mt-1"
-                          placeholder="Name (Vorname Nachname)"
-                        />
+                        <input type="text" value={addFullName} onChange={(e) => setAddFullName(e.target.value)} className="sun-input w-full mt-1" placeholder="Name (Vorname Nachname)" />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Passwort</label>
-                        <input
-                          type="password"
-                          value={addPassword}
-                          onChange={(e) => setAddPassword(e.target.value)}
-                          className="sun-input w-full mt-1"
-                          placeholder="Passwort (min. 6 Zeichen)"
-                        />
+                        <input type="password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} className="sun-input w-full mt-1" placeholder="Passwort (min. 6 Zeichen)" />
                       </div>
                       <div>
                         <label className="text-xs font-medium text-sand/70 uppercase tracking-wider">Rolle</label>
@@ -582,12 +368,7 @@ export default function OrganisationSettingsPage() {
                       </div>
                       {addError && <p className="text-yellow-400 text-sm">{addError}</p>}
                       <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={addSaving}
-                          onClick={handleAddMember}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#E5B800] text-white font-medium"
-                        >
+                        <button type="button" disabled={addSaving} onClick={handleAddMember} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#E5B800] text-white font-medium">
                           {addSaving ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
                           Benutzer anlegen
                         </button>
@@ -595,12 +376,8 @@ export default function OrganisationSettingsPage() {
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => setAddOpen(true)}
-                      className="flex items-center gap-2 py-2 text-[#E5B800] hover:underline text-sm"
-                    >
-                      <Plus size={16} /> Benutzer hinzufügen
+                    <button type="button" onClick={() => setAddOpen(true)} className="flex items-center gap-2 py-2 text-[#E5B800] hover:underline text-sm">
+                      <UserPlus size={16} /> Benutzer hinzufügen
                     </button>
                   )}
                 </div>
@@ -608,8 +385,7 @@ export default function OrganisationSettingsPage() {
             </div>
           </div>
         </div>
-        </div>
       </div>
-    </div>
+    </>
   )
 }
