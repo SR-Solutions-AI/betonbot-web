@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Check, MousePointer2, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react'
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
 import { apiFetch } from '../lib/supabaseClient'
+import { displayFloorTabLabelDe } from '@/lib/displayFloorTabLabelDe'
 import {
   DEFAULT_ROOF_ANGLE,
   DEFAULT_ROOF_TYPE,
@@ -57,8 +58,7 @@ function normalizeRect(r: {
 
 function fallbackFloorLabelDe(index: number): string {
   if (index <= 0) return 'Erdgeschoss'
-  if (index === 1) return 'Obergeschoss'
-  return `${index}. Obergeschoss`
+  return 'Obergeschoss'
 }
 
 function pointInRoofPoly(px: number, py: number, points: Point[]): boolean {
@@ -127,7 +127,7 @@ function roofPlanLabelDe(labels: string[], index: number): string {
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
     // Ignore generic placeholders and show a localized fallback instead.
-    if (trimmed && !/^plan\s+\d+$/i.test(trimmed)) return trimmed
+    if (trimmed && !/^plan\s+\d+$/i.test(trimmed)) return displayFloorTabLabelDe(trimmed)
   }
   return fallbackFloorLabelDe(index)
 }

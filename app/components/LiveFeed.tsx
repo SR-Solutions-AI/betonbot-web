@@ -622,6 +622,7 @@ export default function LiveFeed() {
   const [rows, setRows] = useState<Row[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [offerId, setOfferId] = useState<string|null>(null)
+  const offerIdRef = useRef<string | null>(null)
   const [runId, setRunId] = useState<string|null>(null)
   const [computing, setComputing] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
@@ -707,6 +708,10 @@ export default function LiveFeed() {
   useEffect(() => { 
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) 
   }, [rows])
+
+  useEffect(() => {
+    offerIdRef.current = offerId
+  }, [offerId])
 
   // Progres afișat: interpolare (lerp) spre țintă – ținta vine din server sau din etape (fallback).
   useEffect(() => {
