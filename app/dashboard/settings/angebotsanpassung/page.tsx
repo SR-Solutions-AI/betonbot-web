@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Save, Loader2, CheckCircle2, AlertCircle, Upload } from 'lucide-react'
 import { apiFetch, supabase } from '../../../lib/supabaseClient'
 import SimplePdfViewer from '../../../components/SimplePdfViewer'
+import { normalizeDisplayCurrency } from '../../../../lib/displayCurrency'
+
+type VatPreset = 'DE' | 'AT' | 'CH' | 'custom'
 
 type CompanyInfo = {
   companyName: string
@@ -14,6 +17,7 @@ type CompanyInfo = {
   fax: string
   website: string
   logoUrl: string
+  offerPrefix: string
   handlerName: string
   footerLeft: string
   footerMid: string
@@ -22,6 +26,9 @@ type CompanyInfo = {
   section1Content: string
   section2Title: string
   section2Content: string
+  displayCurrency: 'EUR' | 'CHF'
+  vatPreset: VatPreset
+  vatCustomPercent: number
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -56,6 +63,7 @@ function OfferPdfPreview({
 
 export default function OfferCustomizationPage() {
   const router = useRouter()
+  const currentOfferIdRef = useRef<string | null>(null)
   const [ready, setReady] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({
@@ -66,6 +74,7 @@ export default function OfferCustomizationPage() {
     fax: '',
     website: '',
     logoUrl: '',
+    offerPrefix: '',
     handlerName: '',
     footerLeft: '',
     footerMid: '',
@@ -74,7 +83,12 @@ export default function OfferCustomizationPage() {
     section1Content: '',
     section2Title: '',
     section2Content: '',
+    displayCurrency: 'EUR',
+    vatPreset: 'DE',
+    vatCustomPercent: 19,
   })
+  const [currencyModalOpen, setCurrencyModalOpen] = useState(false)
+  const [pendingCurrency, setPendingCurrency] = useState<'EUR' | 'CHF' | null>(null)
   const [companyInfoSaving, setCompanyInfoSaving] = useState(false)
   const [companyInfoMessage, setCompanyInfoMessage] = useState<'success' | 'error' | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -101,22 +115,36 @@ export default function OfferCustomizationPage() {
 
         const config = await apiFetch('/tenant-config').catch(() => null)
         if (!cancelled && config && typeof config === 'object') {
+          const c = config as CompanyInfo & { vatPreset?: string; vatCustomPercent?: number }
+          const vp =
+            c.vatPreset === 'CH' || c.vatPreset === 'AT' || c.vatPreset === 'custom' ? c.vatPreset : 'DE'
           setCompanyInfo({
-            companyName: (config as CompanyInfo).companyName ?? '',
-            companyAddress: (config as CompanyInfo).companyAddress ?? '',
-            email: (config as CompanyInfo).email ?? '',
-            phone: (config as CompanyInfo).phone ?? '',
-            fax: (config as CompanyInfo).fax ?? '',
-            website: (config as CompanyInfo).website ?? '',
-            logoUrl: (config as CompanyInfo).logoUrl ?? '',
-            handlerName: (config as CompanyInfo).handlerName ?? '',
-            footerLeft: (config as CompanyInfo).footerLeft ?? '',
-            footerMid: (config as CompanyInfo).footerMid ?? '',
-            footerRight: (config as CompanyInfo).footerRight ?? '',
-            section1Title: (config as CompanyInfo).section1Title ?? '',
-            section1Content: (config as CompanyInfo).section1Content ?? '',
-            section2Title: (config as CompanyInfo).section2Title ?? '',
-            section2Content: (config as CompanyInfo).section2Content ?? '',
+            companyName: c.companyName ?? '',
+            companyAddress: c.companyAddress ?? '',
+            email: c.email ?? '',
+            phone: c.phone ?? '',
+            fax: c.fax ?? '',
+            website: c.website ?? '',
+            logoUrl: c.logoUrl ?? '',
+            offerPrefix: c.offerPrefix ?? '',
+            handlerName: c.handlerName ?? '',
+            footerLeft: c.footerLeft ?? '',
+            footerMid: c.footerMid ?? '',
+            footerRight: c.footerRight ?? '',
+            section1Title: c.section1Title ?? '',
+            section1Content: c.section1Content ?? '',
+            section2Title: c.section2Title ?? '',
+            section2Content: c.section2Content ?? '',
+            displayCurrency: normalizeDisplayCurrency(c.displayCurrency),
+            vatPreset: vp,
+            vatCustomPercent:
+              typeof c.vatCustomPercent === 'number' && Number.isFinite(c.vatCustomPercent)
+                ? c.vatCustomPercent
+                : vp === 'CH'
+                  ? 8.1
+                  : vp === 'AT'
+                    ? 20
+                    : 19,
           })
         }
       } catch {
@@ -141,6 +169,7 @@ export default function OfferCustomizationPage() {
           phone: companyInfo.phone.trim(),
           fax: companyInfo.fax.trim(),
           website: companyInfo.website.trim(),
+          offerPrefix: companyInfo.offerPrefix.trim(),
           handlerName: companyInfo.handlerName.trim(),
           section1Title: companyInfo.section1Title.trim(),
           section1Content: companyInfo.section1Content,
@@ -149,6 +178,9 @@ export default function OfferCustomizationPage() {
           footerRight: companyInfo.footerRight,
           section2Title: companyInfo.section2Title.trim(),
           section2Content: companyInfo.section2Content,
+          displayCurrency: companyInfo.displayCurrency,
+          vatPreset: companyInfo.vatPreset,
+          vatCustomPercent: companyInfo.vatCustomPercent,
         }),
       })
       setCompanyInfoMessage('success')
@@ -189,6 +221,18 @@ export default function OfferCustomizationPage() {
   }
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = sessionStorage.getItem('holzbot_dashboard_offer')
+      if (!raw) return
+      const data = JSON.parse(raw) as { offerId?: string | null }
+      currentOfferIdRef.current = data?.offerId ? String(data.offerId) : null
+    } catch {
+      currentOfferIdRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     if (!ready || !isAdmin) return
     const controller = new AbortController()
     const timeoutId = window.setTimeout(async () => {
@@ -209,7 +253,10 @@ export default function OfferCustomizationPage() {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           credentials: 'include',
-          body: JSON.stringify(companyInfo),
+          body: JSON.stringify({
+            ...companyInfo,
+            offerId: currentOfferIdRef.current,
+          }),
           signal: controller.signal,
         })
 
@@ -254,6 +301,50 @@ export default function OfferCustomizationPage() {
 
   return (
     <>
+      {currencyModalOpen && pendingCurrency ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="currency-modal-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-[#E5B800]/40 bg-[#1e1812] p-6 shadow-xl">
+            <h3 id="currency-modal-title" className="text-lg font-bold text-[#E5B800] mb-2">
+              Währung wechseln?
+            </h3>
+            <p className="text-white/85 text-sm leading-relaxed mb-6">
+              Sie sind dabei, die Anzeigewährung auf{' '}
+              <strong className="text-white">{pendingCurrency === 'CHF' ? 'CHF' : 'EUR'}</strong> zu ändern. Preisangaben
+              in der Anwendung und in PDF-Angeboten werden mit der neuen Währung gekennzeichnet; es findet{' '}
+              <strong className="text-white">keine automatische Umrechnung</strong> der Zahlenwerte statt. Möchten Sie
+              fortfahren?
+            </p>
+            <div className="flex flex-wrap gap-3 justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl border border-white/20 text-white/90 text-sm hover:bg-white/10"
+                onClick={() => {
+                  setCurrencyModalOpen(false)
+                  setPendingCurrency(null)
+                }}
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl font-semibold bg-[#E5B800] hover:bg-[#cda500] text-white text-sm"
+                onClick={() => {
+                  setCompanyInfo((p) => ({ ...p, displayCurrency: pendingCurrency }))
+                  setCurrencyModalOpen(false)
+                  setPendingCurrency(null)
+                }}
+              >
+                Ja, Währung ändern
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -337,6 +428,78 @@ export default function OfferCustomizationPage() {
                     <label className="text-sm font-medium text-sun/90">Website</label>
                     <input type="url" value={companyInfo.website} onChange={(e) => setCompanyInfo((p) => ({ ...p, website: e.target.value }))} className="sun-input w-full mt-1" />
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-sun/90">Währung</label>
+                      <select
+                        className="sun-input w-full mt-1"
+                        value={companyInfo.displayCurrency}
+                        onChange={(e) => {
+                          const next = e.target.value === 'CHF' ? 'CHF' : 'EUR'
+                          if (next === companyInfo.displayCurrency) return
+                          setPendingCurrency(next)
+                          setCurrencyModalOpen(true)
+                        }}
+                      >
+                        <option value="EUR">EUR (€)</option>
+                        <option value="CHF">CHF</option>
+                      </select>
+                      <p className="text-xs text-white/55 mt-1">Anzeige für Beträge (ohne Wechselkurs-Umrechnung).</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-sun/90">MwSt.-Satz</label>
+                      <select
+                        className="sun-input w-full mt-1"
+                        value={companyInfo.vatPreset}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          const preset: VatPreset =
+                            v === 'CH' || v === 'AT' || v === 'custom' ? v : 'DE'
+                          setCompanyInfo((p) => ({
+                            ...p,
+                            vatPreset: preset,
+                            vatCustomPercent:
+                              preset === 'CH' ? 8.1 : preset === 'DE' ? 19 : preset === 'AT' ? 20 : p.vatCustomPercent,
+                          }))
+                        }}
+                      >
+                        <option value="DE">Deutschland (19 %)</option>
+                        <option value="AT">Österreich (20 %)</option>
+                        <option value="CH">Schweiz (8,1 %)</option>
+                        <option value="custom">Benutzerdefiniert</option>
+                      </select>
+                    </div>
+                  </div>
+                  {companyInfo.vatPreset === 'custom' ? (
+                    <div>
+                      <label className="text-sm font-medium text-sun/90">Eigener MwSt.-Satz (%)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={companyInfo.vatCustomPercent}
+                        onChange={(e) =>
+                          setCompanyInfo((p) => ({ ...p, vatCustomPercent: parseFloat(e.target.value) || 0 }))
+                        }
+                        className="sun-input w-full max-w-[200px] mt-1"
+                      />
+                    </div>
+                  ) : null}
+                  <p className="text-xs text-white/55 -mt-2">
+                    Mehrwertsteuer wird auf die Nettosumme im Angebot angewendet und im PDF mit dem gewählten Satz
+                    ausgewiesen (Österreich: „20% USt.“).
+                  </p>
+                  <div>
+                    <label className="text-sm font-medium text-sun/90">Angebotskürzel</label>
+                    <input
+                      type="text"
+                      value={companyInfo.offerPrefix}
+                      onChange={(e) => setCompanyInfo((p) => ({ ...p, offerPrefix: e.target.value.toUpperCase() }))}
+                      className="sun-input w-full mt-1"
+                      placeholder="z. B. EDER"
+                    />
+                  </div>
                   <div>
                     <label className="text-sm font-medium text-sun/90">Bearbeiter</label>
                     <input type="text" value={companyInfo.handlerName} onChange={(e) => setCompanyInfo((p) => ({ ...p, handlerName: e.target.value }))} className="sun-input w-full mt-1" />
@@ -376,8 +539,8 @@ export default function OfferCustomizationPage() {
                       {companyInfoSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                       Angaben speichern
                     </button>
-                    {companyInfoMessage === 'success' && <span className="flex items-center gap-1.5 text-yellow-400 text-sm"><CheckCircle2 size={18} /> Gespeichert</span>}
-                    {companyInfoMessage === 'error' && <span className="flex items-center gap-1.5 text-yellow-400 text-sm"><AlertCircle size={18} /> Fehler</span>}
+                    {companyInfoMessage === 'success' && <span className="flex items-center gap-1.5 text-orange-400 text-sm"><CheckCircle2 size={18} /> Gespeichert</span>}
+                    {companyInfoMessage === 'error' && <span className="flex items-center gap-1.5 text-amber-400 text-sm"><AlertCircle size={18} /> Fehler</span>}
                   </div>
                 </div>
               </div>

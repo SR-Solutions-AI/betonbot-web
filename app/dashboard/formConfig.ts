@@ -622,7 +622,7 @@ export const PRICING_VARIABLES_SECTIONS: PricingVariablesSectionDef[] = [
   },
   {
     title: 'Fenster & Türen (€/m²)',
-    subtitle: 'Fensterart wählt den Preis (2-/3-fach). Höhe nur für Flächenberechnung.',
+    subtitle: 'Fensterart wählt den Preis (2-/3-fach).',
     subsections: [
       {
         title: 'Fenster (pro m² Glasfläche, je nach Fensterart im Formular)',

@@ -12,7 +12,7 @@ type OfferListItem = {
   id: string
   title?: string | null
   status?: string | null
-  meta?: { referinta?: string | null; roof_only_offer?: boolean | null; wizard_package?: string | null } | null
+  meta?: { referinta?: string | null; roof_only_offer?: boolean | null; wizard_package?: string | null; measurements_only_offer?: boolean | null } | null
   created_at: string
   created_by?: string | null
   offer_type_slug?: string | null
@@ -42,9 +42,9 @@ const WIZARD_OFFER_SLUGS = ['mengenermittlung', 'mengen', 'dachstuhl', 'neubau',
 const SLUG_TO_LABEL: Record<string, string> = {
   mengenermittlung: 'Mengenermittlung',
   mengen: 'Mengenermittlung',
-  dachstuhl: 'Dachstuhl',
-  neubau: 'Neubau',
-  full_house: 'Neubau',
+  dachstuhl: 'Dachstuhl Angebot',
+  neubau: 'Neubau Angebot',
+  full_house: 'Neubau Angebot',
 }
 
 function offerTypeLabel(slug: string | null | undefined): string {
@@ -54,7 +54,11 @@ function offerTypeLabel(slug: string | null | undefined): string {
 
 function getOfferTypeBadgeLabel(item: OfferListItem): string {
   const wizardPkg = (item.meta?.wizard_package || '').toString().toLowerCase()
-  if (item.meta?.roof_only_offer === true || wizardPkg === 'dachstuhl') return 'Dachstuhl'
+  const isRoofOffer = item.meta?.roof_only_offer === true || wizardPkg === 'dachstuhl'
+  const isMeasurementsOnly = item.meta?.measurements_only_offer === true
+
+  if (isMeasurementsOnly) return isRoofOffer ? 'Dachstuhl Mengenermittlung' : 'Neubau Mengenermittlung'
+  if (isRoofOffer) return 'Dachstuhl Angebot'
   return offerTypeLabel(item.offer_type_slug)
 }
 

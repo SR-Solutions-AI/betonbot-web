@@ -718,6 +718,17 @@
           "tag": "door_material_exterior"
         },
         {
+          "type": "select",
+          "name": "doorHeightOption",
+          "label": "Türhöhe",
+          "options": [
+            "Standard (2,01 m)",
+            "Komfort (2,10 m)",
+            "Hoch (2,20 m)"
+          ],
+          "tag": "door_height"
+        },
+        {
           "type": "bool",
           "name": "garagentorGewuenscht",
           "label": "Garagentor gewünscht (Preis pro Stück)",
@@ -824,6 +835,31 @@
               "label": "Kunststoff (€/Stück)",
               "unit": "€/Stück",
               "value": 1600
+            }
+          ]
+        },
+        {
+          "title": "Türhöhe",
+          "subtitle": "Wird für die Flächenberechnung der Türen verwendet",
+          "fieldTag": "door_height",
+          "variables": [
+            {
+              "key": "door_height_standard_m",
+              "label": "Standard (2,01 m)",
+              "unit": "m",
+              "value": 2.01
+            },
+            {
+              "key": "door_height_komfort_m",
+              "label": "Komfort (2,10 m)",
+              "unit": "m",
+              "value": 2.1
+            },
+            {
+              "key": "door_height_hoch_m",
+              "label": "Hoch (2,20 m)",
+              "unit": "m",
+              "value": 2.2
             }
           ]
         },
@@ -1928,6 +1964,31 @@
                 "label": "Kunststoff (€/Stück)",
                 "unit": "€/Stück",
                 "value": 1600
+              }
+            ]
+          },
+          {
+            "title": "Türhöhe",
+            "subtitle": "Wird für die Flächenberechnung der Türen verwendet",
+            "fieldTag": "door_height",
+            "variables": [
+              {
+                "key": "door_height_standard_m",
+                "label": "Standard (2,01 m)",
+                "unit": "m",
+                "value": 2.01
+              },
+              {
+                "key": "door_height_komfort_m",
+                "label": "Komfort (2,10 m)",
+                "unit": "m",
+                "value": 2.1
+              },
+              {
+                "key": "door_height_hoch_m",
+                "label": "Hoch (2,20 m)",
+                "unit": "m",
+                "value": 2.2
               }
             ]
           },

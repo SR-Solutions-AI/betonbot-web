@@ -629,6 +629,7 @@ export default function LiveFeed() {
   const [progress, setProgress] = useState(0) // 0-100
   const [currentStageName, setCurrentStageName] = useState<string | null>(null)
   const [offerFlow, setOfferFlow] = useState<OfferFlow>('neubau')
+  const [isMeasurementsOnlyOffer, setIsMeasurementsOnlyOffer] = useState(false)
   const flowModeRef = useRef<OfferFlow>('neubau')
 
   const filesByStage = useRef<Record<string, FeedFile[]>>({})
@@ -791,6 +792,7 @@ export default function LiveFeed() {
         const inferred = inferOfferFlow({ ...meta, offer_type_slug: slug })
         flowModeRef.current = inferred
         setOfferFlow(inferred)
+        setIsMeasurementsOnlyOffer(meta?.measurements_only_offer === true)
       })
       .catch(() => {})
     return () => {
@@ -843,6 +845,7 @@ export default function LiveFeed() {
       setCurrentStageName(null)
       flowModeRef.current = 'neubau'
       setOfferFlow('neubau')
+      setIsMeasurementsOnlyOffer(false)
     }
     
     const onComputeStarted = (e: any) => { 
@@ -856,6 +859,7 @@ export default function LiveFeed() {
       let flow: OfferFlow = detailFlow === 'neubau' || detailFlow === 'dachstuhl' ? detailFlow : 'neubau'
       flowModeRef.current = flow
       setOfferFlow(flow)
+      setIsMeasurementsOnlyOffer(e?.detail?.measurementsOnlyOffer === true)
 
       setOfferId(offerId); 
       setComputing(true) // Activează progress bar-ul
@@ -876,6 +880,7 @@ export default function LiveFeed() {
             const inferred = inferOfferFlow({ ...meta, offer_type_slug: slug })
             flowModeRef.current = inferred
             setOfferFlow(inferred)
+        setIsMeasurementsOnlyOffer(meta?.measurements_only_offer === true)
             persistOfferState(offerId, runId, true, inferred)
           })
           .catch(() => {})
@@ -948,6 +953,46 @@ export default function LiveFeed() {
       persistOfferState(null, null, false)
       reset()
     }
+
+    const onOfferWizardFlush = (e: Event) => {
+      const want = (e as CustomEvent<{ offerId?: string }>).detail?.offerId
+      const cur = offerIdRef.current
+      if (want && cur && want !== cur) return
+      if (!want && !cur) return
+      sessionRef.current = sessionRef.current + 1
+      setRows([])
+      setGroups([])
+      filesByStage.current = {}
+      processedStages.current.clear()
+      stageQueue.current = []
+      processing.current = false
+      sinceRef.current = undefined
+      seenEventIdsRef.current.clear()
+      currentStageRef.current = null
+      titleIndexRef.current = {}
+      finalPdfUrlRef.current = null
+      isHistoryMode.current = false
+      allStagesCompleted.current = false
+      queuedStages.current.clear()
+      pendingCompletionRef.current = null
+      reviewPendingRef.current = null
+      pendingStagesAfterReviewRef.current = []
+      roofReviewPendingRef.current = null
+      pendingStagesAfterRoofReviewRef.current = []
+      detectionsReviewActiveRef.current = false
+      roofReviewActiveRef.current = false
+      progressLockedInEditorRef.current = null
+      targetProgressRef.current = 0
+      displayProgressRef.current = 0
+      serverDrivesProgressRef.current = false
+      stageStartedAtRef.current = {}
+      setPdfUrl(null)
+      setRunId(null)
+      activeRunIdRef.current = null
+      setProgress(0)
+      setCurrentStageName(null)
+      setComputing(false)
+    }
     const onDetectionsReviewStart = () => {
       if (progressLockedInEditorRef.current == null) {
         progressLockedInEditorRef.current = Math.min(100, Math.max(0, displayProgressRef.current || 0))
@@ -967,6 +1012,7 @@ export default function LiveFeed() {
 
     window.addEventListener('offer:compute-started', onComputeStarted)
     window.addEventListener('offer:new', onOfferNew)
+    window.addEventListener('offer:wizard-flush-feed', onOfferWizardFlush as EventListener)
     window.addEventListener('offer:detections-review-start', onDetectionsReviewStart as EventListener)
     window.addEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
     // Fallback: if the wizard signals PDF ready but stage queue never reaches computation_complete,
@@ -992,6 +1038,7 @@ export default function LiveFeed() {
     return () => {
       window.removeEventListener('offer:compute-started', onComputeStarted)
       window.removeEventListener('offer:new', onOfferNew)
+      window.removeEventListener('offer:wizard-flush-feed', onOfferWizardFlush as EventListener)
       window.removeEventListener('offer:detections-review-start', onDetectionsReviewStart as EventListener)
       window.removeEventListener('offer:roof-review-start', onRoofReviewStart as EventListener)
       window.removeEventListener('offer:pdf-ready', onPdfReady as EventListener)
@@ -1020,6 +1067,7 @@ export default function LiveFeed() {
         const meta = o?.meta ?? o?.offer?.meta
         const slug = o?.offer_type_slug ?? o?.offer?.offer_type_slug
         offerFlowResolved = inferOfferFlow({ ...meta, offer_type_slug: slug })
+        setIsMeasurementsOnlyOffer(meta?.measurements_only_offer === true)
       } catch (_) {}
       if (loadGen !== historyLoadGenRef.current) return
       flowModeRef.current = offerFlowResolved
@@ -1863,7 +1911,7 @@ export default function LiveFeed() {
                     : 'border-white/15 text-sand/75 bg-white/[0.06]'
                 }`}
               >
-                {offerFlow === 'dachstuhl' ? 'Dachstuhl' : 'Neubau'}
+                {isMeasurementsOnlyOffer ? (offerFlow === 'dachstuhl' ? 'Dachstuhl Mengenermittlung' : 'Neubau Mengenermittlung') : (offerFlow === 'dachstuhl' ? 'Dachstuhl Angebot' : 'Neubau Angebot')}
               </span>
               <div className="text-xs font-medium text-sand/80 truncate">
                 {currentStageName || 'Verarbeitung...'}

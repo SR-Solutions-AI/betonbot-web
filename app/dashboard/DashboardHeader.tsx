@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut, User, Database, Settings, ChevronDown, Building2, FileText } from 'lucide-react'
+import { LogOut, User, Database, Settings, ChevronDown, Building2, FileText, Home } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFetch } from '../lib/supabaseClient'
 import { useEffect, useState, useRef } from 'react'
@@ -23,6 +23,7 @@ export default function DashboardHeader() {
   const canSeeOrgSettings =
     (me?.user as any)?.role === 'org_leader' || (me?.user as any)?.can_manage_org === true
   const isSiteAdmin = (me?.user as any)?.role === 'admin'
+  const canSeeOfferCustomization = !isSiteAdmin
   const canSeePreisdatenbank = !isSiteAdmin
 
   // --- FUNCTIA DE LOGOUT (FIXED) ---
@@ -143,62 +144,60 @@ export default function DashboardHeader() {
               <span className="truncate">{email || ''}</span>
             </div>
             <div className="relative" ref={dropdownRef}>
-              {isSettingsArea ? (
-                <Link
-                  href="/dashboard"
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen((o) => !o)}
                   className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
-                  title="Zurück zu Angebot generieren"
+                  title="Einstellungen"
                 >
-                  <span className="hidden sm:inline">Angebot generieren</span>
-                </Link>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSettingsOpen((o) => !o)}
-                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
-                    title="Einstellungen"
-                  >
-                    <Settings size={18} className="shrink-0" />
-                    <span className="hidden sm:inline">Einstellungen</span>
-                    <ChevronDown size={16} className={`shrink-0 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {settingsOpen && (
-                    <div className="absolute right-0 top-full mt-1 py-1 w-72 rounded-xl bg-coffee-850 border border-white/20 shadow-xl z-50">
-                      {canSeeOrgSettings && (
-                        <Link
-                          href="/dashboard/settings/organisation"
-                          onClick={() => setSettingsOpen(false)}
-                          className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
-                        >
-                          <Building2 size={18} className="shrink-0 text-sand/80" />
-                          <span className="leading-snug">Organisationseinstellungen</span>
-                        </Link>
-                      )}
-                      {canSeeOrgSettings && (
-                        <Link
-                          href="/dashboard/settings/angebotsanpassung"
-                          onClick={() => setSettingsOpen(false)}
-                          className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
-                        >
-                          <FileText size={18} className="shrink-0 text-sand/80" />
-                          <span className="leading-snug">Angebotsanpassung</span>
-                        </Link>
-                      )}
-                      {canSeePreisdatenbank && (
-                        <Link
-                          href="/dashboard/preisdatenbank"
-                          onClick={() => setSettingsOpen(false)}
-                          className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
-                        >
-                          <Database size={18} className="shrink-0 text-sand/80" />
-                          <span className="leading-snug">Preisdatenbank</span>
-                        </Link>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
+                  <Settings size={18} className="shrink-0" />
+                  <span className="hidden sm:inline">Einstellungen</span>
+                  <ChevronDown size={16} className={`shrink-0 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {settingsOpen && (
+                  <div className="absolute right-0 top-full mt-1 py-1 w-72 rounded-xl bg-coffee-850 border border-white/20 shadow-xl z-50">
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setSettingsOpen(false)}
+                      className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
+                    >
+                      <Home size={18} className="shrink-0 text-sand/80" />
+                      <span className="leading-snug">Angebot generieren</span>
+                    </Link>
+                    {canSeeOrgSettings && (
+                      <Link
+                        href="/dashboard/settings/organisation"
+                        onClick={() => setSettingsOpen(false)}
+                        className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
+                      >
+                        <Building2 size={18} className="shrink-0 text-sand/80" />
+                        <span className="leading-snug">Organisationseinstellungen</span>
+                      </Link>
+                    )}
+                    {canSeeOfferCustomization && (
+                      <Link
+                        href="/dashboard/settings/angebotsanpassung"
+                        onClick={() => setSettingsOpen(false)}
+                        className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
+                      >
+                        <FileText size={18} className="shrink-0 text-sand/80" />
+                        <span className="leading-snug">Angebotsanpassung</span>
+                      </Link>
+                    )}
+                    {canSeePreisdatenbank && (
+                      <Link
+                        href="/dashboard/preisdatenbank"
+                        onClick={() => setSettingsOpen(false)}
+                        className="flex items-start gap-2 px-4 py-2.5 text-left text-white hover:bg-white/10 rounded-lg mx-1 whitespace-normal leading-snug"
+                      >
+                        <Database size={18} className="shrink-0 text-sand/80" />
+                        <span className="leading-snug">Preisdatenbank</span>
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </>
             </div>
             <button
               onClick={handleLogout}

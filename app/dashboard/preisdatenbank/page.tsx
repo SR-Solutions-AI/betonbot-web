@@ -5,9 +5,16 @@ import { Save, Loader2, CheckCircle2, AlertCircle, Trash2, Plus, Pencil } from '
 import { supabase } from '../../lib/supabaseClient'
 import { apiFetch } from '../../lib/supabaseClient'
 import { buildPriceSectionsFromFormStepsJson } from '../../../lib/buildFormFromJson'
+import holzbauFormStepsJson from '../../../data/form-schema/holzbau-form-steps.json'
 import type { PreisdatenbankSection } from '../formConfig'
+import {
+  adaptCurrencyCopy,
+  adaptPriceUnit,
+  type DisplayCurrency,
+  normalizeDisplayCurrency,
+} from '../../../lib/displayCurrency'
 
-/** Schema-ul se încarcă după tenant: /api/form-schema?tenant=<slug> (betonbau → Beton/Mauerwerk, holzbau → default). */
+/** Sursă unică: data/form-schema/holzbau-form-steps.json – secțiunile și variabilele vin doar din acest fișier. */
 
 const MIN_COL_WIDTH = 260
 const GAP_PX = 24
@@ -17,7 +24,7 @@ const CARD_MAX_PX = 300
 const CARD_WIDE_PX = 500
 
 function getStep(unit: string): number {
-  if (unit === '€/m²' || unit === '€/m') return 1
+  if (unit === '€/m²' || unit === '€/m' || unit === 'CHF/m²' || unit === 'CHF/m') return 1
   if (unit === '%') return 0.5
   if (unit === 'm') return 0.1
   return 10
@@ -42,13 +49,17 @@ function slugFromLabel(label: string): string {
 /** Elimină unitatea de măsură de la sfârșitul etichetei (ex. " (€/m²)", " (Faktor)") – afișăm doar numele variabilei. */
 function labelWithoutUnit(label: string): string {
   if (!label || typeof label !== 'string') return label
-  return label.replace(/\s*\((?:€\/m²|€\/m|€|Faktor!?|Stufe)\)\s*$/i, '').trim() || label
+  return label
+    .replace(/\s*\((?:€\/m²|€\/m|€|CHF\/m²|CHF\/m|CHF|Faktor!?|Stufe)\)\s*$/i, '')
+    .trim() || label
 }
 
-/** Titlu card în UI (alias pentru redenumiri; cheile din JSON pot rămâne vechi în cache). */
-function displayPriceCardTitle(title: string): string {
-  if (title === 'Geschosshöhe') return 'Raumhöhe'
-  return title
+function isLockedRoofOnlyVariable(id: string): boolean {
+  return id === 'roofonly_sichtdachstuhl_price'
+}
+
+function isProtectedVariable(id: string): boolean {
+  return id === 'tinichigerie_percent' || id === 'roofonly_tinichigerie_percent'
 }
 
 function canAddOptionsForFieldTag(fieldTag?: string): boolean {
@@ -57,10 +68,6 @@ function canAddOptionsForFieldTag(fieldTag?: string): boolean {
 
 function isValueOnlyFieldTag(fieldTag?: string): boolean {
   return fieldTag === 'haustechnik_basis'
-}
-
-function isProtectedVariable(id: string): boolean {
-  return id === 'tinichigerie_percent' || id === 'roofonly_tinichigerie_percent'
 }
 
 function isBlockedOption(variable: { id: string; label: string }): boolean {
@@ -73,6 +80,12 @@ function isBlockedOption(variable: { id: string; label: string }): boolean {
  * Subtitluri unice per card (titlul secțiunii).
  * Preisdatenbank = baza de prețuri pentru oferte: utilizatorul setează €/m², factori, pauschal etc. pentru fiecare variantă din formular.
  */
+/** Titlu card în UI (alias pentru redenumiri; cheile din JSON pot rămâne vechi în cache). */
+function displayPriceCardTitle(title: string): string {
+  if (title === 'Geschosshöhe') return 'Raumhöhe'
+  return title
+}
+
 const CARD_SUBTITLES: Record<string, string> = {
   'Systemtyp': 'Blockbau, Holzrahmen, Massivholz – €/m² Innen und Außen',
   'Baustellenzufahrt': 'Leicht, Mittel, Schwierig',
@@ -91,8 +104,11 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Fensterart': '3-fach verglast oder Passiv – €/m² Glasfläche',
   'Türtyp Innentüren': 'Stückpreis je nach gewähltem Typ',
   'Türtyp Außentüren': 'Stückpreis je nach gewähltem Typ',
+  'Schiebetüren': 'Preis pro m² je nach gewählter Schiebetür',
+  'Türhöhe': 'Höhen in m je Variante – für Flächenberechnung der Türen.',
   'Garagentor gewünscht': 'Wenn ja: Typ und Stückpreis aus Preisdatenbank',
-  'Innenausbau': 'Putz, Holz, Faserzement, Mix – €/m²',
+  'Innenausbau Innenwände': 'Putz, Holz, Faserzement, Mix – €/m²',
+  'Innenausbau Außenwände': 'Putz, Holz, Faserzement, Mix – €/m²',
   'Fassade': 'Putz, Holz, Faserzement, Mix – €/m²',
   'Energieniveau': 'Preisaufschläge je nach gewähltem Energiestandard.',
   'Heizungssystem': 'Preisaufschläge je nach ausgewähltem Heizungssystem.',
@@ -105,9 +121,10 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Klempnerarbeiten': 'Aufschlag der Klempnerarbeiten zum Dachpreis anpassen',
 }
 
-function cardSubtitle(cardTitle: string, _rawSubtitle?: string | null): string {
+function cardSubtitle(cardTitle: string, currency: DisplayCurrency, _rawSubtitle?: string | null): string {
   const key = cardTitle === 'Geschosshöhe' ? 'Raumhöhe' : cardTitle
-  return CARD_SUBTITLES[key] ?? CARD_SUBTITLES[cardTitle] ?? 'Preise anpassen'
+  const raw = CARD_SUBTITLES[key] ?? CARD_SUBTITLES[cardTitle] ?? 'Preise anpassen'
+  return adaptCurrencyCopy(raw, currency)
 }
 
 /** Subtitlu alb pentru fiecare pas de formular (stepKey). */
@@ -115,8 +132,8 @@ const STEP_SUBTITLES: Record<string, string> = {
   sistemConstructiv: 'Baustellenzufahrt, Gelände und Anschlüsse',
   structuraCladirii: 'Fundament, Raumhöhe, Flächen und Treppen',
   daemmungDachdeckung: 'Dämmung, Unterdach, Dachstuhl und Dachdeckung',
-  ferestreUsi: 'Fenster, Türen und Glasflächen',
-  materialeFinisaj: 'Innenausbau und Fassade',
+  ferestreUsi: 'Fenster, Türen, Schiebetüren und Glasflächen',
+  materialeFinisaj: 'Innenausbau Innenwände, Außenwände und Fassade',
   performantaEnergetica: 'Preisaufschläge für Energiestandard, Heizung und Haustechnik.',
   projektdaten: 'Parameter für Dachstuhl-Angebote (roof-only)',
 }
@@ -151,6 +168,7 @@ export default function PreisdatenbankPage() {
   const pendingSaveRef = useRef<Record<string, number>>({})
   /** Doar chei prezente în holzbau-form-steps.json (priceSections.variables[].key) – nimic în plus. */
   const allowedPricingKeysRef = useRef<Set<string>>(new Set())
+  const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('EUR')
 
   useEffect(() => {
     let cancelled = false
@@ -162,18 +180,8 @@ export default function PreisdatenbankPage() {
       setReady(true)
       setLoadError(null)
       try {
-        const me = (await apiFetch('/me').catch(() => null)) as { tenant?: { slug?: string } } | null
-        const tenantSlug = me?.tenant?.slug && typeof me.tenant.slug === 'string' ? me.tenant.slug : 'holzbau'
-        let schemaRes = await fetch(`/api/form-schema?tenant=${encodeURIComponent(tenantSlug)}`)
-        if (!schemaRes.ok && tenantSlug !== 'holzbau') {
-          schemaRes = await fetch('/api/form-schema?tenant=holzbau')
-        }
-        if (!schemaRes.ok) {
-          if (!cancelled) setLoadError('Schema nicht gefunden.')
-          return
-        }
-        const formStepsJson = (await schemaRes.json()) as unknown
-        const baseSectionsFromJson = buildPriceSectionsFromFormStepsJson(formStepsJson)
+        // Structura paginii = strict din data/form-schema/holzbau-form-steps.json (steps[].priceSections[].variables)
+        const baseSectionsFromJson = buildPriceSectionsFromFormStepsJson(holzbauFormStepsJson as unknown)
         const allowedKeys = new Set<string>()
         for (const sec of baseSectionsFromJson) {
           for (const sub of sec.subsections) {
@@ -181,6 +189,11 @@ export default function PreisdatenbankPage() {
           }
         }
         if (!cancelled) allowedPricingKeysRef.current = allowedKeys
+
+        const tenantCfg = (await apiFetch('/tenant-config').catch(() => null)) as
+          | { displayCurrency?: string }
+          | null
+        if (!cancelled) setDisplayCurrency(normalizeDisplayCurrency(tenantCfg?.displayCurrency))
 
         const apiRes = (await apiFetch('/pricing-parameters').catch(() => ({}))) as
           | {
@@ -267,6 +280,16 @@ export default function PreisdatenbankPage() {
       }
     })
     return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    const onSaved = () => {
+      apiFetch('/tenant-config')
+        .then((cfg) => setDisplayCurrency(normalizeDisplayCurrency((cfg as { displayCurrency?: string })?.displayCurrency)))
+        .catch(() => {})
+    }
+    window.addEventListener('tenant-config:saved', onSaved)
+    return () => window.removeEventListener('tenant-config:saved', onSaved)
   }, [])
 
   useEffect(() => {
@@ -477,7 +500,7 @@ export default function PreisdatenbankPage() {
   }
 
   const handleDelete = (sectionIndex: number, subsectionIndex: number, id: string) => {
-    if (isProtectedVariable(id)) return
+    if (isLockedRoofOnlyVariable(id) || isProtectedVariable(id)) return
     setHasUnsavedChanges(true)
     setSections((prev) =>
       prev.map((sec, i) => {
@@ -505,6 +528,7 @@ export default function PreisdatenbankPage() {
     value: number,
     unit: string
   ) => {
+    if (fieldTag === 'visible_roof_structure_fixed') return
     if (!label.trim() || !fieldTag) return
     const key = `opt_${fieldTag}_${slugFromLabel(label)}`
     setSections((prev) =>
@@ -532,7 +556,7 @@ export default function PreisdatenbankPage() {
   }
 
   const handleEditLabel = (sectionIndex: number, subsectionIndex: number, id: string, newLabel: string) => {
-    if (isProtectedVariable(id)) return
+    if (isLockedRoofOnlyVariable(id) || isProtectedVariable(id)) return
     if (!newLabel.trim()) return
     setHasUnsavedChanges(true)
     const trimmed = newLabel.trim()
@@ -581,24 +605,24 @@ export default function PreisdatenbankPage() {
               Grundlage für alle Ihre Angebotsberechnungen.
             </p>
             {loadError && (
-              <p className="mt-4 p-3 rounded-lg bg-yellow-500/20 text-yellow-200 text-base" role="alert">
+              <p className="mt-4 p-3 rounded-lg bg-amber-500/20 text-amber-200 text-base" role="alert">
                 {loadError}
               </p>
             )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {saveMessage === 'success' && (
-              <span className="flex items-center gap-1.5 text-yellow-400 text-base">
+              <span className="flex items-center gap-1.5 text-orange-400 text-base">
                 <CheckCircle2 size={18} /> Gespeichert
               </span>
             )}
             {saveMessage === 'error' && (
-              <span className="flex flex-col gap-1 text-yellow-400 text-base max-w-md">
+              <span className="flex flex-col gap-1 text-amber-400 text-base max-w-md">
                 <span className="flex items-center gap-1.5">
                   <AlertCircle size={18} /> Fehler beim Speichern
                 </span>
                 {saveErrorMessage && (
-                  <span className="text-sm text-yellow-300/90 font-mono break-all">{saveErrorMessage}</span>
+                  <span className="text-sm text-amber-300/90 font-mono break-all">{saveErrorMessage}</span>
                 )}
               </span>
             )}
@@ -609,7 +633,7 @@ export default function PreisdatenbankPage() {
                 disabled={saving || !hasUnsavedChanges}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold shadow-lg transition-all duration-200 ease-out text-base ${
                   hasUnsavedChanges
-                    ? 'bg-[#E5B800] hover:bg-[#F5D030] text-white disabled:opacity-60 disabled:cursor-not-allowed'
+                    ? 'bg-[#FF9F0F] hover:bg-[#e08e0d] text-white disabled:opacity-60 disabled:cursor-not-allowed'
                     : 'bg-transparent text-white border border-white cursor-not-allowed opacity-90'
                 }`}
               >
@@ -636,14 +660,14 @@ export default function PreisdatenbankPage() {
         <button
           type="button"
           onClick={() => setActiveCatalog('neubau')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#FF9F0F] text-white border-[#FF9F0F]' : 'border-white/20 text-white/90 hover:border-[#FF9F0F]/70'}`}
         >
           Neubau
         </button>
         <button
           type="button"
           onClick={() => setActiveCatalog('dachstuhl')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#FF9F0F] text-white border-[#FF9F0F]' : 'border-white/20 text-white/90 hover:border-[#FF9F0F]/70'}`}
         >
           Dachstuhl
         </button>
@@ -691,14 +715,15 @@ export default function PreisdatenbankPage() {
           // Coloane fixe 300px; cardurile „late” (2 coloane interne) ocupă 2 celule ca gap-ul să rămână constant.
           const stepColumns = Math.min(6, maxColumnsThatFit, Math.max(1, nItems + wideCount))
           const stepGridMaxPx = stepColumns * CARD_MAX_PX + (stepColumns - 1) * GAP_PX
-          const stepSubtitle = (section.stepKey && STEP_SUBTITLES[section.stepKey]) || section.subtitle
+          const rawStepSub = (section.stepKey && STEP_SUBTITLES[section.stepKey]) || section.subtitle
+          const stepSubtitle = rawStepSub ? adaptCurrencyCopy(rawStepSub, displayCurrency) : ''
           return (
             <div
               key={section.stepKey ?? section.title}
               className="flex flex-col gap-4 md:gap-5 border-t border-white/10 pt-4 first:pt-4"
             >
               <header className="text-center">
-                <h2 className="text-xl md:text-2xl font-bold text-[#E5B800]">{section.title}</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-[#FF9F0F]">{section.title}</h2>
                 {stepSubtitle && (
                   <p className="text-white text-sm md:text-base mt-1">{stepSubtitle}</p>
                 )}
@@ -723,8 +748,8 @@ export default function PreisdatenbankPage() {
                           className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 flex flex-col min-w-0 w-full"
                         >
                           <div className="border-b border-white/10 pb-2 mb-2">
-                            <h3 className="text-sm font-semibold text-[#E5B800]">{displayPriceCardTitle(sub.title)}</h3>
-                            <p className="text-white/90 text-xs mt-0.5">{cardSubtitle(sub.title, sub.subtitle)}</p>
+                            <h3 className="text-sm font-semibold text-[#FF9F0F]">{displayPriceCardTitle(sub.title)}</h3>
+                            <p className="text-white/90 text-xs mt-0.5">{cardSubtitle(sub.title, displayCurrency, sub.subtitle)}</p>
                           </div>
                           <div className="grid grid-cols-1 gap-2">
                             {sub.variables.map((v) => (
@@ -747,8 +772,8 @@ export default function PreisdatenbankPage() {
                                   ) : (
                                     <>
                                       <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                      {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
-                                      {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
+                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                     </>
                                   )}
                                 </div>
@@ -757,12 +782,16 @@ export default function PreisdatenbankPage() {
                                     id={v.id}
                                     type="number"
                                     min={0}
-                                    step={getStep(v.unit)}
+                                    step={getStep(adaptPriceUnit(v.unit || '€', displayCurrency))}
                                     value={v.value}
                                     onChange={(e) => updateValue(sectionIndex, subsectionIndex, v.id, parseFloat(e.target.value) || 0)}
                                     className="sun-input flex-1 min-w-0 max-w-[100px] text-sm"
                                   />
-                                  {v.unit ? <span className="text-sand/70 text-sm shrink-0">{v.unit}</span> : null}
+                                  {v.unit ? (
+                                    <span className="text-sand/70 text-sm shrink-0">
+                                      {adaptPriceUnit(v.unit, displayCurrency)}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
                             ))}
@@ -770,13 +799,17 @@ export default function PreisdatenbankPage() {
                               <div className="flex flex-wrap items-center gap-2 text-left text-sm">
                                 <input type="text" placeholder="Bezeichnung" className="sun-input w-32 text-sm" id={`add-label-${sectionIndex}-${subsectionIndex}`} />
                                 <input type="number" min={0} step={0.01} placeholder="Preis" className="sun-input w-20 text-sm" id={`add-value-${sectionIndex}-${subsectionIndex}`} />
-                                {sub.variables[0]?.unit ? <span className="text-sand/70 text-sm">{sub.variables[0].unit}</span> : null}
-                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#E5B800] text-white text-sm">Übernehmen</button>
+                                {sub.variables[0]?.unit ? (
+                                  <span className="text-sand/70 text-sm">
+                                    {adaptPriceUnit(sub.variables[0].unit, displayCurrency)}
+                                  </span>
+                                ) : null}
+                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#FF9F0F] text-white text-sm">Übernehmen</button>
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
                             )}
                             {canAddOptionsForFieldTag(sub.fieldTag) && !(addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex) && (
-                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left w-full justify-start">
+                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#FF9F0F] hover:underline text-left w-full justify-start">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
                             )}
@@ -791,8 +824,8 @@ export default function PreisdatenbankPage() {
                       style={{ gridColumn: 'span 2' }}
                     >
                       <div className="border-b border-white/10 pb-3 mb-3">
-                        <h3 className="text-base font-semibold text-[#E5B800]">Kamin / Ofen</h3>
-                        <p className="text-white/90 text-sm mt-1">{cardSubtitle('Kamin / Ofen', null)}</p>
+                        <h3 className="text-base font-semibold text-[#FF9F0F]">Kamin / Ofen</h3>
+                        <p className="text-white/90 text-sm mt-1">{cardSubtitle('Kamin / Ofen', displayCurrency, null)}</p>
                       </div>
                       <div className="flex flex-col gap-6">
                         {item.subs.map(({ sub, subsectionIndex }) => (
@@ -817,8 +850,8 @@ export default function PreisdatenbankPage() {
                                     ) : (
                                       <>
                                         <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                        {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
-                                        {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
+                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                       </>
                                     )}
                                   </div>
@@ -827,12 +860,16 @@ export default function PreisdatenbankPage() {
                                       id={v.id}
                                       type="number"
                                       min={0}
-                                      step={getStep(v.unit)}
+                                      step={getStep(adaptPriceUnit(v.unit || '€', displayCurrency))}
                                       value={v.value}
                                       onChange={(e) => updateValue(sectionIndex, subsectionIndex, v.id, parseFloat(e.target.value) || 0)}
                                       className="sun-input flex-1 min-w-0 max-w-[120px] text-sm"
                                     />
-                                    {v.unit ? <span className="text-sand/70 text-sm shrink-0">{v.unit}</span> : null}
+                                    {v.unit ? (
+                                      <span className="text-sand/70 text-sm shrink-0">
+                                        {adaptPriceUnit(v.unit, displayCurrency)}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </div>
                               ))}
@@ -841,12 +878,16 @@ export default function PreisdatenbankPage() {
                               <div className="flex flex-wrap items-center gap-2 text-left text-sm">
                                 <input type="text" placeholder="Bezeichnung" className="sun-input w-32 text-sm" id={`add-label-${sectionIndex}-${subsectionIndex}`} />
                                 <input type="number" min={0} step={0.01} placeholder="Preis" className="sun-input w-20 text-sm" id={`add-value-${sectionIndex}-${subsectionIndex}`} />
-                                {sub.variables[0]?.unit ? <span className="text-sand/70 text-sm">{sub.variables[0].unit}</span> : null}
-                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#E5B800] text-white text-sm">Übernehmen</button>
+                                {sub.variables[0]?.unit ? (
+                                  <span className="text-sand/70 text-sm">
+                                    {adaptPriceUnit(sub.variables[0].unit, displayCurrency)}
+                                  </span>
+                                ) : null}
+                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#FF9F0F] text-white text-sm">Übernehmen</button>
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
                             ) : canAddOptionsForFieldTag(sub.fieldTag) ? (
-                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left">
+                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#FF9F0F] hover:underline text-left">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
                             ) : null}
@@ -861,11 +902,11 @@ export default function PreisdatenbankPage() {
                     style={item.sub.variables.length > 4 ? { gridColumn: 'span 2' } : undefined}
                   >
                     <div className="border-b border-white/10 pb-3 mb-3">
-                      <h3 className="text-base font-semibold text-[#E5B800]">
+                      <h3 className="text-base font-semibold text-[#FF9F0F]">
                         {displayPriceCardTitle(item.sub.title)}
                       </h3>
                       <p className="text-white/90 text-sm mt-1">
-                        {cardSubtitle(item.sub.title, item.sub.subtitle)}
+                        {cardSubtitle(item.sub.title, displayCurrency, item.sub.subtitle)}
                       </p>
                     </div>
                     <div
@@ -891,16 +932,16 @@ export default function PreisdatenbankPage() {
                             ) : (
                               <>
                                 <span className="flex-1 min-w-0">{labelWithoutUnit(v.label)}</span>
-                                {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
+                                {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => setEditingLabelId(v.id)}
-                                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]"
+                                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]"
                                   title="Bezeichnung bearbeiten"
                                   aria-label="Bezeichnung bearbeiten"
                                 >
                                   <Pencil size={14} />
                                 </button>}
-                                {!isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
+                                {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => handleDelete(sectionIndex, item.subsectionIndex, v.id)}
                                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400"
@@ -917,14 +958,18 @@ export default function PreisdatenbankPage() {
                               id={v.id}
                               type="number"
                               min={0}
-                              step={getStep(v.unit)}
+                              step={getStep(adaptPriceUnit(v.unit || '€', displayCurrency))}
                               value={v.value}
                               onChange={(e) =>
                                 updateValue(sectionIndex, item.subsectionIndex, v.id, parseFloat(e.target.value) || 0)
                               }
                               className="sun-input flex-1 min-w-0 max-w-[120px] md:max-w-[140px]"
                             />
-                            {v.unit ? <span className="text-sand/70 text-sm md:text-base shrink-0">{v.unit}</span> : null}
+                            {v.unit ? (
+                              <span className="text-sand/70 text-sm md:text-base shrink-0">
+                                {adaptPriceUnit(v.unit, displayCurrency)}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       ))}
@@ -944,7 +989,11 @@ export default function PreisdatenbankPage() {
                             className="sun-input w-24 text-sm"
                             id={`add-value-${sectionIndex}-${item.subsectionIndex}`}
                           />
-                          {item.sub.variables[0]?.unit ? <span className="text-sand/70 text-sm">{item.sub.variables[0].unit}</span> : null}
+                          {item.sub.variables[0]?.unit ? (
+                            <span className="text-sand/70 text-sm">
+                              {adaptPriceUnit(item.sub.variables[0].unit, displayCurrency)}
+                            </span>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => {
@@ -960,7 +1009,7 @@ export default function PreisdatenbankPage() {
                                   item.sub.variables[0]?.unit ?? '€'
                                 )
                             }}
-                            className="px-3 py-1.5 rounded bg-[#E5B800] text-white text-sm font-medium"
+                            className="px-3 py-1.5 rounded bg-[#FF9F0F] text-white text-sm font-medium"
                           >
                             Übernehmen
                           </button>
@@ -976,7 +1025,7 @@ export default function PreisdatenbankPage() {
                         <button
                           type="button"
                           onClick={() => setAddingAt({ sectionIndex, subsectionIndex: item.subsectionIndex })}
-                          className={`flex items-center gap-2 py-2 text-sm md:text-base text-[#E5B800] hover:underline text-left w-full justify-start ${item.sub.variables.length > 4 ? 'col-span-2' : ''}`}
+                          className={`flex items-center gap-2 py-2 text-sm md:text-base text-[#FF9F0F] hover:underline text-left w-full justify-start ${item.sub.variables.length > 4 ? 'col-span-2' : ''}`}
                         >
                           <Plus size={16} /> Option hinzufügen
                         </button>
@@ -1002,7 +1051,7 @@ export default function PreisdatenbankPage() {
   overflow-y: scroll !important;
   overflow-x: auto !important;
   scrollbar-width: thin !important;
-  scrollbar-color: #E5B800 transparent !important;
+  scrollbar-color: #c9944a transparent !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar {
   width: 10px !important;
@@ -1015,7 +1064,7 @@ export default function PreisdatenbankPage() {
   -webkit-appearance: none !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-thumb {
-  background: #E5B800 !important;
+  background: #c9944a !important;
   border-radius: 9999px !important;
   border: 2px solid transparent !important;
   background-clip: padding-box !important;
@@ -1023,7 +1072,7 @@ export default function PreisdatenbankPage() {
   min-height: 40px !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-thumb:hover {
-  background: #F5D030 !important;
+  background: #d8a25e !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-corner {
   background: transparent !important;
@@ -1056,7 +1105,7 @@ export default function PreisdatenbankPage() {
             aria-label="Scroll"
           >
             <div
-              className="absolute left-0 w-full rounded-full bg-[#E5B800] hover:bg-[#F5D030] min-h-[20px] cursor-grab active:cursor-grabbing"
+              className="absolute left-0 w-full rounded-full bg-[#c9944a] hover:bg-[#d8a25e] min-h-[20px] cursor-grab active:cursor-grabbing"
               style={{
                 height: scrollThumb.height,
                 top: scrollThumb.top,

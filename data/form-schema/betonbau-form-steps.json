@@ -676,7 +676,7 @@
         {
           "type": "select",
           "name": "turhohe",
-          "label": "Türhöhe (nur für Flächenberechnung)",
+          "label": "Türhöhe",
           "options": [
             "Standard (2m)",
             "Erhöht / Sondermaß (2,2+ m)"
@@ -769,6 +769,31 @@
               "label": "Kunststoff (€/m²)",
               "unit": "€/m²",
               "value": 420
+            }
+          ]
+        },
+        {
+          "title": "Türhöhe",
+          "subtitle": "Wird für die Flächenberechnung der Türen verwendet",
+          "fieldTag": "door_height",
+          "variables": [
+            {
+              "key": "door_height_standard_m",
+              "label": "Standard (2,01 m)",
+              "unit": "m",
+              "value": 2.01
+            },
+            {
+              "key": "door_height_komfort_m",
+              "label": "Komfort (2,10 m)",
+              "unit": "m",
+              "value": 2.1
+            },
+            {
+              "key": "door_height_hoch_m",
+              "label": "Hoch (2,20 m)",
+              "unit": "m",
+              "value": 2.2
             }
           ]
         }

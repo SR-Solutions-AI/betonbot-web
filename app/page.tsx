@@ -71,7 +71,7 @@ function FeatureSection() {
           <ul className="space-y-4 md:space-y-6">
             <li className="flex items-start gap-4">
                <XCircle className={`shrink-0 mt-1 text-[${PROBLEM_BROWN}]`} size={24} />
-               <span className="text-lg md:text-xl text-sand/90 font-medium">2–3 Stunden pro Angebot – oft umsonst</span>
+               <span className="text-lg md:text-xl text-sand/90 font-medium">4–6 Stunden pro Angebot – oft umsonst</span>
             </li>
             <li className="flex items-start gap-4">
                <XCircle className={`shrink-0 mt-1 text-[${PROBLEM_BROWN}]`} size={24} />
@@ -227,26 +227,6 @@ function FAQSection() {
                             <li className="flex items-start gap-3">
                                 <div className="mt-1.5 w-2 h-2 rounded-full bg-[#E5B800] shrink-0" />
                                 <span className="text-lg md:text-xl text-sand/90">Sie Preise oft <span className="font-semibold text-white">zu spät nennen</span>, weil mehrere Anfragen parallel bearbeitet werden müssen</span>
-                            </li>
-                        </ul>
-                    </div>
-                    <div>
-                        <p className="text-lg md:text-xl font-bold text-white mb-4 flex items-center gap-2">
-                            <XCircle className="text-sand/70 shrink-0" size={20} />
-                            <span className="underline decoration-sand/50 underline-offset-2">Nein, wenn:</span>
-                        </p>
-                        <ul className="space-y-3 ml-7">
-                            <li className="flex items-start gap-3">
-                                <div className="mt-1.5 w-2 h-2 rounded-full bg-sand/50 shrink-0" />
-                                <span className="text-lg md:text-xl text-sand/90">Sie hauptsächlich <span className="font-semibold text-white">Sanierungen, Renovierungen oder Aufstockungen</span> umsetzen</span>
-                            </li>
-                            <li className="flex items-start gap-3">
-                                <div className="mt-1.5 w-2 h-2 rounded-full bg-sand/50 shrink-0" />
-                                <span className="text-lg md:text-xl text-sand/90">Sie Projekte fast ausschließlich selbst planen <span className="font-semibold text-white">(keine Baupläne vom Kunden)</span></span>
-                            </li>
-                            <li className="flex items-start gap-3">
-                                <div className="mt-1.5 w-2 h-2 rounded-full bg-sand/50 shrink-0" />
-                                <span className="text-lg md:text-xl text-sand/90">Sie <span className="font-semibold text-white">weniger als 5 Angebotsanfragen</span> pro Monat bekommen</span>
                             </li>
                         </ul>
                     </div>
