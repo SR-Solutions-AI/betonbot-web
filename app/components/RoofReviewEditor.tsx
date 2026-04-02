@@ -1,12 +1,23 @@
 'use client'
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { Check, MousePointer2, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react'
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
 import { apiFetch } from '../lib/supabaseClient'
 import { displayFloorTabLabelDe } from '@/lib/displayFloorTabLabelDe'
 import {
   DEFAULT_ROOF_ANGLE,
+  DEFAULT_ROOF_OVERHANG_M,
   DEFAULT_ROOF_TYPE,
   ROOF_TYPE_OPTIONS,
   roofTypeLabelDe,
@@ -23,7 +34,7 @@ type PlanData = {
   doors: DoorRect[]
 }
 
-type RoofSurfaceTab = 'surfaces' | 'windows'
+export type RoofSurfaceTab = 'surfaces' | 'windows'
 
 type Tool = 'select' | 'add' | 'remove' | 'edit'
 
@@ -36,24 +47,56 @@ function nextRoofLabel(rects: RoomPolygon[]): string {
   return `S${max + 1}`
 }
 
+function clampRoofOverhangM(v: number): number {
+  return Math.max(0, Math.min(5, v))
+}
+
+/** UI: centimetri; `roofOverhangM` rămâne în metri (0–5 m → 0–500 cm). */
+const ROOF_OVERHANG_CM_MAX = 500
+
 function normalizeRect(r: {
   points: Point[]
   roomName?: string
   roomType?: string
   roofAngleDeg?: number
   roofType?: string
+  roofOverhangM?: number
 }): RoomPolygon {
   let ang = typeof r.roofAngleDeg === 'number' && Number.isFinite(r.roofAngleDeg) ? r.roofAngleDeg : DEFAULT_ROOF_ANGLE
   ang = Math.max(0, Math.min(60, ang))
   const allowed = new Set(['0_w', '1_w', '2_w', '4_w', '4.5_w'])
   const rt = typeof r.roofType === 'string' && allowed.has(r.roofType) ? (r.roofType as RoofTypeId) : DEFAULT_ROOF_TYPE
+  let oh =
+    typeof r.roofOverhangM === 'number' && Number.isFinite(r.roofOverhangM) ? r.roofOverhangM : DEFAULT_ROOF_OVERHANG_M
+  oh = clampRoofOverhangM(oh)
   return {
     points: r.points || [],
     roomName: r.roomName,
     roomType: r.roomType,
     roofAngleDeg: ang,
     roofType: rt,
+    roofOverhangM: oh,
   }
+}
+
+function parseDecimalField(s: string, min: number, max: number): number | null {
+  const t = s.replace(',', '.').trim()
+  if (t === '' || t === '-' || t === '.' || t === '-.') return null
+  const v = parseFloat(t)
+  if (!Number.isFinite(v)) return null
+  return Math.max(min, Math.min(max, v))
+}
+
+function overhangMetersToCmStr(meters: number): string {
+  const cm = Math.round(meters * 1000) / 10
+  if (Math.abs(cm - Math.round(cm)) < 1e-9) return String(Math.round(cm))
+  return String(cm)
+}
+
+function parseOverhangCmToMeters(s: string): number | null {
+  const cm = parseDecimalField(s, 0, ROOF_OVERHANG_CM_MAX)
+  if (cm == null) return null
+  return clampRoofOverhangM(cm / 100)
 }
 
 function fallbackFloorLabelDe(index: number): string {
@@ -134,6 +177,9 @@ function roofPlanLabelDe(labels: string[], index: number): string {
 
 export type RoofReviewEditorHandle = {
   flushSave: () => Promise<boolean>
+  roofUndo: () => void
+  /** Sincronizare gesturi (puncte, dialog add) după ce părintele a schimbat Werkzeug-ul. */
+  roofApplyToolFromParent: (t: Tool) => void
 }
 
 type RoofReviewEditorProps = {
@@ -155,6 +201,17 @@ type RoofReviewEditorProps = {
   embeddedPlanSeeds?: Array<{ imageWidth: number; imageHeight: number }>
   /** False când tab-ul Dach e ascuns (display:none) — recalculează canvas la activare. */
   layoutActive?: boolean
+  /**
+   * Editor unificat: Werkzeuge + Ansicht + Hinweis sunt în DetectionsReviewEditor (aceeași ordine ca Räume).
+   * Cere `tool` / `setTool` / `roofSurfaceTab` / `setRoofSurfaceTab` din părinte.
+   */
+  chromeInParent?: boolean
+  /** Când e setat (editor unificat), Maße Dachfenster se randă aici (sub Hinweis), nu sub rândul Räume. */
+  dimsToolbarPortalTarget?: HTMLElement | null
+  tool?: Tool
+  setTool?: Dispatch<SetStateAction<Tool>>
+  roofSurfaceTab?: RoofSurfaceTab
+  setRoofSurfaceTab?: Dispatch<SetStateAction<RoofSurfaceTab>>
 }
 
 export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEditorProps>(function RoofReviewEditor(
@@ -168,10 +225,29 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     embedPlanIndex,
     embeddedPlanSeeds,
     layoutActive = true,
+    chromeInParent = false,
+    dimsToolbarPortalTarget,
+    tool: toolProp,
+    setTool: setToolProp,
+    roofSurfaceTab: roofSurfaceTabProp,
+    setRoofSurfaceTab: setRoofSurfaceTabProp,
   },
   ref,
 ) {
-  const [tool, setTool] = useState<Tool>('select')
+  const [toolInternal, setToolInternal] = useState<Tool>('select')
+  const chromeParent = Boolean(
+    chromeInParent &&
+      embedded &&
+      setToolProp &&
+      setRoofSurfaceTabProp &&
+      toolProp !== undefined &&
+      roofSurfaceTabProp !== undefined,
+  )
+  const tool = chromeParent ? toolProp! : toolInternal
+  const setTool = chromeParent ? setToolProp! : setToolInternal
+  /** Einheitlicher Editor mit Parent-Chrome: weniger Abstand, kompaktere Fläche unter dem Plan. */
+  const compactUi = chromeParent
+
   const [planIndexInternal, setPlanIndexInternal] = useState(0)
   const planIndex =
     embedded && typeof embedPlanIndex === 'number' && embedPlanIndex >= 0 ? embedPlanIndex : planIndexInternal
@@ -185,11 +261,17 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
   const skipNextPushRef = useRef(false)
   const plansDataRef = useRef<PlanData[]>(plansData)
 
-  const [roofSurfaceTab, setRoofSurfaceTab] = useState<RoofSurfaceTab>('surfaces')
+  const [roofSurfaceTabInternal, setRoofSurfaceTabInternal] = useState<RoofSurfaceTab>('surfaces')
+  const roofSurfaceTab = chromeParent ? roofSurfaceTabProp! : roofSurfaceTabInternal
+  const setRoofSurfaceTab = chromeParent ? setRoofSurfaceTabProp! : setRoofSurfaceTabInternal
   const [newRoofDialogOpen, setNewRoofDialogOpen] = useState(false)
   const [pendingNewPoints, setPendingNewPoints] = useState<Point[] | null>(null)
   const [dialogAngle, setDialogAngle] = useState(DEFAULT_ROOF_ANGLE)
+  const [dialogAngleStr, setDialogAngleStr] = useState(String(DEFAULT_ROOF_ANGLE))
   const [dialogType, setDialogType] = useState<RoofTypeId>(DEFAULT_ROOF_TYPE)
+  const [dialogOverhangStr, setDialogOverhangStr] = useState(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
+  const [sidebarAngleStr, setSidebarAngleStr] = useState('')
+  const [sidebarOverhangStr, setSidebarOverhangStr] = useState('')
   const [pendingNewRoofWindowBbox, setPendingNewRoofWindowBbox] = useState<[number, number, number, number] | null>(null)
   const [newRoofWindowDims, setNewRoofWindowDims] = useState({ width: '', height: '' })
   const roofWindowWidthInputRef = useRef<HTMLInputElement>(null)
@@ -259,8 +341,6 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     }
   }, [offerId])
 
-  useImperativeHandle(ref, () => ({ flushSave: () => saveRoofEditsToServer() }), [saveRoofEditsToServer])
-
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!offerId || loading || plansData.length === 0) return
@@ -292,6 +372,38 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       return h.slice(0, -1)
     })
   }, [])
+
+  const roofApplyToolFromParent = useCallback(
+    (t: Tool) => {
+      if (t === 'select') {
+        setNewPolygonPoints(null)
+        return
+      }
+      if (t === 'add') {
+        setSelectedPolygonIndex(null)
+        setNewPolygonPoints([])
+        if (roofSurfaceTab === 'surfaces') {
+          setDialogAngle(DEFAULT_ROOF_ANGLE)
+          setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
+          setDialogType(DEFAULT_ROOF_TYPE)
+          setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
+        }
+      }
+    },
+    [roofSurfaceTab],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flushSave: () => saveRoofEditsToServer(),
+      roofUndo: () => {
+        handleUndo()
+      },
+      roofApplyToolFromParent,
+    }),
+    [saveRoofEditsToServer, handleUndo, roofApplyToolFromParent],
+  )
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -346,6 +458,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 roomType?: string
                 roofAngleDeg?: number
                 roofType?: string
+                roofOverhangM?: number
               }>
             }>
             floorLabels?: string[]
@@ -515,7 +628,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
 
   /** Actualizare funcțională – evită stale state când schimbi tipul de acoperiș de mai multe ori la rând. */
   const updateSelectedRoofMeta = useCallback(
-    (patch: Partial<{ roofAngleDeg: number; roofType: RoofTypeId }>) => {
+    (patch: Partial<{ roofAngleDeg: number; roofType: RoofTypeId; roofOverhangM: number }>) => {
       if (selectedPolygonIndex == null) return
       const polyIdx = selectedPolygonIndex
       const pIdx = planIndexClamped
@@ -553,19 +666,24 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     if (!pendingNewPoints || pendingNewPoints.length < 3 || !currentPlan) return
     pushHistory()
     const label = nextRoofLabel(currentPlan.rectangles)
+    const angleDeg = parseDecimalField(dialogAngleStr, 0, 60) ?? dialogAngle
+    const overhangM = parseOverhangCmToMeters(dialogOverhangStr) ?? DEFAULT_ROOF_OVERHANG_M
     setRectangles(planIndexClamped, [
       ...currentPlan.rectangles,
       normalizeRect({
         points: [...pendingNewPoints],
         roomName: label,
-        roofAngleDeg: dialogAngle,
+        roofAngleDeg: angleDeg,
         roofType: dialogType,
+        roofOverhangM: overhangM,
       }),
     ])
     setPendingNewPoints(null)
     setNewRoofDialogOpen(false)
     setDialogAngle(DEFAULT_ROOF_ANGLE)
+    setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
     setDialogType(DEFAULT_ROOF_TYPE)
+    setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
     setTool('select')
   }, [
     pendingNewPoints,
@@ -574,6 +692,8 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     setRectangles,
     planIndexClamped,
     dialogAngle,
+    dialogAngleStr,
+    dialogOverhangStr,
     dialogType,
   ])
 
@@ -581,7 +701,9 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     setPendingNewPoints(null)
     setNewRoofDialogOpen(false)
     setDialogAngle(DEFAULT_ROOF_ANGLE)
+    setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
     setDialogType(DEFAULT_ROOF_TYPE)
+    setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
     setTool('select')
   }, [])
 
@@ -630,6 +752,21 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       ? currentPlan.rectangles[selectedPolygonIndex]
       : null
 
+  useEffect(() => {
+    if (!selectedRect) {
+      setSidebarAngleStr('')
+      setSidebarOverhangStr('')
+      return
+    }
+    setSidebarAngleStr(String(selectedRect.roofAngleDeg ?? DEFAULT_ROOF_ANGLE))
+    setSidebarOverhangStr(overhangMetersToCmStr(selectedRect.roofOverhangM ?? DEFAULT_ROOF_OVERHANG_M))
+  }, [
+    roofSurfaceTab,
+    selectedPolygonIndex,
+    selectedRect?.roofAngleDeg,
+    selectedRect?.roofOverhangM,
+  ])
+
   const selectedRoofWindow =
     roofSurfaceTab === 'windows' && selectedPolygonIndex != null && currentPlan
       ? currentPlan.doors[selectedPolygonIndex]
@@ -652,6 +789,28 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     [selectedPolygonIndex, currentPlan, planIndexClamped, pushHistory, setPlanDoors],
   )
 
+  const roofToolHint =
+    roofSurfaceTab === 'windows'
+      ? tool === 'select'
+        ? 'Element wählen und ziehen zum Verschieben'
+        : tool === 'add'
+          ? 'Zwei Ecken für Dachfenster setzen (Rechteck)'
+          : tool === 'remove'
+            ? 'Klicken Sie auf ein Element, um es zu entfernen'
+            : tool === 'edit'
+              ? 'Eckpunkte ziehen; auf Kante klicken = neuer Punkt; Kante ziehen = Segment verschieben'
+              : ''
+      : tool === 'select'
+        ? 'Auf Element klicken und ziehen zum Verschieben'
+        : tool === 'add'
+          ? 'Klicken Sie um Punkte zu setzen – ersten Punkt erneut klicken zum Schließen'
+          : tool === 'remove'
+            ? 'Klicken Sie auf ein Element, um es zu entfernen'
+            : tool === 'edit'
+              ? 'Eckpunkte ziehen; auf Kante klicken = neuer Punkt; Kante ziehen = Segment verschieben'
+              : ''
+
+  /** Wie Fenster/Türen: Maße oben in der Leiste, sobald Dachfenster gewählt + Werkzeug „Verschieben“. */
   const roofWindowDimsToolbar =
     roofSurfaceTab === 'windows' && tool === 'select' && selectedRoofWindow ? (
       <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
@@ -686,14 +845,102 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     ) : null
 
   return (
-    <div className="relative w-full flex flex-col flex-1 min-h-0 h-full max-h-full overflow-hidden gap-2">
+    <div
+      className={`relative w-full flex flex-col flex-1 min-h-0 h-full max-h-full overflow-hidden ${
+        compactUi ? 'gap-1.5' : 'gap-3'
+      }`}
+    >
       {!embedded && (
         <div className="shrink-0 px-2 pt-1 pb-0">
           <h2 className="text-white font-semibold text-base text-center">Dach konfigurieren</h2>
         </div>
       )}
 
-      <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2">
+      {!chromeParent && (
+        <>
+      {/* Aceeași ordine ca în DetectionsReviewEditor: Werkzeuge → rând secundar (ca „Element:“) → Hinweis → Etage */}
+      <div className="shrink-0 flex flex-wrap items-center justify-center gap-3 px-2 py-1">
+        <span className="text-sand/60 text-xs">Werkzeuge:</span>
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              setTool('select')
+              setNewPolygonPoints(null)
+            }}
+            title="Auswählen & Verschieben"
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'select' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+          >
+            <MousePointer2 size={18} />
+          </button>
+          <span className="text-[10px] text-sand/60">Verschieben</span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            type="button"
+            disabled={roofSurfaceTab === 'windows' && (!currentPlan || currentPlan.rectangles.length === 0)}
+            title={
+              roofSurfaceTab === 'windows' && (!currentPlan || currentPlan.rectangles.length === 0)
+                ? 'Zuerst Dachflächen anlegen'
+                : roofSurfaceTab === 'surfaces'
+                  ? 'Polygon (Dachfläche) hinzufügen'
+                  : 'Dachfenster hinzufügen'
+            }
+            onClick={() => {
+              setTool('add')
+              setSelectedPolygonIndex(null)
+              setNewPolygonPoints([])
+              if (roofSurfaceTab === 'surfaces') {
+                setDialogAngle(DEFAULT_ROOF_ANGLE)
+                setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
+                setDialogType(DEFAULT_ROOF_TYPE)
+                setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
+              }
+            }}
+            className={`p-2 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${tool === 'add' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+          >
+            <Plus size={18} />
+          </button>
+          <span className="text-[10px] text-sand/60">Hinzufügen</span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setTool('remove')}
+            title="Klicken Sie auf ein Element zum Entfernen"
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'remove' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+          >
+            <Trash2 size={18} />
+          </button>
+          <span className="text-[10px] text-sand/60">Löschen</span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setTool('edit')}
+            title="Bearbeiten: auf Element klicken, Ecken/Kanten ziehen"
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'edit' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+          >
+            <Pencil size={18} />
+          </button>
+          <span className="text-[10px] text-sand/60">Bearbeiten</span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={history.length === 0}
+            title="Rückgängig"
+            className="p-2 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-sand/70 hover:bg-white/5"
+          >
+            <Undo2 size={18} />
+          </button>
+          <span className="text-[10px] text-sand/60">Rückgängig</span>
+        </div>
+      </div>
+
+      <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
+        <span className="text-sand/70 text-xs w-full text-center sm:w-auto">Ansicht:</span>
         <button
           type="button"
           onClick={() => {
@@ -702,7 +949,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             setNewPolygonPoints(null)
             if (tool === 'add') setTool('select')
           }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${roofSurfaceTab === 'surfaces' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'surfaces' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
         >
           Dachflächen
         </button>
@@ -714,70 +961,25 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             setNewPolygonPoints(null)
             if (tool === 'add') setTool('select')
           }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${roofSurfaceTab === 'windows' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'windows' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
         >
           Dachfenster
         </button>
       </div>
 
-      <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2 py-0.5">
-        <span className="text-sand/60 text-xs">Werkzeuge:</span>
-        <button
-          type="button"
-          onClick={() => {
-            setTool('select')
-            setNewPolygonPoints(null)
-          }}
-          className={`p-2 rounded-lg ${tool === 'select' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
-        >
-          <MousePointer2 size={18} />
-        </button>
-        <button
-          type="button"
-          disabled={roofSurfaceTab === 'windows' && (!currentPlan || currentPlan.rectangles.length === 0)}
-          title={
-            roofSurfaceTab === 'windows' && (!currentPlan || currentPlan.rectangles.length === 0)
-              ? 'Zuerst Dachflächen anlegen'
-              : undefined
-          }
-          onClick={() => {
-            setTool('add')
-            setSelectedPolygonIndex(null)
-            setNewPolygonPoints([])
-            if (roofSurfaceTab === 'surfaces') {
-              setDialogAngle(DEFAULT_ROOF_ANGLE)
-              setDialogType(DEFAULT_ROOF_TYPE)
-            }
-          }}
-          className={`p-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed ${tool === 'add' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
-        >
-          <Plus size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setTool('remove')}
-          className={`p-2 rounded-lg ${tool === 'remove' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
-        >
-          <Trash2 size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setTool('edit')}
-          className={`p-2 rounded-lg ${tool === 'edit' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
-        >
-          <Pencil size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={handleUndo}
-          disabled={history.length === 0}
-          className="p-2 rounded-lg text-sand/70 hover:bg-white/5 disabled:opacity-40"
-        >
-          <Undo2 size={18} />
-        </button>
-      </div>
-
       {roofWindowDimsToolbar}
+
+      {roofToolHint && (
+        <p className="shrink-0 text-xs text-sand/60 text-center px-4">{roofToolHint}</p>
+      )}
+        </>
+      )}
+
+      {chromeParent &&
+        roofWindowDimsToolbar &&
+        (dimsToolbarPortalTarget
+          ? createPortal(roofWindowDimsToolbar, dimsToolbarPortalTarget)
+          : roofWindowDimsToolbar)}
 
       {!loading && n > 1 && !embedded && (
         <div className="shrink-0 flex flex-wrap items-center justify-center gap-1 px-2 py-2 border-b border-white/10">
@@ -804,10 +1006,6 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       <div className="flex-[1_1_0%] min-h-0 flex flex-col gap-1.5 min-w-0 overflow-hidden px-2">
         <div className="flex-[1_1_0%] min-h-0 flex flex-col overflow-hidden gap-1">
           {currentPlan && getBaseImageUrl(planIndexClamped) && (
-            <>
-              <h3 className="text-white font-medium text-sm shrink-0 leading-tight">
-                {roofPlanLabelDe(floorLabels, planIndexClamped)}
-              </h3>
               <div className="relative w-full flex-[1_1_0%] min-h-[96px] rounded-lg overflow-hidden border border-[#FF9F0F]/50 ring-1 ring-[#FF9F0F]/30 bg-black/30">
                 {pendingNewRoofWindowBbox && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 rounded-lg">
@@ -896,7 +1094,9 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                       setPendingNewPoints([...newPolygonPoints])
                       setNewPolygonPoints(null)
                       setDialogAngle(DEFAULT_ROOF_ANGLE)
+                      setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
                       setDialogType(DEFAULT_ROOF_TYPE)
+                      setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
                       setNewRoofDialogOpen(true)
                     }}
                     onMoveVertex={(polyIndex, vertexIndex, x, y) => {
@@ -932,6 +1132,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                     tool={tool}
                     newDoorType="window"
                     showRoomPolygonsUnderDoors
+                    highlightRoofSurfaceUnderlay
                     selectedIndex={selectedPolygonIndex}
                     newPoints={tool === 'add' ? newPolygonPoints : null}
                     onSelect={setSelectedPolygonIndex}
@@ -979,17 +1180,20 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                   />
                 )}
               </div>
-            </>
           )}
         </div>
 
         {/* Unter dem Plan: Dachflächen (Neigung/Typ) oder Dachfenster-Hinweis */}
-        <div className="shrink-0 rounded-xl border border-[#FF9F0F]/40 bg-black/25 p-2 space-y-2">
+        <div
+          className={`shrink-0 rounded-xl border border-[#FF9F0F]/40 bg-black/25 space-y-2 ${
+            compactUi ? 'p-1.5 max-h-[min(30vh,260px)] overflow-y-auto overflow-x-hidden' : 'p-2'
+          }`}
+        >
           {roofSurfaceTab === 'windows' ? (
             <div className="text-sm text-white space-y-1">
               <p className="text-sand/80 text-xs font-normal leading-snug">
-                Dachfenster nur auf den markierten Dachflächen (Rechteck ziehen, dann Maße in cm). Gewählt: Maße oben
-                bearbeiten.
+                Öffnungen im Plan markieren; nach dem Aufziehen Breite und Länge in cm eingeben. Gewählt: Maße oben
+                (cm) bearbeiten.
               </p>
             </div>
           ) : (
@@ -1008,11 +1212,11 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               </span>
             )}
           </div>
-          <div className="flex items-start gap-3">
+          <div className={`flex items-start ${compactUi ? 'gap-2' : 'gap-3'}`}>
             <div className="shrink-0 flex items-center gap-2 pt-1">
               <span className="text-sand/50 text-xs">Typ</span>
             </div>
-            <div className="grid grid-cols-5 gap-2 justify-items-center w-fit min-w-max">
+            <div className={`grid grid-cols-5 justify-items-center w-fit min-w-max ${compactUi ? 'gap-1' : 'gap-2'}`}>
               {ROOF_TYPE_OPTIONS.map((opt) => {
                 const hasSelection = selectedRect != null
                 const active = hasSelection && (selectedRect!.roofType ?? DEFAULT_ROOF_TYPE) === opt.id
@@ -1025,7 +1229,11 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                     onClick={() => {
                       if (!selectedRect) return
                       pushHistory()
-                      updateSelectedRoofMeta({ roofType: opt.id })
+                      if (opt.id === '0_w') {
+                        updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: 0 })
+                      } else {
+                        updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: DEFAULT_ROOF_ANGLE })
+                      }
                     }}
                     className={`flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                       hasSelection ? 'cursor-pointer' : ''
@@ -1038,7 +1246,11 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                     <img
                       src={opt.image}
                       alt={opt.labelDe}
-                      className="w-full h-14 sm:h-16 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none"
+                      className={
+                        compactUi
+                          ? 'w-full h-9 sm:h-10 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
+                          : 'w-full h-14 sm:h-16 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
+                      }
                       style={thumbFilter ? { filter: thumbFilter } : undefined}
                     />
                     <span className="block w-full box-border text-[11px] sm:text-xs leading-tight text-center text-sand/90 px-1 sm:px-1.5 py-0.5 whitespace-nowrap">
@@ -1048,34 +1260,73 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 )
               })}
             </div>
-            <div className="shrink-0 flex items-center gap-2 pt-1">
-              <span className="text-sand/70 text-xs">Neigung (°)</span>
-              <input
-                type="number"
-                min={0}
-                max={60}
-                step={0.5}
-                disabled={!selectedRect}
-                className="w-24 px-2 py-1 rounded bg-black/40 border border-white/20 text-white text-sm disabled:opacity-45 disabled:cursor-not-allowed"
-                value={selectedRect ? (selectedRect.roofAngleDeg ?? DEFAULT_ROOF_ANGLE) : ''}
-                placeholder="—"
-                onFocus={() => {
-                  if (!selectedRect) return
-                  if (!roofAngleUndoPushedRef.current) {
-                    pushHistory()
-                    roofAngleUndoPushedRef.current = true
-                  }
-                }}
-                onBlur={() => {
-                  roofAngleUndoPushedRef.current = false
-                }}
-                onChange={(e) => {
-                  if (!selectedRect) return
-                  const v = parseFloat(e.target.value)
-                  if (!Number.isFinite(v)) return
-                  updateSelectedRoofMeta({ roofAngleDeg: Math.max(0, Math.min(60, v)) })
-                }}
-              />
+            <div className="shrink-0 flex flex-col gap-2 pt-1 min-w-[7.5rem]">
+              <div className="flex items-center gap-2">
+                <span className="text-sand/70 text-xs whitespace-nowrap">Neigung (°)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  disabled={!selectedRect}
+                  className="min-w-[4.5rem] w-28 px-2 py-1 rounded bg-black/40 border border-white/20 text-white text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
+                  value={selectedRect ? sidebarAngleStr : ''}
+                  placeholder="—"
+                  onFocus={() => {
+                    if (!selectedRect) return
+                    if (!roofAngleUndoPushedRef.current) {
+                      pushHistory()
+                      roofAngleUndoPushedRef.current = true
+                    }
+                  }}
+                  onBlur={() => {
+                    roofAngleUndoPushedRef.current = false
+                    if (!selectedRect) return
+                    const v = parseDecimalField(sidebarAngleStr, 0, 60)
+                    if (v != null) updateSelectedRoofMeta({ roofAngleDeg: v })
+                    else setSidebarAngleStr(String(selectedRect.roofAngleDeg ?? DEFAULT_ROOF_ANGLE))
+                  }}
+                  onChange={(e) => {
+                    if (!selectedRect) return
+                    const raw = e.target.value.replace(',', '.')
+                    setSidebarAngleStr(raw)
+                    const v = parseDecimalField(raw, 0, 60)
+                    if (v != null) updateSelectedRoofMeta({ roofAngleDeg: v })
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sand/70 text-xs whitespace-nowrap">Dachüberstand (cm)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  disabled={!selectedRect}
+                  className="min-w-[4.5rem] w-28 px-2 py-1 rounded bg-black/40 border border-white/20 text-white text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
+                  value={selectedRect ? sidebarOverhangStr : ''}
+                  placeholder="—"
+                  onFocus={() => {
+                    if (!selectedRect) return
+                    if (!roofAngleUndoPushedRef.current) {
+                      pushHistory()
+                      roofAngleUndoPushedRef.current = true
+                    }
+                  }}
+                  onBlur={() => {
+                    roofAngleUndoPushedRef.current = false
+                    if (!selectedRect) return
+                    const m = parseOverhangCmToMeters(sidebarOverhangStr)
+                    if (m != null) updateSelectedRoofMeta({ roofOverhangM: m })
+                    else setSidebarOverhangStr(overhangMetersToCmStr(selectedRect.roofOverhangM ?? DEFAULT_ROOF_OVERHANG_M))
+                  }}
+                  onChange={(e) => {
+                    if (!selectedRect) return
+                    const raw = e.target.value.replace(',', '.')
+                    setSidebarOverhangStr(raw)
+                    const m = parseOverhangCmToMeters(raw)
+                    if (m != null) updateSelectedRoofMeta({ roofOverhangM: m })
+                  }}
+                />
+              </div>
             </div>
           </div>
             </>
@@ -1090,23 +1341,39 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             className="w-fit max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[#FF9F0F]/40 bg-coffee-800/95 p-3 sm:p-4 shadow-xl space-y-3"
           >
             <h3 className="text-white font-semibold text-center text-sm sm:text-base leading-snug">
-              Neues Dach – Neigung &amp; Typ
+              Neues Dach – Neigung, Dachüberstand &amp; Typ
             </h3>
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
-              <label className="text-sand/80 text-sm shrink-0">Neigung (°)</label>
-              <input
-                type="number"
-                min={0}
-                max={60}
-                step={0.5}
-                className="w-24 shrink-0 px-3 py-1.5 rounded-lg bg-black/40 border border-white/20 text-white text-sm tabular-nums"
-                value={dialogAngle}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value)
-                  if (!Number.isFinite(v)) return
-                  setDialogAngle(Math.max(0, Math.min(60, v)))
-                }}
-              />
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 sm:gap-x-6 sm:gap-y-2">
+              <label className="flex items-center gap-2 text-sand/80 text-sm">
+                <span className="shrink-0">Neigung (°)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="min-w-[5rem] w-32 px-3 py-1.5 rounded-lg bg-black/40 border border-white/20 text-white text-sm tabular-nums"
+                  value={dialogAngleStr}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(',', '.')
+                    setDialogAngleStr(raw)
+                    const v = parseDecimalField(raw, 0, 60)
+                    if (v != null) setDialogAngle(v)
+                  }}
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sand/80 text-sm">
+                <span className="shrink-0">Dachüberstand (cm)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="min-w-[5rem] w-32 px-3 py-1.5 rounded-lg bg-black/40 border border-white/20 text-white text-sm tabular-nums"
+                  value={dialogOverhangStr}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(',', '.')
+                    setDialogOverhangStr(raw)
+                  }}
+                />
+              </label>
             </div>
             {/* Aceleași carduri ca la „Typ” sub blueprint */}
             <div className="flex justify-center">
@@ -1118,7 +1385,16 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                       key={opt.id}
                       type="button"
                       style={{ width: roofTypeTileWidthRem }}
-                      onClick={() => setDialogType(opt.id)}
+                      onClick={() => {
+                        setDialogType(opt.id)
+                        if (opt.id === '0_w') {
+                          setDialogAngle(0)
+                          setDialogAngleStr('0')
+                        } else {
+                          setDialogAngle(DEFAULT_ROOF_ANGLE)
+                          setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
+                        }
+                      }}
                       className={`flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 border cursor-pointer transition ${
                         active
                           ? 'border-[#FF9F0F] ring-1 ring-[#FF9F0F]/50 bg-[#FF9F0F]/10'

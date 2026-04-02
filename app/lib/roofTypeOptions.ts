@@ -37,3 +37,5 @@ export function roofTypeLabelDe(id: RoofTypeId): string {
 
 export const DEFAULT_ROOF_ANGLE = 30
 export const DEFAULT_ROOF_TYPE: RoofTypeId = '2_w'
+/** Default overhang in metres (40 cm in roof editor UI), per surface. */
+export const DEFAULT_ROOF_OVERHANG_M = 0.4
