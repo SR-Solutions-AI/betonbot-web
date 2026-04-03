@@ -488,11 +488,11 @@ function PricingSection() {
                  <div className="mt-auto">
                     <div className="mx-6 md:mx-12 rounded-xl border border-white/10 bg-white/5 overflow-hidden mb-4">
                         <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">20 Projekte / Monat</span>
+                            <span className="text-xs text-sand/90">10 Projekte / Monat</span>
                             <span className="text-sm font-bold text-white">200 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
                         </div>
                         <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">50 Projekte / Monat</span>
+                            <span className="text-xs text-sand/90">25 Projekte / Monat</span>
                             <span className="text-sm font-bold text-white">400 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
                         </div>
                         <div className="flex items-center justify-between gap-4 py-2 px-4">
@@ -536,11 +536,11 @@ function PricingSection() {
                  <div className="mt-auto">
                     <div className="mx-6 md:mx-12 rounded-xl border border-white/10 bg-white/5 overflow-hidden mb-4">
                         <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">20 Projekte / Monat</span>
+                            <span className="text-xs text-sand/90">10 Projekte / Monat</span>
                             <span className="text-sm font-bold text-white">300 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
                         </div>
                         <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">50 Projekte / Monat</span>
+                            <span className="text-xs text-sand/90">25 Projekte / Monat</span>
                             <span className="text-sm font-bold text-white">500 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
                         </div>
                         <div className="flex items-center justify-between gap-4 py-2 px-4">
