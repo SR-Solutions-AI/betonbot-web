@@ -35,6 +35,11 @@ function isRoofOnlyOfferFromMeta(
   return false
 }
 
+/** Keller mit nutzbarer Ausstattung – neue Formulierungen + Legacy aus gespeicherten Angeboten. */
+function isKellerMitAusbauChoice(tip: string): boolean {
+  return tip.includes('Keller (mit Ausbau)') || tip.includes('mit einfachem Ausbau')
+}
+
 /* ================== DATE ACOPERIȘ (grid 4x6) ================== */
 const ROOF_TYPES = [
   { name_de: 'Flachdach', img: '/roof_types/1.png' },
@@ -2907,7 +2912,7 @@ function BodenDeckeBelagStep({
   const tipFundatieBeci = structuraData.tipFundatieBeci || form.tipFundatieBeci || 'Kein Keller (nur Bodenplatte)'
   const listaEtaje = Array.isArray(structuraData.listaEtaje) ? structuraData.listaEtaje : (Array.isArray(form.listaEtaje) ? form.listaEtaje : [])
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
-  const basementLivable = tipFundatieBeci.includes('mit einfachem Ausbau')
+  const basementLivable = isKellerMitAusbauChoice(tipFundatieBeci)
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const hasPod = listaEtaje.some((e: string) => e === 'pod')
   const etajeIntermediare = listaEtaje.filter((e: string) => e === 'intermediar').length
@@ -3069,7 +3074,7 @@ function MaterialeFinisajStep({ form, setForm, errors, drafts, customOptionsForm
   const tipFundatieBeci = structuraData.tipFundatieBeci || form.tipFundatieBeci || 'Kein Keller (nur Bodenplatte)'
   const listaEtaje = Array.isArray(structuraData.listaEtaje) ? structuraData.listaEtaje : (Array.isArray(form.listaEtaje) ? form.listaEtaje : [])
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
-  const basementLivable = tipFundatieBeci.includes('mit einfachem Ausbau')
+  const basementLivable = isKellerMitAusbauChoice(tipFundatieBeci)
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const etajeIntermediare = listaEtaje.filter((e: string) => e === 'intermediar').length
   const totalFloors = 1 + etajeIntermediare
@@ -3152,7 +3157,11 @@ const FLOOR_TYPE_OPTIONS = [
   { value: 'mansarda_mit', label: 'Dachgeschoss mit Kniestock (Wohnfläche)' },
 ] as const
 
-const FOUNDATION_OPTIONS = ['Kein Keller (nur Bodenplatte)', 'Keller (unbeheizt / Nutzkeller)', 'Keller (mit einfachem Ausbau)'] as const
+const FOUNDATION_OPTIONS = [
+  'Kein Keller (nur Bodenplatte)',
+  'Keller (ohne Ausbau)',
+  'Keller (mit Ausbau)',
+] as const
 const FLOOR_HEIGHT_OPTIONS = ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] as const
 const STAIR_TYPE_OPTIONS = ['Standard', 'Holz', 'Beton', 'Metall', 'Sonder'] as const
 
@@ -3170,7 +3179,7 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
   const stairTypeOptions = preisdatenbankOptionsByTag['stairs_type'] ?? []
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
   const hasBase = true
-  const basementUse = tipFundatieBeci.includes('mit einfachem Ausbau')
+  const basementUse = isKellerMitAusbauChoice(tipFundatieBeci)
   useEffect(() => {
     if (foundationOptions.length > 0 && !foundationOptions.includes(tipFundatieBeci)) {
       setForm(prev => ({ ...prev, tipFundatieBeci: foundationOptions[0] }))

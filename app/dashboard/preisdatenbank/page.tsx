@@ -91,7 +91,7 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Baustellenzufahrt': 'Leicht, Mittel, Schwierig',
   'Gelände': 'Eben, Leichte oder Starke Hanglage',
   'Strom-/Wasseranschluss': 'Pauschalpreis für Anschlusskosten',
-  'Untergeschoss / Fundament': 'Bodenplatte, Keller Nutzkeller oder Ausbau – €/m²',
+  'Untergeschoss / Fundament': 'Bodenplatte, Keller ohne oder mit Ausbau – €/m²',
   'Pfahlgründung': 'Preis €/m² bei Pfahlgründung',
   'Fläche & Treppe': 'Preis pro Stück',
   'Treppe': 'Preis pro Stück',

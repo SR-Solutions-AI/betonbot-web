@@ -256,19 +256,19 @@
               }
             },
             {
-              "value": "Keller (unbeheizt / Nutzkeller)",
+              "value": "Keller (ohne Ausbau)",
               "labels": {
-                "ro": "Keller (unbeheizt / Nutzkeller)",
-                "de": "Keller (unbeheizt / Nutzkeller)",
-                "en": "Basement (unheated / utility)"
+                "ro": "Keller (ohne Ausbau)",
+                "de": "Keller (ohne Ausbau)",
+                "en": "Basement (without finish)"
               }
             },
             {
-              "value": "Keller (mit einfachem Ausbau)",
+              "value": "Keller (mit Ausbau)",
               "labels": {
-                "ro": "Keller (mit einfachem Ausbau)",
-                "de": "Keller (mit einfachem Ausbau)",
-                "en": "Basement (with simple finish)"
+                "ro": "Keller (mit Ausbau)",
+                "de": "Keller (mit Ausbau)",
+                "en": "Basement (with finish)"
               }
             }
           ]

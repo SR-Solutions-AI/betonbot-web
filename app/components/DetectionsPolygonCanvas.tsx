@@ -8,6 +8,8 @@ export type RoomPolygon = {
   points: Point[]
   roomType?: string
   roomName?: string
+  /** true doar pentru „Raum gedämmt“ (zonă izolată sub acoperiș); lipsă/false = tratată ca neizolată la gedämmt */
+  roomInsulated?: boolean
   /** Roof editor: pitch in degrees (0–60). */
   roofAngleDeg?: number
   /** Roof editor: e.g. 0_w, 1_w, 2_w, 4_w, 4.5_w */

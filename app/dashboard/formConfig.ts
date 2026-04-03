@@ -71,7 +71,7 @@ export const formSteps: Step[] = [
     key: 'structuraCladirii',
     label: 'Gebäudestruktur',
     fields: [
-      { type: 'select', name: 'tipFundatieBeci', label: 'Untergeschoss / Fundament', options: ['Kein Keller (nur Bodenplatte)', 'Keller (unbeheizt / Nutzkeller)', 'Keller (mit einfachem Ausbau)'] },
+      { type: 'select', name: 'tipFundatieBeci', label: 'Untergeschoss / Fundament', options: ['Kein Keller (nur Bodenplatte)', 'Keller (ohne Ausbau)', 'Keller (mit Ausbau)'] },
       { type: 'bool', name: 'pilons', label: 'Pfahlgründung erforderlich' },
       { type: 'select', name: 'inaltimeEtaje', label: 'Raumhöhe', options: ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] },
       { type: 'bool', name: 'hasWintergarden', label: 'Wintergarten vorhanden' },

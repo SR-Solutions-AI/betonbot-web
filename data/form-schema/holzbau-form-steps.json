@@ -170,8 +170,8 @@
           "label": "Untergeschoss / Fundament",
           "options": [
             "Kein Keller (nur Bodenplatte)",
-            "Keller (unbeheizt / Nutzkeller)",
-            "Keller (mit einfachem Ausbau)"
+            "Keller (ohne Ausbau)",
+            "Keller (mit Ausbau)"
           ],
           "tag": "foundation_type"
         },
@@ -233,13 +233,13 @@
             },
             {
               "key": "unit_price_keller_nutzkeller",
-              "label": "Keller (unbeheizt / Nutzkeller) (€/m²)",
+              "label": "Keller (ohne Ausbau) (€/m²)",
               "unit": "€/m²",
               "value": 145
             },
             {
               "key": "unit_price_keller_ausbau",
-              "label": "Keller (mit einfachem Ausbau) (€/m²)",
+              "label": "Keller (mit Ausbau) (€/m²)",
               "unit": "€/m²",
               "value": 185
             }
@@ -1521,13 +1521,13 @@
               },
               {
                 "key": "unit_price_keller_nutzkeller",
-                "label": "Keller (unbeheizt / Nutzkeller) (€/m²)",
+                "label": "Keller (ohne Ausbau) (€/m²)",
                 "unit": "€/m²",
                 "value": 145
               },
               {
                 "key": "unit_price_keller_ausbau",
-                "label": "Keller (mit einfachem Ausbau) (€/m²)",
+                "label": "Keller (mit Ausbau) (€/m²)",
                 "unit": "€/m²",
                 "value": 185
               }

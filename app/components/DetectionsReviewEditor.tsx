@@ -43,6 +43,21 @@ function normalizeDoorType(type: string | undefined): string {
   return 'door'
 }
 
+/** Migrează eticheta veche „Raum” → „Raum ungedämmt“ (pentru calcul Dachfläche gedämmt). */
+function migrateRoomLabelDe(raw: string | undefined): string {
+  const t = (raw ?? '').trim()
+  if (!t || t === 'Raum') return 'Raum ungedämmt'
+  return t
+}
+
+function roomInsulatedFromRoomPolygon(
+  r: Pick<RoomPolygon, 'roomInsulated' | 'roomType' | 'roomName'>,
+  resolvedType: string,
+): boolean {
+  if (r.roomInsulated === true) return true
+  return resolvedType === 'Raum gedämmt'
+}
+
 function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   if (!points?.length || points.length < 3) return points ?? []
   const out: Point[] = [points[0]]
@@ -295,7 +310,7 @@ export function DetectionsReviewEditor({
     setHistory((h) => [...h.slice(-(historyLimit - 1)), snap])
   }, [])
 
-  const ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum'] as const
+  const ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum gedämmt', 'Raum ungedämmt'] as const
   type RoomTypeOption = typeof ROOM_TYPE_OPTIONS[number]
 
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
@@ -354,12 +369,19 @@ export function DetectionsReviewEditor({
           const normalized = plans.map((p) => ({
             ...p,
             metersPerPixel: typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null,
-            rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => ({
-              ...r,
-              roomType: r.roomType ?? 'Raum',
-              roomName: (r.roomName ?? r.room_name ?? r.roomType ?? 'Raum').trim() || 'Raum',
-              points: mergeClosePolygonPoints(r.points || [], MERGE_VERTEX_DIST_PX),
-            })),
+            rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => {
+              const rt = migrateRoomLabelDe(r.roomType ?? 'Raum')
+              const rn = migrateRoomLabelDe(
+                (r.roomName ?? r.room_name ?? r.roomType ?? 'Raum').trim() || 'Raum',
+              )
+              return {
+                ...r,
+                roomType: rt,
+                roomName: rn,
+                roomInsulated: roomInsulatedFromRoomPolygon(r, rt),
+                points: mergeClosePolygonPoints(r.points || [], MERGE_VERTEX_DIST_PX),
+              }
+            }),
             // Tipuri uși/geamuri = aceeași clasificare ca LiveFeed (detections_review_doors.png): backend doors_types.json + euristică
             doors: withAutoDoorDimensions((p.doors || []).map((d: DoorRect) => ({
               ...d,
@@ -610,7 +632,11 @@ export function DetectionsReviewEditor({
     if (!pendingNewRoomPoints || pendingNewRoomPoints.length < 3 || !currentPlan) return
     pushHistory()
     const typeStr = roomType as string
-    const next = [...currentPlan.rooms, { points: pendingNewRoomPoints, roomType: typeStr, roomName: typeStr }]
+    const insulated = typeStr === 'Raum gedämmt'
+    const next = [
+      ...currentPlan.rooms,
+      { points: pendingNewRoomPoints, roomType: typeStr, roomName: typeStr, roomInsulated: insulated },
+    ]
     setRooms(planIndexClamped, next)
     setPendingNewRoomPoints(null)
   }, [pendingNewRoomPoints, currentPlan, planIndexClamped, setRooms, pushHistory])
@@ -660,7 +686,10 @@ export function DetectionsReviewEditor({
     if (!plan || roomTypePopoverIndex >= plan.rooms.length) return
     pushHistory()
     const typeStr = roomType as string
-    const next = plan.rooms.map((r, i) => i !== roomTypePopoverIndex ? r : { ...r, roomType: typeStr, roomName: typeStr })
+    const insulated = typeStr === 'Raum gedämmt'
+    const next = plan.rooms.map((r, i) =>
+      i !== roomTypePopoverIndex ? r : { ...r, roomType: typeStr, roomName: typeStr, roomInsulated: insulated },
+    )
     setRooms(planIndexClamped, next)
     setRoomTypePopoverIndex(null)
   }, [roomTypePopoverIndex, planIndexClamped, plansData, setRooms, pushHistory])
