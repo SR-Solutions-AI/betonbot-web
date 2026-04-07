@@ -187,7 +187,7 @@ export default function DashboardHeader() {
                 >
                   <Coins size={16} className="shrink-0 opacity-90" aria-hidden />
                   <span className="tabular-nums">{tokenDisplay}</span>
-                  <span>Projekte</span>
+                  {!me?.tokens?.unlimited ? <span>Projekte</span> : null}
                 </div>
               ) : null}
             </div>
