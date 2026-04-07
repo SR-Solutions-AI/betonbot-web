@@ -165,7 +165,7 @@ export default function OrganisationSettingsPage() {
         const me = await apiFetch('/me') as { user?: { role?: string; can_manage_org?: boolean } }
         const role = me?.user?.role
         const canManageOrg = me?.user?.can_manage_org === true
-        const canSeeOrgSettings = role === 'org_leader' || canManageOrg
+        const canSeeOrgSettings = role === 'org_leader' || role === 'admin' || canManageOrg
         if (!cancelled) {
           setIsAdmin(canSeeOrgSettings)
           if (!canSeeOrgSettings) {

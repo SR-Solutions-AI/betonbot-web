@@ -289,6 +289,7 @@ export default function SimplePdfViewer({
 }: Props) {
   // If maxHeight is "100%" or "none", use full height without maxHeight constraint
   const useFullHeight = maxHeight === '100%' || maxHeight === 'none'
+  const flexFill = maxHeight === '100%'
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const [pdf, setPdf] = useState<PdfDocumentLike | null>(null)
   const [numPages, setNumPages] = useState(0)
@@ -384,7 +385,13 @@ export default function SimplePdfViewer({
         'overflow-auto pretty-scroll',
         className,
         ].join(' ')}
-      style={useFullHeight ? { height: '100%', paddingTop: '0.75rem', paddingBottom: '0.75rem' } : { maxHeight, paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
+      style={
+        useFullHeight
+          ? flexFill
+            ? { height: '100%', minHeight: 0, boxSizing: 'border-box' }
+            : { height: '100%', paddingTop: '0.75rem', paddingBottom: '0.75rem' }
+          : { maxHeight, paddingTop: '0.75rem', paddingBottom: '0.75rem' }
+      }
     >
       {loading && (
         <div className="py-10 text-center text-neutral-200">PDF wird generiert…</div>

@@ -24,6 +24,79 @@ type Errors = Record<string, string | undefined>
 // Timpul minim (în ms) pentru care afișăm animația de loading/progres
 const MIN_ANIMATION_TIME = 5000;
 
+/** Etape care apar în log după ce utilizatorul a confirmat editorul de detecții (refresh: nu mai redeschidem editorul). */
+const STAGES_AFTER_DETECTIONS_REVIEW = new Set([
+  'scale_flood',
+  'exterior_doors',
+  'count_objects',
+  'measure_objects',
+  'perimeter',
+  'area',
+  'roof',
+  'pricing',
+  'offer_generation',
+  'pdf_generation',
+  'computation_complete',
+])
+const STAGES_AFTER_ROOF_REVIEW = new Set(['pricing', 'offer_generation', 'pdf_generation', 'computation_complete'])
+
+/** Keller mit nutzbarer Ausstattung – neue Formulierungen + Legacy aus gespeicherten Angeboten. */
+function isKellerMitAusbauChoice(tip: string): boolean {
+  return tip.includes('Keller (mit Ausbau)') || tip.includes('mit einfachem Ausbau')
+}
+
+type CalcEventLite = {
+  id?: number
+  level?: string
+  message?: string
+  payload?: { files?: unknown[] }
+}
+
+function inferReviewCompletionFromCalcEvents(items: CalcEventLite[]): {
+  detectionsReviewPassed: boolean
+  roofReviewPassed: boolean
+} {
+  const sorted = [...items]
+    .filter((e): e is CalcEventLite & { id: number } => typeof e.id === 'number')
+    .sort((a, b) => a.id - b.id)
+
+  let maxDr = -1
+  let maxAfterDr = -1
+  let maxRoof = -1
+  let maxAfterRoof = -1
+
+  for (const ev of sorted) {
+    const id = ev.id
+    const match = ev.message?.match(/^\s*\[([^\]]+)\]/)
+    const stage = match?.[1]?.trim() ?? ''
+    const hasFiles = Array.isArray(ev.payload?.files) && ev.payload.files.length > 0
+
+    if (stage === 'detections_review' && hasFiles) {
+      maxDr = Math.max(maxDr, id)
+    }
+    if (maxDr >= 0 && id > maxDr) {
+      if (STAGES_AFTER_DETECTIONS_REVIEW.has(stage)) {
+        maxAfterDr = Math.max(maxAfterDr, id)
+      }
+      if (stage === 'detections') {
+        maxAfterDr = Math.max(maxAfterDr, id)
+      }
+    }
+
+    if (stage === 'roof' && hasFiles) {
+      maxRoof = Math.max(maxRoof, id)
+    }
+    if (maxRoof >= 0 && id > maxRoof && STAGES_AFTER_ROOF_REVIEW.has(stage)) {
+      maxAfterRoof = Math.max(maxAfterRoof, id)
+    }
+  }
+
+  return {
+    detectionsReviewPassed: maxDr >= 0 && maxAfterDr > maxDr,
+    roofReviewPassed: maxRoof >= 0 && maxAfterRoof > maxRoof,
+  }
+}
+
 /** Ofertă doar acoperiș (Dachstuhl): meta, wizard_package sau tip ofertă slug. */
 function isRoofOnlyOfferFromMeta(
   meta: { roof_only_offer?: boolean | null; wizard_package?: string | null } | null | undefined,
@@ -33,11 +106,6 @@ function isRoofOnlyOfferFromMeta(
   if ((meta?.wizard_package ?? '').toString().toLowerCase() === 'dachstuhl') return true
   if ((offerTypeSlug ?? '').toString().toLowerCase() === 'dachstuhl') return true
   return false
-}
-
-/** Keller mit nutzbarer Ausstattung – neue Formulierungen + Legacy aus gespeicherten Angeboten. */
-function isKellerMitAusbauChoice(tip: string): boolean {
-  return tip.includes('Keller (mit Ausbau)') || tip.includes('mit einfachem Ausbau')
 }
 
 /* ================== DATE ACOPERIȘ (grid 4x6) ================== */
@@ -315,6 +383,21 @@ function extractStepData(stepKey: string, source: Record<string, any>, fields: F
   }
 
   return out
+}
+
+/** Form + drafts + pasul curent (înainte ca setDrafts din stash să fie vizibil în state) → sursă pentru flush DB înainte de recomputare. */
+function buildMergedWizardSource(
+  form: Record<string, any>,
+  drafts: Drafts,
+  currentStepKey: string,
+  currentFields: Field[],
+): Record<string, any> {
+  const base: Record<string, any> = {}
+  for (const d of Object.values(drafts)) {
+    if (d && typeof d === 'object') Object.assign(base, d)
+  }
+  Object.assign(base, extractStepData(currentStepKey, form, currentFields))
+  return { ...base, ...form }
 }
 
 /* ================= VALIDATORS ================= */
@@ -600,12 +683,19 @@ export default function StepWizard() {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savingStepsRef = useRef<Set<string>>(new Set())
+  /** Coadă per step_key: evită return prematur și pierderea salvării la dublu-click pe Weiter. */
+  const stepSaveChainRef = useRef<Record<string, Promise<void>>>({})
+  const [editWizardPreparing, setEditWizardPreparing] = useState(false)
+  const [editOfferEnterSeq, setEditOfferEnterSeq] = useState(0)
+  const editWizardBootstrapRef = useRef(false)
 
 
   const creatingRef = useRef(false)
   const [computing, setComputing] = useState(false)
   const [computeFailed, setComputeFailed] = useState(false)
   const [computeRunId, setComputeRunId] = useState<string | null>(null)
+  /** Run-ul curent pentru care acceptăm offer:pdf-ready (evită PDF/congrats din rulare anterioară). */
+  const pdfReadyRunIdRef = useRef<string | null>(null)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [computeStartTime, setComputeStartTime] = useState<number | null>(null)
 
@@ -616,11 +706,23 @@ export default function StepWizard() {
   const [showErrors, setShowErrors] = useState(false)
   
   const [validationError, setValidationError] = useState<string | null>(null)
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  /** null = closed; delete_offer = bisheriges Verhalten (Angebot löschen); abort_edit = Bearbeiten verlassen, PDF zurück */
+  const [cancelDialog, setCancelDialog] = useState<null | 'delete_offer' | 'abort_edit'>(null)
 
   const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | null>(null)
-  /** După „Mengenermittlung“: alegere Neubau vs Dachstuhl (fără formular complet, doar Upload + Editor + PDF măsurători). */
-  const [packagePickerMengenSub, setPackagePickerMengenSub] = useState(false)
+  /** Monatslimit für Projekte erreicht; Paket-Karten nicht klickbar. */
+  const [tokensBlocked, setTokensBlocked] = useState(false)
+
+  /** „Angebot bearbeiten“: ohne Upload-Schritt (Variablen / Variablen+Erkennungen). */
+  const [editOfferSkipUpload, setEditOfferSkipUpload] = useState(false)
+  const [showEditOfferDialog, setShowEditOfferDialog] = useState(false)
+  const [editDlgVars, setEditDlgVars] = useState(false)
+  const [editDlgDet, setEditDlgDet] = useState(false)
+  const [currentOfferMeasurementsOnly, setCurrentOfferMeasurementsOnly] = useState(false)
+  const pendingPostEditorComputeRef = useRef(false)
+  const editOfferBothAfterFormRef = useRef(false)
+  /** Editor Erkennungen außerhalb eines laufenden Computes (Bearbeiten vom fertigen PDF). */
+  const [editOfferDetectionsStandalone, setEditOfferDetectionsStandalone] = useState(false)
   const [measurementsOnlyFlow, setMeasurementsOnlyFlow] = useState(false)
   /** Editor verificare detecții: blueprint + overlay (camere, uși) – afișat în loc de GIF până la Approve */
   const [showDetectionsReview, setShowDetectionsReview] = useState(false)
@@ -644,6 +746,7 @@ export default function StepWizard() {
   const pendingOfferTypeIdRef = useRef<string | null>(null)
   /** Card „Dachstuhl“: ofertă doar acoperiș (meta + tip ofertă) */
   const roofOnlyOfferRef = useRef(false)
+  /** Mengenermittlung-only: meta.measurements_only_offer cât mai devreme pentru eticheta din listă. */
   const measurementsOnlyFlowRef = useRef(false)
   /** Prevent reopening detections editor after it was approved in current run. */
   const detectionsReviewApprovedRef = useRef(false)
@@ -726,6 +829,9 @@ export default function StepWizard() {
     const hasWG = winterBalkoneFlags.hasWintergarden === true
     const hasB = winterBalkoneFlags.hasBalkone === true
     let steps = dynamicSteps
+    if (editOfferSkipUpload) {
+      steps = steps.filter((s: { key?: string }) => (s as { key?: string }).key !== 'upload')
+    }
     if (!hasWG && !hasB) {
       steps = steps.filter((s: { key?: string }) => (s as any).key !== 'wintergaertenBalkone')
     }
@@ -780,6 +886,7 @@ export default function StepWizard() {
     form.materialeFinisaj,
     drafts.sistemConstructiv,
     drafts.materialeFinisaj,
+    editOfferSkipUpload,
   ])
 
   // -- UseMemo hooks (safe to run even if visibleSteps is empty)
@@ -1029,13 +1136,13 @@ export default function StepWizard() {
       setShowErrors(false)
       setValidationError(null)
       setPdfUrl(null)
+      pdfReadyRunIdRef.current = null
       setComputing(false)
       setComputeFailed(false)
       setComputeRunId(null)
       setComputeStartTime(null)
       setSaveStatus('idle')
       setSelectedPackage(null)
-      setPackagePickerMengenSub(false)
       setMeasurementsOnlyFlow(false)
       roofOnlyOfferRef.current = false
       setActiveRoofOnlyOffer(false)
@@ -1062,6 +1169,7 @@ export default function StepWizard() {
       roofReviewApprovedRef.current = false
       setOfferId(detail.offerId)
       offerIdRef.current = detail.offerId
+      pdfReadyRunIdRef.current = detail.runId
       setComputing(true)
       setComputeRunId(detail.runId)
       setComputeStartTime(Date.now())
@@ -1099,8 +1207,10 @@ export default function StepWizard() {
   // 4. PDF Ready Listener
   useEffect(() => {
     const onReady = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { offerId?: string; pdfUrl?: string }
+      const detail = (e as CustomEvent).detail as { offerId?: string; pdfUrl?: string; runId?: string }
       if (!detail?.pdfUrl) return
+      const evRun = String(detail.runId || '').trim()
+      if (evRun && pdfReadyRunIdRef.current && evRun !== pdfReadyRunIdRef.current) return
       if (offerId && detail.offerId && offerId !== detail.offerId) return
       if (detail.offerId) {
         const fromUrl =
@@ -1119,6 +1229,7 @@ export default function StepWizard() {
       const elapsed = computeStartTime ? now - computeStartTime : MIN_ANIMATION_TIME
       const remainingTime = Math.max(0, MIN_ANIMATION_TIME - elapsed)
       const oid = detail.offerId
+      const expectedRunId = (detail as { runId?: string }).runId ?? pdfReadyRunIdRef.current
 
       setTimeout(() => {
         if (oid) {
@@ -1127,16 +1238,41 @@ export default function StepWizard() {
           if (fromUrl != null && fromUrl !== oid) return
           if (fromUrl == null && offerIdRef.current !== oid) return
         }
+        if (expectedRunId && pdfReadyRunIdRef.current && expectedRunId !== pdfReadyRunIdRef.current) return
         setPdfUrl(detail.pdfUrl || null)
         setComputing(false)
         setComputeRunId(null)
+        pdfReadyRunIdRef.current = null
         setComputeStartTime(null)
         window.dispatchEvent(new Event('offers:refresh'))
+        window.dispatchEvent(new Event('tokens:refresh'))
       }, remainingTime)
     }
     window.addEventListener('offer:pdf-ready', onReady as EventListener)
     return () => window.removeEventListener('offer:pdf-ready', onReady as EventListener)
   }, [offerId, computeStartTime])
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const me = await apiFetch('/me')
+        const t = me?.tokens as { unlimited?: boolean; limit?: number | null; used?: number } | undefined
+        if (!t) {
+          setTokensBlocked(false)
+          return
+        }
+        const blocked =
+          !t.unlimited && t.limit != null && typeof t.used === 'number' && t.used >= t.limit
+        setTokensBlocked(blocked)
+      } catch {
+        setTokensBlocked(false)
+      }
+    }
+    void load()
+    const onTok = () => void load()
+    window.addEventListener('tokens:refresh', onTok)
+    return () => window.removeEventListener('tokens:refresh', onTok)
+  }, [])
 
   // 4b. Compute Failed Listener
   useEffect(() => {
@@ -1146,6 +1282,7 @@ export default function StepWizard() {
       setComputeFailed(true)
       setComputing(false)
       setComputeRunId(null)
+      pdfReadyRunIdRef.current = null
     }
     window.addEventListener('offer:compute-failed', onFailed as EventListener)
     return () => window.removeEventListener('offer:compute-failed', onFailed as EventListener)
@@ -1212,13 +1349,13 @@ export default function StepWizard() {
     return () => window.removeEventListener('offer:roof-review-approved', onRoofReviewApproved as EventListener)
   }, [])
   useEffect(() => {
-    if (!computing) {
+    if (!computing && !editOfferDetectionsStandalone) {
       setShowDetectionsReview(false)
       setReviewImages([])
       setRoofReviewImages([])
       setActiveRoofOnlyOffer(false)
     }
-  }, [computing])
+  }, [computing, editOfferDetectionsStandalone])
 
   // 4c. Poll calc-events direct în StepWizard (erori + trigger editoare), independent de LiveFeed
   const calcEventsSinceRef = useRef<number | undefined>(undefined)
@@ -1310,6 +1447,10 @@ export default function StepWizard() {
           return
         }
         if (status === 'ready') {
+          if (typeof window !== 'undefined') {
+            const uRun = new URL(window.location.href).searchParams.get('runId')
+            if (computeRunId && uRun && uRun !== computeRunId) return
+          }
           const exportRes = await apiFetch(`/offers/${offerId}/export-url`).catch(() => null) as { url?: string; download_url?: string; pdf?: string } | null
           if (offerIdRef.current !== oid) return
           if (typeof window !== 'undefined') {
@@ -1320,7 +1461,12 @@ export default function StepWizard() {
           if (iv) clearInterval(iv)
           iv = null
           if (url) {
-            window.dispatchEvent(new CustomEvent('offer:pdf-ready', { detail: { offerId: oid, pdfUrl: url } }))
+            window.dispatchEvent(
+              new CustomEvent('offer:pdf-ready', {
+                detail: { offerId: oid, pdfUrl: url, runId: computeRunId || undefined },
+              }),
+            )
+            window.dispatchEvent(new Event('tokens:refresh'))
           } else {
             setComputeFailed(true)
             setComputing(false)
@@ -1338,7 +1484,7 @@ export default function StepWizard() {
       clearTimeout(timeout)
       if (iv) clearInterval(iv)
     }
-  }, [computing, offerId, pdfUrl, computeFailed])
+  }, [computing, offerId, pdfUrl, computeFailed, computeRunId])
 
   // 5. Offer Selected Listener — doar setăm offerId; NU suprascriem selectedPackage (altfel flow Dachstuhl s-ar transforma în Neubau după primul pas)
   useEffect(() => {
@@ -1349,6 +1495,11 @@ export default function StepWizard() {
         setSelectedPackage(null)
         setDrafts({})
         setForm({})
+        setCurrentOfferMeasurementsOnly(false)
+        setEditOfferSkipUpload(false)
+        setEditOfferDetectionsStandalone(false)
+        editOfferBothAfterFormRef.current = false
+        pendingPostEditorComputeRef.current = false
         return
       }
       if (typeof window !== 'undefined') {
@@ -1360,8 +1511,11 @@ export default function StepWizard() {
       stepLoadNonceRef.current += 1
       // Clean current wizard state before loading the newly selected offer
       setSelectedPackage(null)
-      setPackagePickerMengenSub(false)
       setMeasurementsOnlyFlow(false)
+      setEditOfferSkipUpload(false)
+      setEditOfferDetectionsStandalone(false)
+      editOfferBothAfterFormRef.current = false
+      pendingPostEditorComputeRef.current = false
       setDrafts({})
       setForm({})
       setErrors({})
@@ -1369,6 +1523,7 @@ export default function StepWizard() {
       setValidationError(null)
       setComputeFailed(false)
       setComputeRunId(null)
+      pdfReadyRunIdRef.current = null
       setPdfUrl(null)
       setComputing(false)
       setComputeStartTime(null)
@@ -1380,9 +1535,9 @@ export default function StepWizard() {
       offerIdRef.current = id
       try {
         const offerRow = (await apiFetch(`/offers/${id}`)) as {
-          meta?: { roof_only_offer?: boolean; wizard_package?: string | null }
+          meta?: { roof_only_offer?: boolean; wizard_package?: string | null; measurements_only_offer?: boolean }
           offer?: {
-            meta?: { roof_only_offer?: boolean; wizard_package?: string | null }
+            meta?: { roof_only_offer?: boolean; wizard_package?: string | null; measurements_only_offer?: boolean }
             offer_type_slug?: string | null
           }
         }
@@ -1396,6 +1551,7 @@ export default function StepWizard() {
         const ro = isRoofOnlyOfferFromMeta(offerMeta, slug)
         roofOnlyOfferRef.current = ro
         setActiveRoofOnlyOffer(ro)
+        setCurrentOfferMeasurementsOnly(offerMeta?.measurements_only_offer === true)
       } catch {
         if (selNonce !== offerSelectNonceRef.current) return
         if (typeof window !== 'undefined') {
@@ -1404,6 +1560,7 @@ export default function StepWizard() {
         }
         roofOnlyOfferRef.current = false
         setActiveRoofOnlyOffer(false)
+        setCurrentOfferMeasurementsOnly(false)
       }
       if (selNonce !== offerSelectNonceRef.current) return
       if (typeof window !== 'undefined') {
@@ -1473,7 +1630,21 @@ export default function StepWizard() {
   // Încărcare date pas: doar când idx sau offerId se schimbă (fără currentStepKey/form ca să nu retrigărăm la fiecare setForm → Maximum update depth).
   useEffect(() => {
     const key = visibleSteps[idx]?.key
-    if (visibleSteps.length === 0 || !key) return
+    const finishEditBootstrap = () => {
+      if (!editWizardBootstrapRef.current) return
+      editWizardBootstrapRef.current = false
+      setEditWizardPreparing(false)
+    }
+    const scheduleFinishBootstrap = (token: number) => {
+      queueMicrotask(() => {
+        if (token !== stepLoadNonceRef.current) return
+        finishEditBootstrap()
+      })
+    }
+    if (visibleSteps.length === 0 || !key) {
+      if (editOfferSkipUpload) finishEditBootstrap()
+      return
+    }
     stepLoadNonceRef.current += 1
     const loadNonce = stepLoadNonceRef.current
 
@@ -1499,6 +1670,7 @@ export default function StepWizard() {
     }
     if (draftData && Object.keys(draftData).length > 0) {
       setForm(prev => loadIntoForm(prev, draftData))
+      scheduleFinishBootstrap(loadNonce)
     } else if (offerId) {
       apiFetch(`/offers/${offerId}/step?step_key=${encodeURIComponent(key)}`)
         .then((data: any) => {
@@ -1512,21 +1684,237 @@ export default function StepWizard() {
             const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
             setForm(prev => loadIntoForm(prev, defaultForStep))
           }
+          if (loadNonce === stepLoadNonceRef.current) finishEditBootstrap()
         })
         .catch(() => {
           if (loadNonce !== stepLoadNonceRef.current) return
           const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
           setForm(prev => loadIntoForm(prev, defaultForStep))
+          finishEditBootstrap()
         })
     } else {
       const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
       setForm(prev => loadIntoForm(prev, defaultForStep))
+      scheduleFinishBootstrap(loadNonce)
     }
     setErrors({})
     setShowErrors(false)
     // intenționat fără visibleSteps/currentStepKey în deps – altfel setForm(merged) → re-render → effect din nou → buclă
-  }, [idx, offerId])
+  }, [idx, offerId, editOfferSkipUpload, editOfferEnterSeq])
 
+  const loadDetectionsReviewFromHistory = useCallback(async (oid: string, includeRoof: boolean): Promise<boolean> => {
+    const historyData = (await apiFetch(
+      `/calc-events/history?offer_id=${encodeURIComponent(oid)}&prefer_detections_review=1`,
+    )) as {
+      items?: Array<{
+        message?: string
+        payload?: { files?: Array<{ url?: string; caption?: string }> }
+      }>
+    }
+    const items = historyData?.items ?? []
+    let best: Array<{ url: string; caption?: string }> = []
+    let roofBest: Array<{ url: string; caption?: string }> = []
+    for (const ev of items) {
+      const m = ev.message?.match(/^\s*\[([^\]]+)\]/)
+      const stage = m?.[1]?.trim() ?? ''
+      const raw = (ev.payload?.files ?? []) as Array<{ url?: string; caption?: string }>
+      const files = raw.filter((f): f is { url: string; caption?: string } => typeof f.url === 'string' && f.url.length > 0)
+      if (stage === 'detections_review' && files.length > best.length) {
+        best = files
+      }
+      if (includeRoof && stage === 'roof' && files.length > 0) {
+        roofBest = files
+      }
+    }
+    if (best.length === 0) return false
+    setReviewImages(best)
+    setPlanReviewImages(best)
+    if (includeRoof) setRoofReviewImages(roofBest)
+    else setRoofReviewImages([])
+    return true
+  }, [])
+
+  const startEditResumeCompute = useCallback(
+    async (mode: 'variables' | 'post_editor') => {
+      const id = offerIdRef.current
+      if (!id) return
+      try {
+        const cur = (await apiFetch(`/offers/${id}`)) as { meta?: Record<string, unknown>; offer?: { meta?: Record<string, unknown> } }
+        const currentMeta = (cur?.meta ?? cur?.offer?.meta ?? {}) as Record<string, unknown>
+        const meta = {
+          ...currentMeta,
+          edit_recompute_mode: mode,
+          reuse_offer_no: true,
+        }
+        await apiFetch(`/offers/${id}`, { method: 'PATCH', body: JSON.stringify({ meta }) })
+        let run_id: string
+        try {
+          const started = (await apiFetch(`/offers/${id}/compute`, {
+            method: 'POST',
+            body: JSON.stringify({ payload: {} }),
+            timeoutMs: 180_000,
+          })) as { run_id: string }
+          run_id = started.run_id
+        } catch (computeErr) {
+          try {
+            const cur2 = (await apiFetch(`/offers/${id}`)) as {
+              meta?: Record<string, unknown>
+              offer?: { meta?: Record<string, unknown> }
+            }
+            const m2 = { ...(cur2?.meta ?? cur2?.offer?.meta ?? {}) } as Record<string, unknown>
+            delete m2.edit_recompute_mode
+            delete m2.reuse_offer_no
+            await apiFetch(`/offers/${id}`, { method: 'PATCH', body: JSON.stringify({ meta: m2 }) })
+          } catch {
+            /* best-effort rollback */
+          }
+          throw computeErr
+        }
+        setPdfUrl(null)
+        pdfReadyRunIdRef.current = run_id
+        setComputeFailed(false)
+        setComputing(true)
+        setComputeStartTime(Date.now())
+        setComputeRunId(run_id)
+        updateRunUrl(id, run_id)
+        setEditOfferSkipUpload(false)
+        editOfferBothAfterFormRef.current = false
+        setEditOfferDetectionsStandalone(false)
+        pendingPostEditorComputeRef.current = false
+        window.dispatchEvent(
+          new CustomEvent('offer:compute-started', {
+            detail: {
+              offerId: id,
+              runId: run_id,
+              flow: roofOnlyOfferRef.current ? 'dachstuhl' : 'neubau',
+            },
+          }),
+        )
+        window.dispatchEvent(new Event('offers:refresh'))
+      } catch (err: unknown) {
+        console.error('Edit resume compute failed:', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        alert(msg)
+      }
+    },
+    [updateRunUrl],
+  )
+
+  const abortEditOfferFlow = useCallback(async () => {
+    const id = offerIdRef.current
+    editWizardBootstrapRef.current = false
+    setEditWizardPreparing(false)
+    setEditOfferSkipUpload(false)
+    setEditOfferDetectionsStandalone(false)
+    editOfferBothAfterFormRef.current = false
+    pendingPostEditorComputeRef.current = false
+    detectionsReviewApprovedRef.current = false
+    roofReviewApprovedRef.current = false
+    setShowDetectionsReview(false)
+    setReviewImages([])
+    setRoofReviewImages([])
+    setShowEditOfferDialog(false)
+    setSaving(false)
+    setIdx(0)
+    if (id) {
+      try {
+        const fresh = await fetchFreshPdfUrl(id)
+        if (fresh) setPdfUrl(fresh)
+        else setPdfUrl(null)
+      } catch {
+        setPdfUrl(null)
+      }
+      window.dispatchEvent(new Event('offers:refresh'))
+    } else {
+      setPdfUrl(null)
+    }
+  }, [])
+
+  const handleEditOfferDialogStart = useCallback(async () => {
+    const id = offerIdRef.current
+    if (!id) return
+    const wantVars = editDlgVars && !currentOfferMeasurementsOnly
+    const wantDet = editDlgDet
+    if (!wantVars && !wantDet) return
+
+    let offerMeta: Record<string, unknown> = {}
+    try {
+      const row = (await apiFetch(`/offers/${id}`)) as {
+        meta?: Record<string, unknown>
+        offer?: { meta?: Record<string, unknown> }
+      }
+      offerMeta = (row?.meta ?? row?.offer?.meta ?? {}) as Record<string, unknown>
+    } catch {
+      alert('Angebot konnte nicht geladen werden.')
+      return
+    }
+    const lastEngine = String(offerMeta.last_engine_run_id ?? '').trim()
+    if (!lastEngine) {
+      alert(
+        'Bearbeiten ist noch nicht möglich: die erste Berechnung muss vollständig abgeschlossen sein (kein gespeicherter Rechenlauf).',
+      )
+      return
+    }
+
+    setShowEditOfferDialog(false)
+    const ro = roofOnlyOfferRef.current || activeRoofOnlyOffer
+    if (wantVars) {
+      setSelectedPackage(ro ? 'dachstuhl' : 'neubau')
+    } else if (wantDet) {
+      setSelectedPackage(ro ? 'dachstuhl' : 'neubau')
+    }
+
+    detectionsReviewApprovedRef.current = false
+    roofReviewApprovedRef.current = false
+
+    if (wantDet && !wantVars) {
+      setSaving(true)
+      try {
+        setPdfUrl(null)
+        const includeRoof = ro
+        const ok = await loadDetectionsReviewFromHistory(id, includeRoof)
+        if (!ok) {
+          alert('Keine Erkennungs-Vorschau in der Historie gefunden.')
+          const fresh = await fetchFreshPdfUrl(id)
+          if (fresh) setPdfUrl(fresh)
+          return
+        }
+        pendingPostEditorComputeRef.current = true
+        setEditOfferDetectionsStandalone(true)
+        setShowDetectionsReview(true)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
+    if (wantVars && !wantDet) {
+      editWizardBootstrapRef.current = true
+      setEditWizardPreparing(true)
+      setEditOfferEnterSeq((s) => s + 1)
+      setEditOfferSkipUpload(true)
+      editOfferBothAfterFormRef.current = false
+      pendingPostEditorComputeRef.current = false
+      setPdfUrl(null)
+      setIdx(0)
+      return
+    }
+
+    editWizardBootstrapRef.current = true
+    setEditWizardPreparing(true)
+    setEditOfferEnterSeq((s) => s + 1)
+    setEditOfferSkipUpload(true)
+    editOfferBothAfterFormRef.current = true
+    pendingPostEditorComputeRef.current = false
+    setPdfUrl(null)
+    setIdx(0)
+  }, [
+    activeRoofOnlyOffer,
+    currentOfferMeasurementsOnly,
+    editDlgDet,
+    editDlgVars,
+    loadDetectionsReviewFromHistory,
+  ])
 
   // -- Helper Functions
   async function ensureOffer(): Promise<string> {
@@ -1625,29 +2013,59 @@ export default function StepWizard() {
   }
 
   async function saveStepLive(stepKey: string, dataObj: Record<string, any>) {
-    if (savingStepsRef.current.has(stepKey)) return
-    savingStepsRef.current.add(stepKey)
+    const prev = stepSaveChainRef.current[stepKey] ?? Promise.resolve()
+    const next = prev.catch(() => {}).then(async () => {
+      savingStepsRef.current.add(stepKey)
+      try {
+        setSaveStatus('saving')
+        const id = await ensureOffer()
+        await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: dataObj }) })
+        setDrafts(prevD => ({ ...prevD, [stepKey]: dataObj }))
+        stepLoadNonceRef.current += 1
+        await maybeUpdateOfferTitle(id)
+        if (stepKey === 'dateGenerale') {
+          if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+          refreshTimerRef.current = setTimeout(() => window.dispatchEvent(new Event('offers:refresh')), 500)
+        }
+        setSaveStatus('saved')
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1600)
+      } catch (e) {
+        console.error('saveStepLive failed', e)
+        setSaveStatus('error')
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000)
+      } finally {
+        setTimeout(() => savingStepsRef.current.delete(stepKey), 300)
+      }
+    })
+    stepSaveChainRef.current[stepKey] = next
+    await next
+  }
+
+  /** Scrie toți pașii din wizard în offer_steps înainte de recomputare (PDF/Preis din DB). */
+  async function flushAllWizardStepsToDb() {
+    if (!step) return
+    const id = await ensureOffer()
+    const merged = buildMergedWizardSource(form, drafts, step.key, step.fields ?? [])
+    setSaveStatus('saving')
     try {
-      setSaveStatus('saving')
-      const id = await ensureOffer()
-      await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: stepKey, data: dataObj }) })
-      setDrafts(prev => ({ ...prev, [stepKey]: dataObj }))
+      for (const st of dynamicSteps) {
+        const k = (st as { key?: string }).key
+        if (!k || k === 'upload') continue
+        const dataObj = extractStepData(k, merged, (st as { fields?: Field[] }).fields ?? [])
+        await apiFetch(`/offers/${id}/step`, { method: 'POST', body: JSON.stringify({ step_key: k, data: dataObj }) })
+        setDrafts(prev => ({ ...prev, [k]: dataObj }))
+      }
       stepLoadNonceRef.current += 1
       await maybeUpdateOfferTitle(id)
-      if (stepKey === 'dateGenerale') {
-        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
-        refreshTimerRef.current = setTimeout(() => window.dispatchEvent(new Event('offers:refresh')), 500)
-      }
       setSaveStatus('saved')
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
       savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 1600)
     } catch (e) {
-      console.error('saveStepLive failed', e)
+      console.error('flushAllWizardStepsToDb failed', e)
       setSaveStatus('error')
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-      savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000)
-    } finally {
-      setTimeout(() => savingStepsRef.current.delete(stepKey), 1000)
+      throw e
     }
   }
 
@@ -1729,7 +2147,9 @@ export default function StepWizard() {
       setShowErrors(false)
       stashDraft()
 
-      if (step.key !== 'upload') {
+      const skipSingleSaveForEditFlush = editOfferSkipUpload && isLast
+
+      if (step.key !== 'upload' && !skipSingleSaveForEditFlush) {
         try {
           await saveStepLive(step.key, extractStepData(step.key, form, step.fields))
         } catch (_) {}
@@ -1740,6 +2160,46 @@ export default function StepWizard() {
         setIdx(i => Math.min(i + 1, visibleSteps.length - 1))
         setAnimKey(k => k + 1)
         setSaving(false)
+        return
+      }
+
+      if (editOfferSkipUpload && isLast) {
+        const eid = offerIdRef.current
+        if (!eid) {
+          setSaving(false)
+          return
+        }
+        if (editOfferBothAfterFormRef.current) {
+          try {
+            await flushAllWizardStepsToDb()
+            const includeRoof = roofOnlyOfferRef.current || activeRoofOnlyOffer || selectedPackage === 'dachstuhl'
+            const ok = await loadDetectionsReviewFromHistory(eid, includeRoof)
+            if (!ok) {
+              alert(
+                'Keine Erkennungs-Vorschau in der Historie gefunden. Die Berechnung muss mindestens einmal bis zur Prüfung der Erkennungen gelaufen sein.',
+              )
+              setSaving(false)
+              return
+            }
+            pendingPostEditorComputeRef.current = true
+            detectionsReviewApprovedRef.current = false
+            roofReviewApprovedRef.current = false
+            setEditOfferDetectionsStandalone(true)
+            setShowDetectionsReview(true)
+          } catch (err: unknown) {
+            console.error(err)
+            alert(err instanceof Error ? err.message : String(err))
+          } finally {
+            setSaving(false)
+          }
+          return
+        }
+        try {
+          await flushAllWizardStepsToDb()
+          await startEditResumeCompute('variables')
+        } finally {
+          setSaving(false)
+        }
         return
       }
 
@@ -1809,6 +2269,7 @@ export default function StepWizard() {
       setActiveRoofOnlyOffer(roofOnly)
       const { run_id } = await apiFetch(`/offers/${id}/compute`, { method: 'POST', body: JSON.stringify({ payload: {} }), timeoutMs: 180_000 })
       setPdfUrl(null)
+      pdfReadyRunIdRef.current = run_id
       setComputeFailed(false)
       setComputing(true)
       setComputeStartTime(Date.now())
@@ -1840,14 +2301,26 @@ export default function StepWizard() {
 
   async function handleResetToNewProject() {
     const id = offerIdRef.current
+    setSaving(true)
     try {
       if (id) {
-        await apiFetch(`/offers/${id}/compute/cancel`, { method: 'POST' }).catch(() => {})
-        await apiFetch(`/offers/${id}`, { method: 'DELETE' }).catch(() => {})
+        try {
+          await apiFetch(`/offers/${id}/compute/cancel`, { method: 'POST', timeoutMs: 35_000 })
+        } catch {
+          /* Rechenjob evtl. schon fertig oder keine Zeile — Löschen trotzdem versuchen */
+        }
+        try {
+          await apiFetch(`/offers/${id}`, { method: 'DELETE', timeoutMs: 45_000 })
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          alert(`Angebot konnte nicht gelöscht werden: ${msg}`)
+          return
+        }
       }
-    } catch (err: any) {
-      console.error('Reset failed', err)
+    } finally {
+      setSaving(false)
     }
+
     setOfferId(null)
     offerIdRef.current = null
     setIdx(0)
@@ -1858,15 +2331,20 @@ export default function StepWizard() {
     setValidationError(null)
     setComputeFailed(false)
     setComputeRunId(null)
+    pdfReadyRunIdRef.current = null
     setPdfUrl(null)
     setComputing(false)
     setComputeStartTime(null)
     setProcessStatus('')
     setSaveStatus('idle')
     setSelectedPackage(null)
-    setPackagePickerMengenSub(false)
     setMeasurementsOnlyFlow(false)
     measurementsOnlyFlowRef.current = false
+    setEditOfferSkipUpload(false)
+    setEditOfferDetectionsStandalone(false)
+    editOfferBothAfterFormRef.current = false
+    pendingPostEditorComputeRef.current = false
+    setCurrentOfferMeasurementsOnly(false)
     roofOnlyOfferRef.current = false
     setActiveRoofOnlyOffer(false)
     creatingRef.current = false
@@ -1946,11 +2424,15 @@ export default function StepWizard() {
   // 3. Main Wizard UI — direct Paket auswählen; după Haus-Angebot starten → wizard
   const showPackagePicker = !computing && !pdfUrl && !offerId && selectedPackage === null
   const showForm = (selectedPackage === 'neubau' || selectedPackage === 'dachstuhl' || selectedPackage === 'mengen' || offerId) && !computing && !pdfUrl
+  const showProgressHeader = !computing && !pdfUrl && !showPackagePicker && showForm
   const centerWizardSteps = progressBarSteps.length > 0 && progressBarSteps.length <= 5
 
   return (
-    <div className="wizard-wrap" style={{ height: '100%', minHeight: 0, maxHeight: '100%' }}>
-      {!computing && !pdfUrl && !showPackagePicker && showForm && (
+    <div
+      className={`wizard-wrap${showProgressHeader ? '' : ' wizard-wrap--solo'}`}
+      style={{ height: '100%', minHeight: 0, maxHeight: '100%' }}
+    >
+      {showProgressHeader && (
       <div className="px-2 mt-1 page-enter">
         <div
           ref={stepsScrollContainerRef}
@@ -1975,12 +2457,8 @@ export default function StepWizard() {
     )}
 
       <div
-        className={
-          showPackagePicker
-            ? 'wizard-stage flex flex-col min-h-0 items-stretch relative justify-center'
-            : 'wizard-stage flex flex-col min-h-0 items-stretch relative justify-start'
-        }
-        style={{ gridRow: 2, minHeight: 0 }}
+        className={`wizard-stage flex flex-col min-h-0 items-center relative ${pdfUrl ? 'justify-start' : 'justify-center'}`}
+        style={{ gridRow: showProgressHeader ? 2 : 1, minHeight: 0 }}
       >
         {computeFailed && !pdfUrl ? (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 px-4" style={{ minHeight: '68vh' }}>
@@ -1993,22 +2471,36 @@ export default function StepWizard() {
                 </div>
               </div>
               <button
-                onClick={() => handleResetToNewProject()}
-                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
+                onClick={() => void handleResetToNewProject()}
+                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
               >
                 {DE.common.computeErrorRetry}
               </button>
             </div>
           </div>
-        ) : computing && !pdfUrl ? (
+        ) : !pdfUrl &&
           showDetectionsReview &&
-          (reviewImages.length > 0 || planReviewImages.length > 0 || activeRoofOnlyOffer) ? (
+          (reviewImages.length > 0 || planReviewImages.length > 0 || activeRoofOnlyOffer) &&
+          (computing || editOfferDetectionsStandalone) ? (
             <DetectionsReviewEditor
               offerId={offerId ?? undefined}
               images={reviewImages.length > 0 ? reviewImages : planReviewImages}
               roofImages={roofReviewImages.length > 0 ? roofReviewImages : undefined}
               roofOnlyOffer={activeRoofOnlyOffer || selectedPackage === 'dachstuhl'}
               onConfirm={async () => {
+                if (pendingPostEditorComputeRef.current) {
+                  pendingPostEditorComputeRef.current = false
+                  await startEditResumeCompute('post_editor')
+                  setEditOfferDetectionsStandalone(false)
+                  setShowDetectionsReview(false)
+                  setReviewImages([])
+                  setRoofReviewImages([])
+                  detectionsReviewApprovedRef.current = true
+                  roofReviewApprovedRef.current = true
+                  window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
+                  window.dispatchEvent(new CustomEvent('offer:roof-review-approved'))
+                  return
+                }
                 detectionsReviewApprovedRef.current = true
                 roofReviewApprovedRef.current = true
                 setShowDetectionsReview(false)
@@ -2017,9 +2509,13 @@ export default function StepWizard() {
                 window.dispatchEvent(new CustomEvent('offer:detections-review-approved'))
                 window.dispatchEvent(new CustomEvent('offer:roof-review-approved'))
               }}
-              onCancel={() => setShowCancelConfirm(true)}
+              onCancel={() =>
+                setCancelDialog(
+                  editOfferDetectionsStandalone || editOfferSkipUpload ? 'abort_edit' : 'delete_offer',
+                )
+              }
             />
-          ) : (
+        ) : computing && !pdfUrl ? (
           <div className="relative w-full flex flex-col items-center justify-center mt-24 gap-4 page-enter" style={{ minHeight: '68vh' }}>
             <img 
               src="/houseblueprint.gif" 
@@ -2028,171 +2524,118 @@ export default function StepWizard() {
             />
             <button
               type="button"
-              onClick={() => setShowCancelConfirm(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
+              onClick={() => setCancelDialog('delete_offer')}
+              disabled={saving}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
             >
               Abbrechen
             </button>
           </div>
-          )
         ) : pdfUrl ? (
-          <div className="flex-1 w-full h-full p-[6px] box-border overflow-hidden page-enter">
-            <SimplePdfViewer src={pdfUrl} className="w-full h-full rounded-xl" />
+          <div className="flex-1 w-full h-full p-1.5 box-border overflow-hidden page-enter flex flex-col min-h-0 gap-4">
+            <div className="flex-1 min-h-0 overflow-hidden rounded-xl">
+              <SimplePdfViewer
+                key={pdfUrl}
+                src={pdfUrl}
+                maxHeight="100%"
+                className="w-full h-full min-h-0 rounded-xl"
+              />
+            </div>
+            {offerId ? (
+              <div className="shrink-0 flex justify-center items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditDlgVars(false)
+                    setEditDlgDet(false)
+                    setShowEditOfferDialog(true)
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-[#ffffff] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-px hover:shadow-[0_3px_10px_rgba(229,184,0,0.28)] active:translate-y-px active:scale-[0.98]"
+                >
+                  Angebot bearbeiten
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : showPackagePicker ? (
-          <div className="w-full flex flex-1 min-h-0 flex-col justify-center px-2 page-enter">
+          <div className="w-full max-w-full self-stretch flex flex-1 min-h-0 flex-col justify-center px-2 page-enter">
+            {tokensBlocked ? (
+              <p className="text-center text-amber-100/90 text-sm sm:text-base font-medium mb-4 max-w-xl mx-auto px-3 leading-snug">
+                Sie haben für diesen Monat keine Projekte mehr im Rahmen Ihres Limits. Am 1. des nächsten Monats stehen
+                wieder Projekte zur Verfügung.
+              </p>
+            ) : null}
             <div
-              className="w-full max-w-5xl mx-auto px-1 relative flex-1 min-h-0 flex flex-col"
+              className="w-full max-w-3xl mx-auto px-1 flex flex-1 min-h-0 flex-col items-center justify-center"
               style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
             >
               <div
-                className={`absolute inset-0 flex items-center justify-center px-1 transition-all duration-300 ease-out ${
-                  packagePickerMengenSub
-                    ? 'opacity-0 scale-[0.97] pointer-events-none -translate-y-2'
-                    : 'opacity-100 scale-100 translate-y-0'
+                className={`grid grid-cols-1 sm:grid-cols-2 gap-3 justify-items-stretch items-stretch w-full ${
+                  tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
                 }`}
-                aria-hidden={packagePickerMengenSub}
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 justify-items-center items-stretch w-full max-w-5xl">
-                  {/* 1) Mengenermittlung */}
-                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
-                    <div className="flex items-center justify-center mb-3">
-                      <img src="/images/blueprint.png" alt="Mengenermittlung" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
-                    </div>
-                    <div className="text-white font-extrabold text-lg text-center">Mengenermittlung</div>
-                    <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Nur Maß-/Mengen-PDF – ohne Preisangebot</div>
-                    <div className="flex-1" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        roofOnlyOfferRef.current = false
-                        setPackagePickerMengenSub(true)
-                      }}
-                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
-                    >
-                      Weiter
-                      <ChevronRight size={18} className="opacity-85" />
-                    </button>
+                {/* Mengenermittlung: Blueprint-Icon in Graustufen */}
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
+                  <div className="flex items-center justify-center mb-3">
+                    <img
+                      src="/images/blueprint.png"
+                      alt="Mengenermittlung"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/35 grayscale contrast-[1.05]"
+                    />
                   </div>
-
-                  {/* 2) Dachstuhl */}
-                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
-                    <div className="flex items-center justify-center mb-3">
-                      <img src="/images/roof.png" alt="Dachstuhl" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
-                    </div>
-                    <div className="text-white font-extrabold text-lg text-center">Dachstuhl</div>
-                    <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Dachstühle</div>
-                    <div className="flex-1" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMeasurementsOnlyFlow(false)
-                        roofOnlyOfferRef.current = true
-                        setSelectedPackage('dachstuhl')
-                      }}
-                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
-                    >
-                      Kalkulation starten
-                      <ChevronRight size={18} className="opacity-85" />
-                    </button>
-                  </div>
-
-                  {/* 3) Neubau */}
-                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] h-full border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)] sm:col-span-2 lg:col-span-1">
-                    <div className="flex items-center justify-center mb-3">
-                      <img src="/images/house.png" alt="Neubau" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
-                    </div>
-                    <div className="text-white font-extrabold text-lg text-center">Neubau</div>
-                    <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Neubauten</div>
-                    <div className="flex-1" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMeasurementsOnlyFlow(false)
-                        roofOnlyOfferRef.current = false
-                        setSelectedPackage('neubau')
-                      }}
-                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
-                    >
-                      Kalkulation starten
-                      <ChevronRight size={18} className="opacity-85" />
-                    </button>
-                  </div>
+                  <div className="text-white font-extrabold text-lg text-center">Mengenermittlung</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Nur Maß-/Mengen-PDF für Neubau – ohne Preisangebot</div>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    disabled={tokensBlocked}
+                    onClick={() => {
+                      if (tokensBlocked) return
+                      setMeasurementsOnlyFlow(true)
+                      roofOnlyOfferRef.current = false
+                      setSelectedPackage('neubau')
+                    }}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    Kalkulation starten
+                    <ChevronRight size={18} className="opacity-85" />
+                  </button>
                 </div>
-              </div>
 
-              <div
-                className={`flex flex-col flex-1 min-h-0 transition-all duration-300 ease-out ${
-                  packagePickerMengenSub
-                    ? 'opacity-100 scale-100 relative'
-                    : 'opacity-0 scale-[0.97] pointer-events-none absolute inset-0 translate-y-3'
-                }`}
-                aria-hidden={!packagePickerMengenSub}
-              >
-                <button
-                  type="button"
-                  onClick={() => setPackagePickerMengenSub(false)}
-                  className="absolute left-0 top-0 z-20 flex items-center gap-1.5 text-sm text-sand/80 hover:text-sand transition-colors py-1"
-                >
-                  <ChevronLeft size={18} />
-                  Zurück zur Auswahl
-                </button>
-                <div className="flex-1 flex flex-col items-center justify-center px-2 py-8 sm:py-10 min-h-[280px]">
-                  <p className="text-center text-sand/90 text-sm max-w-md mb-6">
-                    Projekttyp wählen – danach nur Plan hochladen und im Editor prüfen.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-[680px] justify-items-stretch items-stretch">
-                    <div className="bg-black/40 rounded-2xl p-4 flex flex-col border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
-                      <div className="flex items-center justify-center mb-3">
-                        <img src="/images/blueprint.png" alt="" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
-                      </div>
-                      <div className="text-white font-extrabold text-lg text-center">Neubau Mengenermittlung</div>
-                      <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
-                        Nur Maß-/Mengen-PDF – ohne Preisangebot
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMeasurementsOnlyFlow(true)
-                          roofOnlyOfferRef.current = false
-                          setPackagePickerMengenSub(false)
-                          setSelectedPackage('neubau')
-                        }}
-                        className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
-                      >
-                        Kalkulation starten
-                        <ChevronRight size={18} className="opacity-85" />
-                      </button>
-                    </div>
-                    <div className="bg-black/40 rounded-2xl p-4 flex flex-col border border-[#FF9F0F]/40 shadow-[0_0_24px_rgba(255,159,15,0.2)]">
-                      <div className="flex items-center justify-center mb-3">
-                        <img src="/images/roof-blueprint.png" alt="" className="w-20 h-20 rounded-full object-cover border-2 border-[#FF9F0F]/30" />
-                      </div>
-                      <div className="text-white font-extrabold text-lg text-center">Dachstuhl Mengenermittlung</div>
-                      <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
-                        Nur Maß-/Mengen-PDF – ohne Preisangebot
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMeasurementsOnlyFlow(true)
-                          roofOnlyOfferRef.current = true
-                          setPackagePickerMengenSub(false)
-                          setSelectedPackage('dachstuhl')
-                        }}
-                        className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
-                      >
-                        Kalkulation starten
-                        <ChevronRight size={18} className="opacity-85" />
-                      </button>
-                    </div>
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
+                  <div className="flex items-center justify-center mb-3">
+                    <img
+                      src="/images/house.png"
+                      alt="Neubau"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/35 grayscale contrast-[1.05]"
+                    />
                   </div>
+                  <div className="text-white font-extrabold text-lg text-center">Neubau</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Neubauten</div>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    disabled={tokensBlocked}
+                    onClick={() => {
+                      if (tokensBlocked) return
+                      setMeasurementsOnlyFlow(false)
+                      roofOnlyOfferRef.current = false
+                      setSelectedPackage('neubau')
+                    }}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    Kalkulation starten
+                    <ChevronRight size={18} className="opacity-85" />
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div key={`${step.key}-${animKey}`} className={`wizard-card wizard-sunny ${dir === null ? 'card-initial' : dir === 'back' ? 'card-in-back' : 'card-in-next'}`}>
+          <div
+            key={`${step.key}-${animKey}`}
+            className={`wizard-card wizard-sunny w-full max-w-[min(720px,100%)] shrink-0 ${dir === null ? 'card-initial' : dir === 'back' ? 'card-in-back' : 'card-in-next'}`}
+          >
             <div className="wizard-header">
               <div className="wizard-title text-sun">
                 {tStepLabel(step.key, step.label)}
@@ -2204,6 +2647,12 @@ export default function StepWizard() {
                       <Loader2 className="animate-spin text-sun h-10 w-10 mb-2"/>
                       <span className="text-sand font-medium shadow-sm">{processStatus}</span>
                   </div>
+              )}
+              {editOfferSkipUpload && editWizardPreparing && (
+                <div className="absolute inset-0 z-40 bg-black/55 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl">
+                  <Loader2 className="animate-spin text-sun h-10 w-10 mb-2" />
+                  <span className="text-sand font-medium text-sm px-4 text-center">Formular wird geladen…</span>
+                </div>
               )}
 
               {validationError && (
@@ -2406,30 +2855,42 @@ export default function StepWizard() {
               )}
             </div>
             
-            <div className="wizard-footer flex items-center justify-between mt-4">
-              <button 
-                onClick={onBack} 
-                disabled={isFirst || saving}
-                className={`
-                  flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ease-in-out
-                  border border-[#D8A25E]/30 text-[#D8A25E] bg-transparent
-                  hover:bg-[#D8A25E]/10 hover:border-[#D8A25E]/60
-                  disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent
-                `}
-              >
-                <ChevronLeft size={19} /> 
-                {DE.common.btnBack}
-              </button>
+            <div className="wizard-footer flex items-center justify-between mt-4 gap-2 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <button 
+                  onClick={onBack} 
+                  disabled={isFirst || saving}
+                  className={`
+                    flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ease-in-out
+                    border border-[#D8A25E]/30 text-[#D8A25E] bg-transparent
+                    hover:bg-[#D8A25E]/10 hover:border-[#D8A25E]/60
+                    disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent
+                  `}
+                >
+                  <ChevronLeft size={19} /> 
+                  {DE.common.btnBack}
+                </button>
+                {editOfferSkipUpload ? (
+                  <button
+                    type="button"
+                    onClick={() => setCancelDialog('abort_edit')}
+                    disabled={saving}
+                    className="px-4 py-2.5 rounded-xl font-medium text-sand/80 hover:text-sand border border-white/15 hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    Abbrechen
+                  </button>
+                ) : null}
+              </div>
 
-              <div className="flex-1" />
+              <div className="flex-1 min-w-[8px]" />
 
               <button 
                 onClick={onContinue} 
                 disabled={saving}
                 className={`
                   flex items-center gap-2 px-8 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out
-                  bg-gradient-to-b from-[#e08414] to-[#f79116]
-                  hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)]
+                  bg-gradient-to-b from-[#CC9900] to-[#E5B800]
+                  hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)]
                   active:translate-y-[1px] active:scale-95
                   disabled:opacity-70 disabled:cursor-wait disabled:transform-none disabled:shadow-none
                 `}
@@ -2469,28 +2930,149 @@ export default function StepWizard() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
-      {showCancelConfirm && (
+      {showEditOfferDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-panel rounded-xl p-6 max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto pretty-scroll shadow-soft border border-white/10 animate-fade-in">
+            <h3 className="text-lg font-bold text-sand mb-2">Angebot bearbeiten</h3>
+            <p className="text-sand/70 text-sm mb-4">Wählen Sie, was neu berechnet werden soll.</p>
+            <label
+              className={`flex flex-col gap-3 mb-5 rounded-xl p-3 transition-all duration-200 border ${
+                currentOfferMeasurementsOnly
+                  ? 'cursor-not-allowed opacity-55 border-white/10 bg-black/6'
+                  : editDlgVars
+                    ? 'cursor-pointer border-[#E5B800]/50 bg-[#E5B800]/12 shadow-[0_0_20px_rgba(229,184,0,0.22)]'
+                    : 'cursor-pointer border-white/12 bg-black/10 hover:border-white/20'
+              }`}
+            >
+              <img
+                src="/images/btnform.png"
+                alt="Formular"
+                className={`w-full max-h-[min(38vh,280px)] rounded-xl object-contain object-top bg-black/25 transition-all duration-200 ${
+                  currentOfferMeasurementsOnly
+                    ? 'border border-white/15 opacity-45'
+                    : editDlgVars
+                      ? 'border-2 border-[#E5B800]'
+                      : 'border border-[#E5B800]/22 opacity-90'
+                }`}
+              />
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border border-[#D8A25E]/50 bg-black/25 accent-[#CC9900] focus:outline-none focus:ring-2 focus:ring-[#E5B800]/40 focus:ring-offset-0 focus:ring-offset-transparent disabled:opacity-40"
+                  checked={!currentOfferMeasurementsOnly && editDlgVars}
+                  disabled={currentOfferMeasurementsOnly}
+                  onChange={(e) => setEditDlgVars(e.target.checked)}
+                />
+                <span
+                  className={`text-sm min-w-0 ${
+                    currentOfferMeasurementsOnly
+                      ? 'text-sand/55'
+                      : editDlgVars
+                        ? 'text-sand font-semibold'
+                        : 'text-sand/85'
+                  }`}
+                >
+                  Optionen im Formular anpassen
+                  <span
+                    className={`block text-xs mt-0.5 font-normal ${
+                      currentOfferMeasurementsOnly
+                        ? 'text-sand/45'
+                        : editDlgVars
+                          ? 'text-sand/70'
+                          : 'text-sand/55'
+                    }`}
+                  >
+                    Ladezeit: ungefähr 30 Sekunden
+                  </span>
+                </span>
+              </div>
+            </label>
+            <label
+              className={`flex flex-col gap-3 mb-6 cursor-pointer rounded-xl p-3 transition-all duration-200 border ${
+                editDlgDet
+                  ? 'border-[#E5B800]/50 bg-[#E5B800]/12 shadow-[0_0_20px_rgba(229,184,0,0.22)]'
+                  : 'border-white/12 bg-black/10 hover:border-white/20'
+              }`}
+            >
+              <img
+                src="/images/btneditor.png"
+                alt="Bearbeitungsfenster"
+                className={`w-full max-h-[min(38vh,280px)] rounded-xl object-contain object-top bg-black/25 transition-all duration-200 ${
+                  editDlgDet
+                    ? 'border-2 border-[#E5B800]'
+                    : 'border border-[#E5B800]/22 opacity-90'
+                }`}
+              />
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border border-[#D8A25E]/50 bg-black/25 accent-[#CC9900] focus:outline-none focus:ring-2 focus:ring-[#E5B800]/40 focus:ring-offset-0 focus:ring-offset-transparent disabled:opacity-40"
+                  checked={editDlgDet}
+                  onChange={(e) => setEditDlgDet(e.target.checked)}
+                />
+                <span className={`text-sm min-w-0 ${editDlgDet ? 'text-sand font-semibold' : 'text-sand/85'}`}>
+                  Oberflächen und Erkennungen im Bearbeitungsfenster anpassen
+                  <span
+                    className={`block text-xs mt-0.5 font-normal ${editDlgDet ? 'text-sand/70' : 'text-sand/55'}`}
+                  >
+                    Ladezeit: ungefähr 3 Minuten
+                  </span>
+                </span>
+              </div>
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowEditOfferDialog(false)}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium text-sand/80 hover:text-sand bg-black/10 hover:bg-black/20 border border-white/10 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleEditOfferDialogStart()}
+                disabled={
+                  saving ||
+                  (!editDlgDet && (!editDlgVars || currentOfferMeasurementsOnly))
+                }
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-[#ffffff] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 disabled:opacity-45 disabled:pointer-events-none disabled:shadow-none"
+              >
+                Weiter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-panel rounded-xl p-6 max-w-md w-full mx-4 shadow-soft border border-white/10 animate-fade-in">
-            <h3 className="text-lg font-bold text-sand mb-4">Angebot abbrechen?</h3>
+            <h3 className="text-lg font-bold text-sand mb-4">
+              {cancelDialog === 'abort_edit' ? 'Bearbeitung abbrechen?' : 'Angebot löschen?'}
+            </h3>
             <p className="text-sand/80 mb-6">
-              Möchten Sie dieses Angebot wirklich abbrechen? Alle Daten werden gelöscht und der Prozess wird gestoppt.
+              {cancelDialog === 'abort_edit'
+                ? 'Die Angebotsbearbeitung wird verworfen und das PDF wird wieder angezeigt. Das Angebot bleibt erhalten.'
+                : 'Das Angebot wird unwiderruflich gelöscht (inkl. hochgeladener Pläne und gespeicherter Schritte). Ein laufender Rechenprozess wird zuerst gestoppt.'}
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 type="button"
-                onClick={() => setShowCancelConfirm(false)}
+                onClick={() => setCancelDialog(null)}
                 className="px-4 py-2.5 rounded-xl font-medium text-sand/80 hover:text-sand bg-black/10 hover:bg-black/20 border border-white/10 transition-colors"
               >
                 Nein
               </button>
               <button
                 type="button"
+                disabled={saving && cancelDialog === 'delete_offer'}
                 onClick={() => {
-                  setShowCancelConfirm(false)
-                  handleResetToNewProject()
+                  const mode = cancelDialog
+                  setCancelDialog(null)
+                  if (mode === 'abort_edit') void abortEditOfferFlow()
+                  else void handleResetToNewProject()
                 }}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(216,162,94,0.3)] active:translate-y-[1px] active:scale-95"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
               >
                 Ja
               </button>
@@ -3339,7 +3921,10 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
       <div className="flex flex-col gap-4 !pb-0 w-full max-w-full">
         <div className="flex gap-10 items-center w-full">
         <div className="relative flex-shrink-0 border-2 border-white/20 rounded-xl overflow-hidden bg-panel/50" style={{ width: `${containerWidth}px`, height: `${frameHeight}px` }}>
-          <div className="relative w-full h-full" style={{ paddingTop: `${paddingTopValue}px` }}>
+          <div
+            className="relative w-full h-full betonbot-building-structure-illus"
+            style={{ paddingTop: `${paddingTopValue}px` }}
+          >
             {/* Ground și etaje la spate; piloni, fundație, beci desenate în față (z-index mai mare) */}
             <img src="/builder/ground.png" alt="Ground" className="absolute" style={{ width: `${getScaledWidth('ground')}px`, height: 'auto', bottom: `${groundBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('ground', img.naturalWidth, img.naturalHeight) }} />
             <img src={downImage} alt="Down" className="absolute" style={{ width: `${getScaledWidth('down')}px`, height: 'auto', bottom: `${downBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 25 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('down', img.naturalWidth, img.naturalHeight) }} />
@@ -3462,7 +4047,7 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
                 ref={addFloorBtnRef}
                 type="button"
                 onClick={() => setShowAddFloorDropdown(!showAddFloorDropdown)}
-                className="px-3 py-1.5 bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 text-white rounded-lg text-sm font-medium transition-all"
+                className="px-3 py-1.5 bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 text-white rounded-lg text-sm font-medium transition-all"
               >
                 + Neues Geschoss
               </button>

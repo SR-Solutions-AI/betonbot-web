@@ -4,10 +4,12 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   useState,
   type Dispatch,
+  type RefObject,
   type SetStateAction,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -182,6 +184,168 @@ export type RoofReviewEditorHandle = {
   roofApplyToolFromParent: (t: Tool) => void
 }
 
+function scrollRoofTypeTileIntoView(
+  scrollRoot: HTMLElement | null,
+  roofTypeId: string,
+  behavior: ScrollBehavior = 'smooth',
+) {
+  if (!scrollRoot) return
+  const esc =
+    typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(roofTypeId)
+      : roofTypeId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const el = scrollRoot.querySelector<HTMLElement>(`button[data-roof-type="${esc}"]`)
+  el?.scrollIntoView({ behavior, block: 'nearest', inline: 'center' })
+}
+
+type RoofStripScrollBarUiProps = {
+  bar: { visible: boolean; thumbW: number; thumbLeft: number }
+  onTrackMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void
+  onThumbMouseDown: (e: React.MouseEvent) => void
+  roofUiVariant: 'holzbot' | 'betonbot'
+}
+
+function RoofTypeStripScrollBar({
+  bar,
+  onTrackMouseDown,
+  onThumbMouseDown,
+  roofUiVariant,
+}: RoofStripScrollBarUiProps) {
+  if (!bar.visible) return null
+  const thumbClass =
+    roofUiVariant === 'betonbot'
+      ? 'bg-[#E5B800] hover:bg-[#FFCF33]'
+      : 'bg-[#c9944a] hover:bg-[#d8a25e]'
+  return (
+    <div
+      className="relative mt-1 h-2 w-full shrink-0 cursor-pointer rounded-full bg-black/35"
+      onMouseDown={onTrackMouseDown}
+      role="scrollbar"
+      aria-label="Dachtypen horizontal scrollen"
+    >
+      <div
+        data-roof-hscroll-thumb
+        className={`absolute top-0.5 bottom-0.5 cursor-grab rounded-full active:cursor-grabbing ${thumbClass}`}
+        style={{ width: bar.thumbW, left: bar.thumbLeft, minWidth: 24 }}
+        onMouseDown={onThumbMouseDown}
+        aria-hidden
+      />
+    </div>
+  )
+}
+
+function useRoofTypeStripHorizontalBar(
+  scrollRef: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  resyncKey: string,
+) {
+  const [bar, setBar] = useState({ visible: false, thumbW: 24, thumbLeft: 0 })
+  const barRef = useRef(bar)
+  barRef.current = bar
+
+  const sync = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) {
+      setBar((s) => ({ ...s, visible: false }))
+      return
+    }
+    const { scrollLeft, scrollWidth, clientWidth } = el
+    const maxScroll = scrollWidth - clientWidth
+    if (maxScroll <= 1) {
+      setBar({ visible: false, thumbW: 24, thumbLeft: 0 })
+      return
+    }
+    const ratio = clientWidth / scrollWidth
+    const thumbW = Math.max(24, Math.round(clientWidth * ratio))
+    const maxThumbLeft = Math.max(0, clientWidth - thumbW)
+    const thumbLeft = maxScroll > 0 ? (scrollLeft / maxScroll) * maxThumbLeft : 0
+    setBar({ visible: true, thumbW, thumbLeft })
+  }, [scrollRef])
+
+  const onScroll = useCallback(() => sync(), [sync])
+
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setBar({ visible: false, thumbW: 24, thumbLeft: 0 })
+      return
+    }
+    const el = scrollRef.current
+    if (!el) return undefined
+    const run = () => sync()
+    run()
+    el.addEventListener('scroll', run, { passive: true })
+    const ro = new ResizeObserver(run)
+    ro.observe(el)
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(run)
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      el.removeEventListener('scroll', run)
+      ro.disconnect()
+    }
+  }, [enabled, sync, resyncKey])
+
+  const [dragging, setDragging] = useState(false)
+  const dragRef = useRef({ x: 0, scroll: 0, thumbW: 24 })
+
+  const onThumbMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const el = scrollRef.current
+      if (!el) return
+      dragRef.current = {
+        x: e.clientX,
+        scroll: el.scrollLeft,
+        thumbW: barRef.current.thumbW,
+      }
+      setDragging(true)
+    },
+    [scrollRef],
+  )
+
+  useEffect(() => {
+    if (!dragging) return
+    const onMove = (e: MouseEvent) => {
+      const el = scrollRef.current
+      if (!el) return
+      const { scrollWidth, clientWidth } = el
+      const maxScroll = scrollWidth - clientWidth
+      if (maxScroll <= 0) return
+      const thumbTravel = clientWidth - dragRef.current.thumbW
+      const delta = e.clientX - dragRef.current.x
+      const scrollDelta = thumbTravel > 0 ? (delta / thumbTravel) * maxScroll : 0
+      el.scrollLeft = Math.max(0, Math.min(maxScroll, dragRef.current.scroll + scrollDelta))
+    }
+    const onUp = () => setDragging(false)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [dragging, scrollRef])
+
+  const onTrackMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).closest('[data-roof-hscroll-thumb]')) return
+      const el = scrollRef.current
+      if (!el) return
+      const { scrollWidth, clientWidth } = el
+      const maxScroll = scrollWidth - clientWidth
+      if (maxScroll <= 0) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const ratio = Math.max(0, Math.min(1, x / rect.width))
+      el.scrollLeft = ratio * maxScroll
+    },
+    [scrollRef],
+  )
+
+  return { onScroll, bar, onThumbMouseDown, onTrackMouseDown }
+}
+
 type RoofReviewEditorProps = {
   offerId?: string
   images: ReviewImage[]
@@ -276,6 +440,8 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
   const [newRoofWindowDims, setNewRoofWindowDims] = useState({ width: '', height: '' })
   const roofWindowWidthInputRef = useRef<HTMLInputElement>(null)
   const roofWindowHeightInputRef = useRef<HTMLInputElement>(null)
+  const sidebarRoofTypesScrollRef = useRef<HTMLDivElement>(null)
+  const dialogRoofTypesScrollRef = useRef<HTMLDivElement>(null)
 
   const thumbFilter =
     roofUiVariant === 'betonbot' ? 'hue-rotate(-18deg) saturate(0.85) brightness(1.08)' : undefined
@@ -283,6 +449,17 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
   const longestRoofTypeLabelLen = Math.max(...ROOF_TYPE_OPTIONS.map((o) => o.labelDe.length))
   // mic buffer pentru padding lateral pe etichetă (px-1 …)
   const roofTypeTileWidthRem = `${Math.max(6.8, longestRoofTypeLabelLen * 0.48 + 2.0 + 0.55).toFixed(2)}rem`
+
+  const sidebarBar = useRoofTypeStripHorizontalBar(
+    sidebarRoofTypesScrollRef,
+    roofSurfaceTab === 'surfaces',
+    `${roofSurfaceTab}-${selectedPolygonIndex}-${compactUi}-${planIndex}-${plansData.length}`,
+  )
+  const dialogBar = useRoofTypeStripHorizontalBar(
+    dialogRoofTypesScrollRef,
+    newRoofDialogOpen,
+    `${newRoofDialogOpen}-${dialogType}`,
+  )
 
   useEffect(() => {
     plansDataRef.current = plansData
@@ -684,7 +861,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
     setDialogType(DEFAULT_ROOF_TYPE)
     setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
-    setTool('select')
+    setTool('add')
   }, [
     pendingNewPoints,
     currentPlan,
@@ -695,6 +872,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     dialogAngleStr,
     dialogOverhangStr,
     dialogType,
+    setTool,
   ])
 
   const cancelNewRoofDialog = useCallback(() => {
@@ -766,6 +944,22 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     selectedRect?.roofAngleDeg,
     selectedRect?.roofOverhangM,
   ])
+
+  useEffect(() => {
+    if (roofSurfaceTab !== 'surfaces' || !selectedRect) return
+    const id = (selectedRect.roofType ?? DEFAULT_ROOF_TYPE) as string
+    const root = sidebarRoofTypesScrollRef.current
+    requestAnimationFrame(() => scrollRoofTypeTileIntoView(root, id))
+  }, [roofSurfaceTab, selectedPolygonIndex, selectedRect?.roofType])
+
+  useEffect(() => {
+    if (!newRoofDialogOpen) return
+    const id = dialogType as string
+    const root = dialogRoofTypesScrollRef.current
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollRoofTypeTileIntoView(root, id))
+    })
+  }, [newRoofDialogOpen, dialogType])
 
   const selectedRoofWindow =
     roofSurfaceTab === 'windows' && selectedPolygonIndex != null && currentPlan
@@ -869,7 +1063,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               setNewPolygonPoints(null)
             }}
             title="Auswählen & Verschieben"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'select' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'select' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <MousePointer2 size={18} />
           </button>
@@ -897,7 +1091,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 setDialogOverhangStr(overhangMetersToCmStr(DEFAULT_ROOF_OVERHANG_M))
               }
             }}
-            className={`p-2 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${tool === 'add' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${tool === 'add' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Plus size={18} />
           </button>
@@ -908,7 +1102,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             type="button"
             onClick={() => setTool('remove')}
             title="Klicken Sie auf ein Element zum Entfernen"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'remove' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'remove' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Trash2 size={18} />
           </button>
@@ -919,7 +1113,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             type="button"
             onClick={() => setTool('edit')}
             title="Bearbeiten: auf Element klicken, Ecken/Kanten ziehen"
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'edit' ? 'bg-[#FF9F0F]/20 text-[#FF9F0F]' : 'text-sand/70 hover:bg-white/5'}`}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'edit' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
           >
             <Pencil size={18} />
           </button>
@@ -949,7 +1143,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             setNewPolygonPoints(null)
             if (tool === 'add') setTool('select')
           }}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'surfaces' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'surfaces' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
         >
           Dachflächen
         </button>
@@ -961,7 +1155,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             setNewPolygonPoints(null)
             if (tool === 'add') setTool('select')
           }}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'windows' ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${roofSurfaceTab === 'windows' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
         >
           Dachfenster
         </button>
@@ -994,7 +1188,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 setRoofSurfaceTab('surfaces')
                 if (tool === 'add') setTool('select')
               }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${planIndexClamped === i ? 'bg-[#FF9F0F]/25 text-[#FF9F0F] border border-[#FF9F0F]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${planIndexClamped === i ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
             >
               {roofPlanLabelDe(floorLabels, i)}
             </button>
@@ -1006,10 +1200,10 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       <div className="flex-[1_1_0%] min-h-0 flex flex-col gap-1.5 min-w-0 overflow-hidden px-2">
         <div className="flex-[1_1_0%] min-h-0 flex flex-col overflow-hidden gap-1">
           {currentPlan && getBaseImageUrl(planIndexClamped) && (
-              <div className="relative w-full flex-[1_1_0%] min-h-[96px] rounded-lg overflow-hidden border border-[#FF9F0F]/50 ring-1 ring-[#FF9F0F]/30 bg-black/30">
+              <div className="relative w-full flex-[1_1_0%] min-h-[96px] rounded-lg overflow-hidden border border-[#E5B800]/50 ring-1 ring-[#E5B800]/30 bg-black/30">
                 {pendingNewRoofWindowBbox && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 rounded-lg">
-                    <div className="w-[300px] rounded-xl border border-[#FF9F0F]/60 bg-[#1a1a1a] p-3 space-y-2">
+                    <div className="w-[300px] rounded-xl border border-[#E5B800]/60 bg-[#1a1a1a] p-3 space-y-2">
                       <div className="text-white text-sm font-medium text-center">Dachfenster – Maße (cm)</div>
                       <div className="flex flex-col gap-2">
                         <label className="text-sand/70 text-xs">
@@ -1064,7 +1258,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                         <button
                           type="button"
                           onClick={handleCreateRoofWindow}
-                          className="rounded bg-[#FF9F0F]/25 border border-[#FF9F0F]/60 px-3 py-1 text-xs text-[#FF9F0F]"
+                          className="rounded bg-[#E5B800]/25 border border-[#E5B800]/60 px-3 py-1 text-xs text-[#E5B800]"
                         >
                           Speichern
                         </button>
@@ -1185,7 +1379,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
 
         {/* Unter dem Plan: Dachflächen (Neigung/Typ) oder Dachfenster-Hinweis */}
         <div
-          className={`shrink-0 rounded-xl border border-[#FF9F0F]/40 bg-black/25 space-y-2 ${
+          className={`shrink-0 rounded-xl border border-[#E5B800]/40 bg-black/25 space-y-2 ${
             compactUi ? 'p-1.5 max-h-[min(30vh,260px)] overflow-y-auto overflow-x-hidden' : 'p-2'
           }`}
         >
@@ -1198,77 +1392,30 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             </div>
           ) : (
             <>
-          <div className="text-sm text-white font-medium">
-            {selectedRect ? (
-              <div className="space-y-0.5">
-                <div>Dachfläche {selectedRect.roomName ?? `S${selectedPolygonIndex}`}</div>
-                <div className="text-sand/80 text-xs font-normal">
-                  {roofTypeLabelDe((selectedRect.roofType ?? DEFAULT_ROOF_TYPE) as RoofTypeId)}
+          <div className="flex items-start justify-between gap-2 min-w-0">
+            <div className="text-sm text-white font-medium min-w-0 flex-1 pr-1">
+              {selectedRect ? (
+                <div className="space-y-0.5">
+                  <div>Dachfläche {selectedRect.roomName ?? `S${selectedPolygonIndex}`}</div>
+                  <div className="text-sand/80 text-xs font-normal">
+                    {roofTypeLabelDe((selectedRect.roofType ?? DEFAULT_ROOF_TYPE) as RoofTypeId)}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <span className="text-sand/70 font-normal">
-                Dachfläche im Plan anklicken – dann Neigung und Typ bearbeiten
-              </span>
-            )}
-          </div>
-          <div className={`flex items-start ${compactUi ? 'gap-2' : 'gap-3'}`}>
-            <div className="shrink-0 flex items-center gap-2 pt-1">
-              <span className="text-sand/50 text-xs">Typ</span>
+              ) : (
+                <span className="text-sand/70 font-normal text-xs sm:text-sm leading-snug">
+                  Dachfläche im Plan anklicken – dann Neigung und Typ bearbeiten
+                </span>
+              )}
             </div>
-            <div className={`grid grid-cols-5 justify-items-center w-fit min-w-max ${compactUi ? 'gap-1' : 'gap-2'}`}>
-              {ROOF_TYPE_OPTIONS.map((opt) => {
-                const hasSelection = selectedRect != null
-                const active = hasSelection && (selectedRect!.roofType ?? DEFAULT_ROOF_TYPE) === opt.id
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    style={{ width: roofTypeTileWidthRem }}
-                    disabled={!hasSelection}
-                    onClick={() => {
-                      if (!selectedRect) return
-                      pushHistory()
-                      if (opt.id === '0_w') {
-                        updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: 0 })
-                      } else {
-                        updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: DEFAULT_ROOF_ANGLE })
-                      }
-                    }}
-                    className={`flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 border transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                      hasSelection ? 'cursor-pointer' : ''
-                    } ${
-                      active
-                        ? 'border-[#FF9F0F] ring-1 ring-[#FF9F0F]/50 bg-[#FF9F0F]/10'
-                        : 'border-white/15 hover:bg-white/5'
-                    }`}
-                  >
-                    <img
-                      src={opt.image}
-                      alt={opt.labelDe}
-                      className={
-                        compactUi
-                          ? 'w-full h-9 sm:h-10 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
-                          : 'w-full h-14 sm:h-16 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
-                      }
-                      style={thumbFilter ? { filter: thumbFilter } : undefined}
-                    />
-                    <span className="block w-full box-border text-[11px] sm:text-xs leading-tight text-center text-sand/90 px-1 sm:px-1.5 py-0.5 whitespace-nowrap">
-                      {opt.labelDe}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-            <div className="shrink-0 flex flex-col gap-2 pt-1 min-w-[7.5rem]">
-              <div className="flex items-center gap-2">
-                <span className="text-sand/70 text-xs whitespace-nowrap">Neigung (°)</span>
+            <div className="flex shrink-0 flex-row flex-wrap items-center justify-end gap-x-2 gap-y-1 sm:gap-x-3">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="text-sand/70 text-[11px] sm:text-xs whitespace-nowrap">Neigung (°)</span>
                 <input
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
                   disabled={!selectedRect}
-                  className="min-w-[4.5rem] w-28 px-2 py-1 rounded bg-black/40 border border-white/20 text-white text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
+                  className="w-[4.25rem] sm:w-[4.75rem] px-1.5 py-1 rounded bg-black/40 border border-white/20 text-white text-xs sm:text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
                   value={selectedRect ? sidebarAngleStr : ''}
                   placeholder="—"
                   onFocus={() => {
@@ -1294,14 +1441,14 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                   }}
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sand/70 text-xs whitespace-nowrap">Dachüberstand (cm)</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="text-sand/70 text-[11px] sm:text-xs whitespace-nowrap">Dachüberstand (cm)</span>
                 <input
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
                   disabled={!selectedRect}
-                  className="min-w-[4.5rem] w-28 px-2 py-1 rounded bg-black/40 border border-white/20 text-white text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
+                  className="w-[4.25rem] sm:w-[4.75rem] px-1.5 py-1 rounded bg-black/40 border border-white/20 text-white text-xs sm:text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed"
                   value={selectedRect ? sidebarOverhangStr : ''}
                   placeholder="—"
                   onFocus={() => {
@@ -1329,6 +1476,77 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               </div>
             </div>
           </div>
+          <div className={`flex w-full min-w-0 items-start ${compactUi ? 'gap-2' : 'gap-2.5'}`}>
+            <div className="flex shrink-0 items-center gap-2 pt-1">
+              <span className="text-sand/50 text-xs">Typ</span>
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div
+                ref={sidebarRoofTypesScrollRef}
+                onScroll={sidebarBar.onScroll}
+                className="roof-type-strip-scroll w-full max-w-full scroll-smooth [-webkit-overflow-scrolling:touch]"
+              >
+                <div
+                  className={`mx-auto flex w-max flex-nowrap items-stretch ${compactUi ? 'gap-2' : 'gap-2.5'}`}
+                >
+                  {ROOF_TYPE_OPTIONS.map((opt) => {
+                    const hasSelection = selectedRect != null
+                    const active = hasSelection && (selectedRect!.roofType ?? DEFAULT_ROOF_TYPE) === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-roof-type={opt.id}
+                        style={{
+                          width: roofTypeTileWidthRem,
+                          minWidth: roofTypeTileWidthRem,
+                          maxWidth: roofTypeTileWidthRem,
+                          boxSizing: 'border-box',
+                        }}
+                        disabled={!hasSelection}
+                        onClick={() => {
+                          if (!selectedRect) return
+                          pushHistory()
+                          if (opt.id === '0_w') {
+                            updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: 0 })
+                          } else {
+                            updateSelectedRoofMeta({ roofType: opt.id, roofAngleDeg: DEFAULT_ROOF_ANGLE })
+                          }
+                        }}
+                        className={`box-border flex shrink-0 flex-col items-center gap-1 rounded-lg border px-1 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                          hasSelection ? 'cursor-pointer' : ''
+                        } ${
+                          active
+                            ? 'border-[#E5B800] ring-1 ring-[#E5B800]/50 bg-[#E5B800]/10'
+                            : 'border-white/15 hover:bg-white/5'
+                        }`}
+                      >
+                        <img
+                          src={opt.image}
+                          alt={opt.labelDe}
+                          className={
+                            compactUi
+                              ? 'w-full h-9 sm:h-10 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
+                              : 'w-full h-14 sm:h-16 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none'
+                          }
+                          style={thumbFilter ? { filter: thumbFilter } : undefined}
+                        />
+                        <span className="block w-full min-w-0 box-border hyphens-auto px-1 py-0.5 text-center text-[11px] leading-snug text-sand/90 [overflow-wrap:anywhere] sm:px-1.5 sm:text-xs">
+                          {opt.labelDe}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <RoofTypeStripScrollBar
+                bar={sidebarBar.bar}
+                onTrackMouseDown={sidebarBar.onTrackMouseDown}
+                onThumbMouseDown={sidebarBar.onThumbMouseDown}
+                roofUiVariant={roofUiVariant}
+              />
+            </div>
+          </div>
             </>
           )}
         </div>
@@ -1338,7 +1556,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3 sm:p-4">
           <div
             lang="de"
-            className="w-fit max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[#FF9F0F]/40 bg-coffee-800/95 p-3 sm:p-4 shadow-xl space-y-3"
+            className="w-fit max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[#E5B800]/40 bg-coffee-800/95 p-3 sm:p-4 shadow-xl space-y-3"
           >
             <h3 className="text-white font-semibold text-center text-sm sm:text-base leading-snug">
               Neues Dach – Neigung, Dachüberstand &amp; Typ
@@ -1376,15 +1594,26 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               </label>
             </div>
             {/* Aceleași carduri ca la „Typ” sub blueprint */}
-            <div className="flex justify-center">
-              <div className="grid grid-cols-5 gap-2 justify-items-center w-fit min-w-max">
+            <div className="flex w-full min-w-0 flex-col justify-center">
+              <div
+                ref={dialogRoofTypesScrollRef}
+                onScroll={dialogBar.onScroll}
+                className="roof-type-strip-scroll w-full max-w-full scroll-smooth [-webkit-overflow-scrolling:touch]"
+              >
+                <div className="mx-auto flex w-max flex-nowrap items-stretch gap-2.5">
                 {ROOF_TYPE_OPTIONS.map((opt) => {
                   const active = dialogType === opt.id
                   return (
                     <button
                       key={opt.id}
                       type="button"
-                      style={{ width: roofTypeTileWidthRem }}
+                      data-roof-type={opt.id}
+                      style={{
+                        width: roofTypeTileWidthRem,
+                        minWidth: roofTypeTileWidthRem,
+                        maxWidth: roofTypeTileWidthRem,
+                        boxSizing: 'border-box',
+                      }}
                       onClick={() => {
                         setDialogType(opt.id)
                         if (opt.id === '0_w') {
@@ -1395,9 +1624,9 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                           setDialogAngleStr(String(DEFAULT_ROOF_ANGLE))
                         }
                       }}
-                      className={`flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 border cursor-pointer transition ${
+                      className={`box-border flex shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg border px-1 py-1.5 transition ${
                         active
-                          ? 'border-[#FF9F0F] ring-1 ring-[#FF9F0F]/50 bg-[#FF9F0F]/10'
+                          ? 'border-[#E5B800] ring-1 ring-[#E5B800]/50 bg-[#E5B800]/10'
                           : 'border-white/15 hover:bg-white/5'
                       }`}
                     >
@@ -1407,13 +1636,20 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                         className="w-full h-14 sm:h-16 object-contain rounded-md bg-white ring-1 ring-black/10 pointer-events-none"
                         style={thumbFilter ? { filter: thumbFilter } : undefined}
                       />
-                      <span className="block w-full box-border text-[11px] sm:text-xs leading-tight text-center text-sand/90 px-1 sm:px-1.5 py-0.5 whitespace-nowrap">
+                      <span className="block w-full min-w-0 box-border hyphens-auto px-1 py-0.5 text-center text-[11px] leading-snug text-sand/90 [overflow-wrap:anywhere] sm:px-1.5 sm:text-xs">
                         {opt.labelDe}
                       </span>
                     </button>
                   )
                 })}
+                </div>
               </div>
+              <RoofTypeStripScrollBar
+                bar={dialogBar.bar}
+                onTrackMouseDown={dialogBar.onTrackMouseDown}
+                onThumbMouseDown={dialogBar.onThumbMouseDown}
+                roofUiVariant={roofUiVariant}
+              />
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button
@@ -1426,7 +1662,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
               <button
                 type="button"
                 onClick={confirmNewRoofDialog}
-                className="px-4 py-2 rounded-lg font-semibold text-black bg-[#FF9F0F] hover:bg-[#ffb03d]"
+                className="px-4 py-2 rounded-lg font-semibold text-white bg-[#E5B800] hover:bg-[#FFCF33]"
               >
                 Übernehmen
               </button>
@@ -1440,17 +1676,17 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
           <button
             type="button"
             onClick={handleConfirm}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#ffffff] shadow-lg bg-gradient-to-b from-[#e08414] to-[#f79116]"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#1a0f0a] shadow-md bg-gradient-to-b from-[#c9a800] to-[#E5B800] hover:brightness-110 transition-all"
           >
-            <Check size={18} />
+            <Check size={16} strokeWidth={2.25} />
             Dach bestätigen – weiter
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sand/90 border border-white/30 hover:bg-white/10"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-sand/90 border border-white/30 hover:bg-white/10 transition-all"
           >
-            <X size={18} />
+            <X size={16} strokeWidth={2.25} />
             Abbrechen
           </button>
         </div>

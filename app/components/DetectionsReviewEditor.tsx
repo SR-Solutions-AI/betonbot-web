@@ -20,6 +20,7 @@ import {
   X,
   Undo2,
   GripVertical,
+  Loader2,
 } from 'lucide-react'
 import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
 import {
@@ -898,17 +899,17 @@ export function DetectionsReviewEditor({
           }
         }}
         disabled={isConfirming}
-        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-[#1a0f0a] shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#c9a800] to-[#E5B800] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
+        className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#1a0f0a] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#c9a800] to-[#E5B800] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
       >
-        <Check size={18} />
+        <Check size={16} strokeWidth={2.25} />
         {isConfirming ? 'Speichern…' : 'Erkennung bestätigen – weiter'}
       </button>
       <button
         type="button"
         onClick={onCancel}
-        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sand/90 border border-white/30 hover:bg-white/10 transition-all"
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-sand/90 border border-white/30 hover:bg-white/10 transition-all"
       >
-        <X size={18} />
+        <X size={16} strokeWidth={2.25} />
         Abbrechen
       </button>
     </div>
@@ -916,6 +917,16 @@ export function DetectionsReviewEditor({
 
   return (
     <div className="relative w-full flex flex-col items-stretch gap-3 flex-1 min-h-0">
+      {isConfirming && (
+        <div
+          className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-3 rounded-xl bg-black/65 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="h-12 w-12 animate-spin text-[#E5B800]" aria-hidden />
+          <span className="text-sand text-sm font-medium px-4 text-center">Berechnung wird gestartet…</span>
+        </div>
+      )}
       {/*
         1fr | auto | 1fr: titlu + Werkzeuge rămân centrate pe lățimea completă; etajele sunt doar în coloana stângă.
       */}

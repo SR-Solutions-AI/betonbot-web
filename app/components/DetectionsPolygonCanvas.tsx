@@ -8,6 +8,8 @@ export type RoomPolygon = {
   points: Point[]
   roomType?: string
   roomName?: string
+  /** Abweichung von der zuletzt gespeicherten KI-Erkennung (Server: detections_review vs. detections_edited). */
+  editedInRun?: boolean
   /** true doar pentru „Raum gedämmt“ (zonă izolată sub acoperiș); lipsă/false = tratată ca neizolată la gedämmt */
   roomInsulated?: boolean
   /** Roof editor: pitch in degrees (0–60). */
@@ -23,6 +25,8 @@ export type DoorRect = {
   width_m?: number
   height_m?: number
   dimensionsEdited?: boolean
+  /** Abweichung von der KI-Erkennung (gespeicherte Bearbeitung). */
+  editedInRun?: boolean
 }
 
 type PolygonCanvasProps = {
@@ -351,7 +355,7 @@ export function DetectionsPolygonCanvas({
         ctx.closePath()
         ctx.fill()
         ctx.globalAlpha = 1
-        ctx.strokeStyle = selected ? '#FF9F0F' : useDimOthers ? 'rgba(255,255,255,0.35)' : ctx.fillStyle
+        ctx.strokeStyle = selected ? '#E5B800' : useDimOthers ? 'rgba(255,255,255,0.35)' : ctx.fillStyle
         ctx.lineWidth = selected ? 3 : useDimOthers ? 1.5 : 2
         ctx.stroke()
         const label = (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? `R${i}`).trim() || `R${i}`
@@ -381,7 +385,7 @@ export function DetectionsPolygonCanvas({
         }
         if (tool === 'edit' && selected && pts.length > 0) {
           pts.forEach((p) => {
-            ctx.fillStyle = '#FF9F0F'
+            ctx.fillStyle = '#E5B800'
             ctx.beginPath()
             ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
             ctx.fill()
@@ -392,7 +396,7 @@ export function DetectionsPolygonCanvas({
         }
       })
       if (newPoints && newPoints.length > 0) {
-        ctx.strokeStyle = '#FF9F0F'
+        ctx.strokeStyle = '#E5B800'
         ctx.lineWidth = 2
         ctx.setLineDash([6, 4])
         ctx.beginPath()
@@ -404,7 +408,7 @@ export function DetectionsPolygonCanvas({
         ctx.stroke()
         ctx.setLineDash([])
         newPoints.forEach((p, vi) => {
-          ctx.fillStyle = vi === 0 ? '#22c55e' : '#FF9F0F'
+          ctx.fillStyle = vi === 0 ? '#22c55e' : '#E5B800'
           ctx.beginPath()
           ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
           ctx.fill()
@@ -426,7 +430,7 @@ export function DetectionsPolygonCanvas({
           ctx.closePath()
           ctx.fill()
           ctx.globalAlpha = 1
-          ctx.strokeStyle = highlightRoofSurfaceUnderlay ? 'rgba(255,159,15,0.85)' : 'rgba(255,255,255,0.28)'
+          ctx.strokeStyle = highlightRoofSurfaceUnderlay ? 'rgba(229,184,0,0.85)' : 'rgba(255,255,255,0.28)'
           ctx.lineWidth = highlightRoofSurfaceUnderlay ? 2.25 : 1.25
           ctx.stroke()
           if (highlightRoofSurfaceUnderlay && pts.length >= 3) {
@@ -451,13 +455,13 @@ export function DetectionsPolygonCanvas({
             const lx = ox + cx * s - boxW / 2
             const ly = oy + cy * s - boxH / 2
             ctx.fillStyle = 'rgba(0,0,0,0.82)'
-            ctx.strokeStyle = 'rgba(255,159,15,0.65)'
+            ctx.strokeStyle = 'rgba(229,184,0,0.65)'
             ctx.lineWidth = 1.25
             ctx.beginPath()
             ctx.rect(lx, ly, boxW, boxH)
             ctx.fill()
             ctx.stroke()
-            ctx.fillStyle = '#FF9F0F'
+            ctx.fillStyle = '#E5B800'
             ctx.fillText(label, ox + cx * s, oy + cy * s)
           }
         })
@@ -470,13 +474,13 @@ export function DetectionsPolygonCanvas({
         ctx.globalAlpha = selected ? 0.5 : 0.35
         ctx.fillRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
         ctx.globalAlpha = 1
-        ctx.strokeStyle = selected ? '#FF9F0F' : style.stroke
+        ctx.strokeStyle = selected ? '#E5B800' : style.stroke
         ctx.lineWidth = selected ? 3 : 2
         ctx.strokeRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
         if (tool === 'edit' && selected) {
           const corners: Point[] = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
           corners.forEach((p) => {
-            ctx.fillStyle = '#FF9F0F'
+            ctx.fillStyle = '#E5B800'
             ctx.beginPath()
             ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
             ctx.fill()
@@ -504,7 +508,7 @@ export function DetectionsPolygonCanvas({
           ctx.setLineDash([])
         }
         newPoints.forEach((p) => {
-          ctx.fillStyle = '#FF9F0F'
+          ctx.fillStyle = '#E5B800'
           ctx.beginPath()
           ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
           ctx.fill()

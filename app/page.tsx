@@ -463,7 +463,7 @@ function PricingSection() {
 
                  <div>
                     <div className="flex justify-center pt-8 md:pt-12 mb-6">
-                        <img src="/images/blueprint.png" alt="Mengen-Paket" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30" />
+                        <img src="/images/blueprint.png" alt="Mengen-Paket" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30 grayscale contrast-[1.05]" />
                     </div>
 
                     <h3 className="px-6 md:px-12 text-xl md:text-2xl font-bold text-[#E5B800] mb-4 text-center">Betonbot Mengen-Paket</h3>
@@ -511,7 +511,7 @@ function PricingSection() {
 
                  <div>
                     <div className="flex justify-center pt-8 md:pt-12 mb-6">
-                        <img src="/images/house.png" alt="Neubau" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30" />
+                        <img src="/images/house.png" alt="Neubau" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30 grayscale contrast-[1.05]" />
                     </div>
 
                     <h3 className="px-6 md:px-12 text-xl md:text-2xl font-bold text-[#E5B800] mb-4 text-center">Betonbot Neubau-Paket</h3>

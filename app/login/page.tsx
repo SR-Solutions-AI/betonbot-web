@@ -134,8 +134,8 @@ export default function LoginPage() {
         className="absolute inset-0 pointer-events-none opacity-[0.03] z-[2]"
         style={{
           backgroundImage: `
-            linear-gradient(rgba(255,159,15,.5) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,159,15,.5) 1px, transparent 1px)
+            linear-gradient(rgba(229,184,0,.45) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(229,184,0,.45) 1px, transparent 1px)
           `,
           backgroundSize: '48px 48px',
         }}
@@ -167,7 +167,7 @@ export default function LoginPage() {
         style={{
           backgroundImage: `
             linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0) 50%),
-            radial-gradient(120% 140% at 10% 0%, rgba(255,159,15,.08), transparent 50%)
+            radial-gradient(120% 140% at 10% 0%, rgba(229,184,0,.1), transparent 50%)
           `,
         }}
       >

@@ -633,7 +633,7 @@ export default function PreisdatenbankPage() {
                 disabled={saving || !hasUnsavedChanges}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold shadow-lg transition-all duration-200 ease-out text-base ${
                   hasUnsavedChanges
-                    ? 'bg-[#FF9F0F] hover:bg-[#e08e0d] text-white disabled:opacity-60 disabled:cursor-not-allowed'
+                    ? 'bg-[#E5B800] hover:bg-[#CC9900] text-white disabled:opacity-60 disabled:cursor-not-allowed'
                     : 'bg-transparent text-white border border-white cursor-not-allowed opacity-90'
                 }`}
               >
@@ -660,14 +660,14 @@ export default function PreisdatenbankPage() {
         <button
           type="button"
           onClick={() => setActiveCatalog('neubau')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#FF9F0F] text-white border-[#FF9F0F]' : 'border-white/20 text-white/90 hover:border-[#FF9F0F]/70'}`}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
         >
           Neubau
         </button>
         <button
           type="button"
           onClick={() => setActiveCatalog('dachstuhl')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#FF9F0F] text-white border-[#FF9F0F]' : 'border-white/20 text-white/90 hover:border-[#FF9F0F]/70'}`}
+          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
         >
           Dachstuhl
         </button>
@@ -723,7 +723,7 @@ export default function PreisdatenbankPage() {
               className="flex flex-col gap-4 md:gap-5 border-t border-white/10 pt-4 first:pt-4"
             >
               <header className="text-center">
-                <h2 className="text-xl md:text-2xl font-bold text-[#FF9F0F]">{section.title}</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-[#E5B800]">{section.title}</h2>
                 {stepSubtitle && (
                   <p className="text-white text-sm md:text-base mt-1">{stepSubtitle}</p>
                 )}
@@ -748,7 +748,7 @@ export default function PreisdatenbankPage() {
                           className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 flex flex-col min-w-0 w-full"
                         >
                           <div className="border-b border-white/10 pb-2 mb-2">
-                            <h3 className="text-sm font-semibold text-[#FF9F0F]">{displayPriceCardTitle(sub.title)}</h3>
+                            <h3 className="text-sm font-semibold text-[#E5B800]">{displayPriceCardTitle(sub.title)}</h3>
                             <p className="text-white/90 text-xs mt-0.5">{cardSubtitle(sub.title, displayCurrency, sub.subtitle)}</p>
                           </div>
                           <div className="grid grid-cols-1 gap-2">
@@ -772,7 +772,7 @@ export default function PreisdatenbankPage() {
                                   ) : (
                                     <>
                                       <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
                                       {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                     </>
                                   )}
@@ -804,12 +804,12 @@ export default function PreisdatenbankPage() {
                                     {adaptPriceUnit(sub.variables[0].unit, displayCurrency)}
                                   </span>
                                 ) : null}
-                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#FF9F0F] text-white text-sm">Übernehmen</button>
+                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#E5B800] text-white text-sm">Übernehmen</button>
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
                             )}
                             {canAddOptionsForFieldTag(sub.fieldTag) && !(addingAt?.sectionIndex === sectionIndex && addingAt?.subsectionIndex === subsectionIndex) && (
-                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#FF9F0F] hover:underline text-left w-full justify-start">
+                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left w-full justify-start">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
                             )}
@@ -824,7 +824,7 @@ export default function PreisdatenbankPage() {
                       style={{ gridColumn: 'span 2' }}
                     >
                       <div className="border-b border-white/10 pb-3 mb-3">
-                        <h3 className="text-base font-semibold text-[#FF9F0F]">Kamin / Ofen</h3>
+                        <h3 className="text-base font-semibold text-[#E5B800]">Kamin / Ofen</h3>
                         <p className="text-white/90 text-sm mt-1">{cardSubtitle('Kamin / Ofen', displayCurrency, null)}</p>
                       </div>
                       <div className="flex flex-col gap-6">
@@ -850,7 +850,7 @@ export default function PreisdatenbankPage() {
                                     ) : (
                                       <>
                                         <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
-                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
+                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
                                         {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                       </>
                                     )}
@@ -883,11 +883,11 @@ export default function PreisdatenbankPage() {
                                     {adaptPriceUnit(sub.variables[0].unit, displayCurrency)}
                                   </span>
                                 ) : null}
-                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#FF9F0F] text-white text-sm">Übernehmen</button>
+                                <button type="button" onClick={() => { const labelEl = document.getElementById(`add-label-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; const valueEl = document.getElementById(`add-value-${sectionIndex}-${subsectionIndex}`) as HTMLInputElement; if (labelEl && valueEl && sub.fieldTag) handleAddOption(sectionIndex, subsectionIndex, sub.fieldTag, labelEl.value, parseFloat(valueEl.value) || 0, sub.variables[0]?.unit ?? '') }} className="px-2 py-1 rounded bg-[#E5B800] text-white text-sm">Übernehmen</button>
                                 <button type="button" onClick={() => setAddingAt(null)} className="px-2 py-1 rounded border border-white/20 text-sand/80 text-sm">Abbrechen</button>
                               </div>
                             ) : canAddOptionsForFieldTag(sub.fieldTag) ? (
-                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#FF9F0F] hover:underline text-left">
+                              <button type="button" onClick={() => setAddingAt({ sectionIndex, subsectionIndex })} className="flex items-center gap-2 py-1 text-sm text-[#E5B800] hover:underline text-left">
                                 <Plus size={14} /> Option hinzufügen
                               </button>
                             ) : null}
@@ -902,7 +902,7 @@ export default function PreisdatenbankPage() {
                     style={item.sub.variables.length > 4 ? { gridColumn: 'span 2' } : undefined}
                   >
                     <div className="border-b border-white/10 pb-3 mb-3">
-                      <h3 className="text-base font-semibold text-[#FF9F0F]">
+                      <h3 className="text-base font-semibold text-[#E5B800]">
                         {displayPriceCardTitle(item.sub.title)}
                       </h3>
                       <p className="text-white/90 text-sm mt-1">
@@ -935,7 +935,7 @@ export default function PreisdatenbankPage() {
                                 {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => setEditingLabelId(v.id)}
-                                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#FF9F0F]"
+                                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]"
                                   title="Bezeichnung bearbeiten"
                                   aria-label="Bezeichnung bearbeiten"
                                 >
@@ -1009,7 +1009,7 @@ export default function PreisdatenbankPage() {
                                   item.sub.variables[0]?.unit ?? '€'
                                 )
                             }}
-                            className="px-3 py-1.5 rounded bg-[#FF9F0F] text-white text-sm font-medium"
+                            className="px-3 py-1.5 rounded bg-[#E5B800] text-white text-sm font-medium"
                           >
                             Übernehmen
                           </button>
@@ -1025,7 +1025,7 @@ export default function PreisdatenbankPage() {
                         <button
                           type="button"
                           onClick={() => setAddingAt({ sectionIndex, subsectionIndex: item.subsectionIndex })}
-                          className={`flex items-center gap-2 py-2 text-sm md:text-base text-[#FF9F0F] hover:underline text-left w-full justify-start ${item.sub.variables.length > 4 ? 'col-span-2' : ''}`}
+                          className={`flex items-center gap-2 py-2 text-sm md:text-base text-[#E5B800] hover:underline text-left w-full justify-start ${item.sub.variables.length > 4 ? 'col-span-2' : ''}`}
                         >
                           <Plus size={16} /> Option hinzufügen
                         </button>

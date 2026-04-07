@@ -144,6 +144,19 @@ html .themed-scroll::-webkit-scrollbar-thumb:hover,
   transform: translateX(-1px);
 }
 
+/* Roof editor — bandă tipuri: fără scrollbar nativ; bară custom în React */
+.roof-type-strip-scroll {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.roof-type-strip-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* Preisdatenbank: scrollbar colorat (override) */
 .preisdatenbank-scroll {
   scrollbar-width: thin;
@@ -190,6 +203,10 @@ html .themed-scroll::-webkit-scrollbar-thumb:hover,
   gap: 12px;
   background: var(--color-wizard-area);  /* același gri ca fundalul GIF-ului houseblueprint */
 }
+.wizard-wrap--solo{
+  grid-template-rows: 1fr;
+  gap: 0;
+}
 
 .wizard-steps--seps { gap: 20px; }
 .wizard-steps--seps .wizard-step { position: relative; margin-right: 10px; padding-right: 10px; }
@@ -212,7 +229,8 @@ html .themed-scroll::-webkit-scrollbar-thumb:hover,
 .wizard-step.skipped .wizard-label{ opacity: .55; color: rgba(255,255,255,.5); }
 
 /* Stage */
-.wizard-stage{ min-height: 0; display: flex; align-items: center; justify-content: center; }
+/* Stage — StepWizard: flex-col + items-center pe card; copii cu w-full/self-stretch rămân pe lățime completă */
+.wizard-stage{ min-height: 0; display: flex; }
 
 /* Card – mai mic: lățime, padding, gap; max-height ca body-ul să poată face scroll */
 .wizard-card{
@@ -566,4 +584,9 @@ html .themed-scroll::-webkit-scrollbar-thumb:hover,
     --grid: 24px;
     --grid-line: rgba(255,255,255,.10);
   }
+}
+
+/* Gebäudestruktur: /builder PNGs — portocaliu → galben; rotație mică + saturație moderată (altfel tentă verzuie) */
+.betonbot-building-structure-illus img {
+  filter: hue-rotate(16deg) saturate(1.06) brightness(1.04);
 }

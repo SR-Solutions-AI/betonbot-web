@@ -151,7 +151,7 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
       setItems([])
       setApiError(
         isNetwork
-          ? 'API nicht erreichbar. Bitte Backend starten: cd betonbot-api && npm run start:dev'
+          ? 'API nicht erreichbar. Bitte Backend starten: cd holzbot-api && npm run start:dev'
           : (e?.message || 'Fehler beim Laden')
       )
     }
@@ -564,7 +564,7 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
           return (
             <div
               key={it.id}
-              className={`group relative rounded-xl border overflow-hidden transition-all duration-150 ${isSelected ? 'border-[#E5B800] bg-[#E5B800]/10 shadow-[0_0_0_1px_rgba(255,159,15,0.3)]' : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/15'}`}
+              className={`group relative rounded-xl border overflow-hidden transition-all duration-150 ${isSelected ? 'border-[#E5B800] bg-[#E5B800]/10 shadow-[0_0_0_1px_rgba(229,184,0,0.35)]' : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/15'}`}
             >
               <button
                 type="button"

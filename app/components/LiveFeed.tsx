@@ -1186,6 +1186,7 @@ export default function LiveFeed() {
               window.dispatchEvent(new CustomEvent('offer:pdf-ready', { 
                 detail: { offerId: id, pdfUrl: url } 
               }))
+              window.dispatchEvent(new Event('tokens:refresh'))
             }
           } catch {}
         } else if (runStatus === 'running' && runIdFromHistory) {
@@ -1238,6 +1239,7 @@ export default function LiveFeed() {
               window.dispatchEvent(new CustomEvent('offer:pdf-ready', { 
                 detail: { offerId: id, pdfUrl: url } 
               }))
+              window.dispatchEvent(new Event('tokens:refresh'))
             } else {
               setPdfUrl(null)
               setComputing(false)
@@ -1749,6 +1751,7 @@ export default function LiveFeed() {
         window.dispatchEvent(new CustomEvent('offer:pdf-ready', {
           detail: { offerId: completion.offerId, pdfUrl: completion.pdfUrl }
         }))
+        window.dispatchEvent(new Event('tokens:refresh'))
         pendingCompletionRef.current = null
       }
       if (!instant) {
