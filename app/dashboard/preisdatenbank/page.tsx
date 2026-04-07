@@ -46,6 +46,22 @@ function slugFromLabel(label: string): string {
     .slice(0, 40) || 'option'
 }
 
+/** O singură intrare per price_key (ultima câștigă) – evită duplicate în același PATCH. */
+function dedupePendingNewOptions(
+  items: Array<{ field_tag: string; option_label: string; price: number }>
+): Array<{ field_tag: string; option_label: string; price: number }> {
+  const map = new Map<string, { field_tag: string; option_label: string; price: number }>()
+  for (const o of items) {
+    const ft = String(o.field_tag || '').trim()
+    const label = String(o.option_label || '').trim()
+    if (!ft || !label) continue
+    const k = `opt_${ft}_${slugFromLabel(label)}`
+    const price = typeof o.price === 'number' ? o.price : Number(o.price) || 0
+    map.set(k, { field_tag: ft, option_label: label, price })
+  }
+  return Array.from(map.values())
+}
+
 /** Elimină unitatea de măsură de la sfârșitul etichetei (ex. " (€/m²)", " (Faktor)") – afișăm doar numele variabilei. */
 function labelWithoutUnit(label: string): string {
   if (!label || typeof label !== 'string') return label
@@ -455,7 +471,7 @@ export default function PreisdatenbankPage() {
         labelUpdates?: Array<{ price_key: string; option_label: string }>
       } = { params }
       if (deletedKeys.length > 0) body.deleteKeys = deletedKeys
-      if (pendingNewOptions.length > 0) body.newOptions = pendingNewOptions
+      if (pendingNewOptions.length > 0) body.newOptions = dedupePendingNewOptions(pendingNewOptions)
       if (Object.keys(pendingLabelUpdates).length > 0) {
         body.labelUpdates = Object.entries(pendingLabelUpdates).map(([price_key, option_label]) => ({
           price_key,
