@@ -2,9 +2,22 @@
 import './globals.css'
 import type { Metadata } from 'next'
 
+const siteDescription =
+  'Betonbot erstellt automatisierte Mengenermittlungen und Kostenschätzungen für Bauprojekte – effizient, zuverlässig und praxisnah.'
+
 export const metadata: Metadata = {
   title: 'Betonbot',
-  description: 'Offers UI',
+  description: siteDescription,
+  openGraph: {
+    title: 'Betonbot',
+    description: siteDescription,
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Betonbot',
+    description: siteDescription,
+  },
   icons: {
     icon: '/favicon.png',
   },
