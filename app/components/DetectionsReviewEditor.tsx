@@ -65,6 +65,7 @@ type EditorConstraints = {
   allowGarageDoor: boolean
   allowWintergartenRoomType: boolean
   allowBalkonRoomType: boolean
+  allowRoofWindows: boolean
 }
 
 function mergeEditorConstraints(raw: Partial<EditorConstraints> | undefined | null): EditorConstraints {
@@ -73,6 +74,7 @@ function mergeEditorConstraints(raw: Partial<EditorConstraints> | undefined | nu
     allowGarageDoor: raw?.allowGarageDoor !== false,
     allowWintergartenRoomType: raw?.allowWintergartenRoomType !== false,
     allowBalkonRoomType: raw?.allowBalkonRoomType !== false,
+    allowRoofWindows: raw?.allowRoofWindows !== false,
   }
 }
 
@@ -399,11 +401,11 @@ export function DetectionsReviewEditor({
     const c = editorConstraints
     return ALL_ROOM_TYPE_OPTIONS.filter((opt) => {
       if (opt === 'Raum gedämmt' && !c.allowInsulatedRooms) return false
-      if (opt === 'Wintergarten' && !c.allowWintergartenRoomType) return false
-      if (opt === 'Balkon' && !c.allowBalkonRoomType) return false
+      if (opt === 'Wintergarten' && !roofOnlyOffer && !c.allowWintergartenRoomType) return false
+      if (opt === 'Balkon' && !roofOnlyOffer && !c.allowBalkonRoomType) return false
       return true
     })
-  }, [editorConstraints])
+  }, [editorConstraints, roofOnlyOffer])
 
   const allowedDoorTypes = useMemo(
     () => ALL_DOOR_TYPES.filter((t) => t !== 'garage_door' || editorConstraints.allowGarageDoor),
@@ -415,6 +417,23 @@ export function DetectionsReviewEditor({
       setNewDoorType('door')
     }
   }, [editorConstraints.allowGarageDoor, newDoorType])
+
+  useEffect(() => {
+    if (editorConstraints.allowRoofWindows) return
+    setTabPerPlan((prev) => {
+      let changed = false
+      const next: Record<number, ReviewTab> = { ...prev }
+      for (const key of Object.keys(next)) {
+        const idx = Number(key)
+        if (!Number.isFinite(idx)) continue
+        if (next[idx] === 'roof_windows') {
+          next[idx] = 'roof'
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [editorConstraints.allowRoofWindows])
 
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
@@ -439,9 +458,10 @@ export function DetectionsReviewEditor({
     (planIdx: number): ReviewTab => {
       const raw = tabPerPlan[planIdx] ?? 'rooms'
       if (roofOnlyOffer && raw === 'doors') return 'rooms'
+      if (!editorConstraints.allowRoofWindows && raw === 'roof_windows') return 'roof'
       return raw
     },
-    [roofOnlyOffer, tabPerPlan],
+    [roofOnlyOffer, tabPerPlan, editorConstraints.allowRoofWindows],
   )
   const setTabForPlan = useCallback((planIdx: number, t: ReviewTab) => {
     setTabPerPlan((prev) => ({ ...prev, [planIdx]: t }))
@@ -493,8 +513,11 @@ export function DetectionsReviewEditor({
               type: normalizeDoorType(d.type),
             })), typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null),
           }))
+          const sanitizeConstraints: EditorConstraints = roofOnlyOffer
+            ? { ...constraints, allowWintergartenRoomType: true, allowBalkonRoomType: true }
+            : constraints
           const sanitized = normalized.map((p) => {
-            const { rooms, doors } = sanitizeRoomsAndDoorsAgainstConstraints(p.rooms, p.doors, constraints)
+            const { rooms, doors } = sanitizeRoomsAndDoorsAgainstConstraints(p.rooms, p.doors, sanitizeConstraints)
             return { ...p, rooms, doors }
           })
           lastPlans = sanitized
@@ -528,7 +551,7 @@ export function DetectionsReviewEditor({
     }
     void fetchWithRetry()
     return () => { cancelled = true }
-  }, [offerId, images.length])
+  }, [offerId, images.length, roofOnlyOffer])
 
   const detSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveInFlightRef = useRef<Promise<boolean> | null>(null)
@@ -864,11 +887,14 @@ export function DetectionsReviewEditor({
         const curSurface: RoofSurfaceTab = curMain === 'roof_windows' ? 'windows' : 'surfaces'
         const next =
           typeof tabOrUpdater === 'function' ? tabOrUpdater(curSurface) : tabOrUpdater
+        if (!editorConstraints.allowRoofWindows && next === 'windows') {
+          return { ...prev, [planIdx]: 'roof' }
+        }
         const nextReview: ReviewTab = next === 'windows' ? 'roof_windows' : 'roof'
         return { ...prev, [planIdx]: nextReview }
       })
     },
-    [planIndexClamped],
+    [planIndexClamped, editorConstraints.allowRoofWindows],
   )
 
   const handleUndo = useCallback(() => {
@@ -1400,6 +1426,7 @@ export function DetectionsReviewEditor({
                       <Home size={14} strokeWidth={2} />
                       <span>Dach</span>
                     </button>
+                    {editorConstraints.allowRoofWindows && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1414,6 +1441,7 @@ export function DetectionsReviewEditor({
                       <AppWindow size={14} strokeWidth={2} />
                       <span>Dachfenster</span>
                     </button>
+                    )}
                   </div>
                 </div>
                 )}
