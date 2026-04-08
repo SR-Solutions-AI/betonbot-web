@@ -17,7 +17,6 @@ const ORDER_FORM_URL = '/documents/bestellformular.pdf'
 const BENEFITS_IMAGE_URL = '/images/second-bg.png'
 const TESTIMONIAL_IMAGE_URL = '/images/testimonial.png'
 const TESTIMONIAL_ABSTRACT_URL = '/images/second-bg.png'
-const BETON_ICON_URL = '/images/beton-icon.png'
 const PROBLEM_BROWN = '#8B4513';
 
 // --- ANIMATION VARIANTS ---
@@ -85,7 +84,14 @@ function FeatureSection() {
         </motion.div>
 
         {/* CENTER - PDF */}
-        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={scaleIn} className="relative flex justify-center order-2 lg:order-2 my-4 lg:my-0">
+        <motion.div
+          id="pdf-previews"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-50px" }}
+          variants={scaleIn}
+          className="relative flex justify-center order-2 lg:order-2 my-4 lg:my-0 scroll-mt-24 md:scroll-mt-28"
+        >
           {/* Blob PDF mare */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[160%] h-[160%] bg-[#E5B800]/10 blur-3xl rounded-full" />
           
@@ -667,10 +673,6 @@ export default function LandingPage() {
         {/* Abstract Image Background */}
         <motion.div initial={{ opacity: 0, scale: 1.1 }} animate={{ opacity: 0.5, scale: 1 }} transition={{ duration: 2 }} className="absolute right-0 top-0 h-[50%] md:h-[80%] w-full md:w-[65%] bg-no-repeat z-0 pointer-events-none" style={{ backgroundImage: `url(${BACKGROUND_IMAGE_URL})`, backgroundSize: '92%', backgroundPosition: 'top right' }} />
 
-        <div className="absolute top-6 left-6 md:top-10 md:left-10 z-30">
-          <motion.a whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} href="/login" className="bg-[#E5B800] hover:bg-[#E5B800]/80 transition text-white font-bold flex gap-2 px-4 py-2 md:px-6 md:py-2.5 rounded-lg shadow-xl shadow-[#E5B800]/20 text-sm md:text-base"><LogIn size={20} className="md:w-6 md:h-6" /> Log in</motion.a>
-        </div>
-
         {/* UPDATE: Padding minim sus pe mobil (pt-12) */}
         <div className="lg:mt-0 relative z-20 w-full flex-grow flex flex-col lg:flex-row items-center justify-between px-6 md:px-16 sm:mt-25 lg:px-24 pt-12 pb-12 md:pt-32 md:pb-20">
             <div className="flex flex-col items-center lg:items-start gap-4 md:gap-8 max-w-xl text-center lg:text-left">
@@ -681,8 +683,22 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.8 }} className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 mt-4 md:mt-6 w-full sm:w-auto">
-                <a href="/#features" className="bg-[#E5B800] hover:bg-[#E5B800]/80 transition text-white font-bold text-base md:text-lg py-3 px-6 md:py-4 md:px-5 rounded-2xl flex items-center justify-center gap-3 shadow-xl transform hover:scale-105 hover:-translate-y-1 duration-300 w-full sm:w-auto"><img src={BETON_ICON_URL} className="w-8 h-8 md:w-10 md:h-10 object-contain" alt="" /> Jetzt loslegen</a>
-                 <a href={PDF_URL} target="_blank" rel="noopener noreferrer" className="text-white hover:text-[#E5B800] transition font-bold text-lg md:text-xl flex items-center justify-center gap-3 border-2 border-white/20 hover:border-[#E5B800]/50 px-6 py-3 md:px-8 md:py-4 rounded-2xl w-full sm:w-auto"><ArrowRight size={24} /> PDF Beispielangebot</a>
+                <motion.a
+                  href="/login"
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="bg-[#E5B800] hover:bg-[#E5B800]/80 transition text-white font-bold text-base md:text-lg py-3 px-6 md:py-4 md:px-5 rounded-2xl flex items-center justify-center gap-3 shadow-xl duration-300 w-full sm:w-auto"
+                >
+                  <LogIn size={24} className="md:w-7 md:h-7 shrink-0" />
+                  Log in
+                </motion.a>
+                <a
+                  href="/#pdf-previews"
+                  className="text-white hover:text-[#E5B800] transition font-bold text-lg md:text-xl flex items-center justify-center gap-3 border-2 border-white/20 hover:border-[#E5B800]/50 px-6 py-3 md:px-8 md:py-4 rounded-2xl w-full sm:w-auto"
+                >
+                  <ArrowRight size={24} />
+                  PDF Beispielangebot
+                </a>
               </motion.div>
             </div>
             

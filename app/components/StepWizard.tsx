@@ -24,6 +24,10 @@ type Errors = Record<string, string | undefined>
 // Timpul minim (în ms) pentru care afișăm animația de loading/progres
 const MIN_ANIMATION_TIME = 5000;
 
+/** Preview-uri modale „Angebot bearbeiten” (`public/images/btnform.png`, `btneditor.png`). */
+const EDIT_OFFER_DLG_IMG_FORM = '/images/btnform.png'
+const EDIT_OFFER_DLG_IMG_EDITOR = '/images/btneditor.png'
+
 /** Etape care apar în log după ce utilizatorul a confirmat editorul de detecții (refresh: nu mai redeschidem editorul). */
 const STAGES_AFTER_DETECTIONS_REVIEW = new Set([
   'scale_flood',
@@ -2945,7 +2949,7 @@ export default function StepWizard() {
               }`}
             >
               <img
-                src="/images/btnform.png"
+                src={EDIT_OFFER_DLG_IMG_FORM}
                 alt="Formular"
                 className={`w-full max-h-[min(38vh,280px)] rounded-xl object-contain object-top bg-black/25 transition-all duration-200 ${
                   currentOfferMeasurementsOnly
@@ -2995,7 +2999,7 @@ export default function StepWizard() {
               }`}
             >
               <img
-                src="/images/btneditor.png"
+                src={EDIT_OFFER_DLG_IMG_EDITOR}
                 alt="Bearbeitungsfenster"
                 className={`w-full max-h-[min(38vh,280px)] rounded-xl object-contain object-top bg-black/25 transition-all duration-200 ${
                   editDlgDet
