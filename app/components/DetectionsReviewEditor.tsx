@@ -59,6 +59,27 @@ function roomInsulatedFromRoomPolygon(
   return resolvedType === 'Raum gedämmt'
 }
 
+/** Restricții din formular (API: detections-review-data). */
+type EditorConstraints = {
+  allowInsulatedRooms: boolean
+  allowGarageDoor: boolean
+  allowWintergartenRoomType: boolean
+  allowBalkonRoomType: boolean
+}
+
+function mergeEditorConstraints(raw: Partial<EditorConstraints> | undefined | null): EditorConstraints {
+  return {
+    allowInsulatedRooms: raw?.allowInsulatedRooms !== false,
+    allowGarageDoor: raw?.allowGarageDoor !== false,
+    allowWintergartenRoomType: raw?.allowWintergartenRoomType !== false,
+    allowBalkonRoomType: raw?.allowBalkonRoomType !== false,
+  }
+}
+
+const ALL_ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum gedämmt', 'Raum ungedämmt'] as const
+type RoomTypeOption = (typeof ALL_ROOM_TYPE_OPTIONS)[number]
+const FALLBACK_ROOM_TYPE = 'Raum ungedämmt'
+
 function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   if (!points?.length || points.length < 3) return points ?? []
   const out: Point[] = [points[0]]
@@ -85,6 +106,68 @@ type PlanData = {
 }
 
 type DoorType = 'door' | 'window' | 'sliding_door' | 'garage_door' | 'stairs'
+
+const DOOR_TYPE_LABELS_DE: Record<DoorType, string> = {
+  door: 'Tür',
+  window: 'Fenster',
+  sliding_door: 'Schiebetür',
+  garage_door: 'Garagentor',
+  stairs: 'Treppe',
+}
+const DOOR_TOOLBAR_ACTIVE: Record<DoorType, string> = {
+  door: 'bg-[#22c55e]/30 text-green-300 border border-green-400/50',
+  window: 'bg-blue-500/30 text-blue-200 border border-blue-400/50',
+  sliding_door: 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50',
+  garage_door: 'bg-purple-500/30 text-purple-200 border border-purple-400/50',
+  stairs: 'bg-orange-600/30 text-orange-200 border border-orange-500/50',
+}
+const ALL_DOOR_TYPES: DoorType[] = ['door', 'window', 'sliding_door', 'garage_door', 'stairs']
+
+function sanitizeRoomsAndDoorsAgainstConstraints(
+  rooms: RoomPolygon[],
+  doors: DoorRect[],
+  c: EditorConstraints,
+): { rooms: RoomPolygon[]; doors: DoorRect[] } {
+  const roomsOut = rooms.map((r) => {
+    const rt = (r.roomType ?? '').trim() || FALLBACK_ROOM_TYPE
+    if (!c.allowInsulatedRooms && (rt === 'Raum gedämmt' || r.roomInsulated === true)) {
+      const typeStr = FALLBACK_ROOM_TYPE
+      return {
+        ...r,
+        roomType: typeStr,
+        roomName: migrateRoomLabelDe(typeStr),
+        roomInsulated: false,
+      }
+    }
+    if (!c.allowWintergartenRoomType && rt === 'Wintergarten') {
+      const typeStr = FALLBACK_ROOM_TYPE
+      return {
+        ...r,
+        roomType: typeStr,
+        roomName: migrateRoomLabelDe(typeStr),
+        roomInsulated: roomInsulatedFromRoomPolygon({ ...r, roomType: typeStr }, typeStr),
+      }
+    }
+    if (!c.allowBalkonRoomType && rt === 'Balkon') {
+      const typeStr = FALLBACK_ROOM_TYPE
+      return {
+        ...r,
+        roomType: typeStr,
+        roomName: migrateRoomLabelDe(typeStr),
+        roomInsulated: roomInsulatedFromRoomPolygon({ ...r, roomType: typeStr }, typeStr),
+      }
+    }
+    return r
+  })
+  const doorsOut = doors.map((d) => {
+    if (!c.allowGarageDoor && normalizeDoorType(d.type) === 'garage_door') {
+      return { ...d, type: 'door' as DoorType }
+    }
+    return d
+  })
+  return { rooms: roomsOut, doors: doorsOut }
+}
+
 const round2 = (v: number) => Math.round(v * 100) / 100
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -279,6 +362,7 @@ export function DetectionsReviewEditor({
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null)
   const [newPolygonPoints, setNewPolygonPoints] = useState<Point[] | null>(null)
   const [newDoorType, setNewDoorType] = useState<DoorType>('door')
+  const [editorConstraints, setEditorConstraints] = useState<EditorConstraints>(() => mergeEditorConstraints(undefined))
   const [pendingNewRoomPoints, setPendingNewRoomPoints] = useState<Point[] | null>(null)
   const [pendingNewDoorBbox, setPendingNewDoorBbox] = useState<[number, number, number, number] | null>(null)
   const [pendingNewDoorType, setPendingNewDoorType] = useState<'window' | 'sliding_door' | null>(null)
@@ -311,8 +395,26 @@ export function DetectionsReviewEditor({
     setHistory((h) => [...h.slice(-(historyLimit - 1)), snap])
   }, [])
 
-  const ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum gedämmt', 'Raum ungedämmt'] as const
-  type RoomTypeOption = typeof ROOM_TYPE_OPTIONS[number]
+  const roomTypeOptions = useMemo((): RoomTypeOption[] => {
+    const c = editorConstraints
+    return ALL_ROOM_TYPE_OPTIONS.filter((opt) => {
+      if (opt === 'Raum gedämmt' && !c.allowInsulatedRooms) return false
+      if (opt === 'Wintergarten' && !c.allowWintergartenRoomType) return false
+      if (opt === 'Balkon' && !c.allowBalkonRoomType) return false
+      return true
+    })
+  }, [editorConstraints])
+
+  const allowedDoorTypes = useMemo(
+    () => ALL_DOOR_TYPES.filter((t) => t !== 'garage_door' || editorConstraints.allowGarageDoor),
+    [editorConstraints.allowGarageDoor],
+  )
+
+  useEffect(() => {
+    if (!editorConstraints.allowGarageDoor && newDoorType === 'garage_door') {
+      setNewDoorType('door')
+    }
+  }, [editorConstraints.allowGarageDoor, newDoorType])
 
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
@@ -327,18 +429,17 @@ export function DetectionsReviewEditor({
       ? ''
       : `${plansData.length}|${plansData.map((p) => `${Number(p.imageWidth) || 0}x${Number(p.imageHeight) || 0}`).join('|')}`
   const roofEmbeddedSeeds = useMemo((): Array<{ imageWidth: number; imageHeight: number }> | undefined => {
-    if (roofOnlyOffer || plansData.length === 0) return undefined
+    if (plansData.length === 0) return undefined
     return plansData.map((p) => ({
       imageWidth: Number(p.imageWidth) || 0,
       imageHeight: Number(p.imageHeight) || 0,
     }))
-  }, [roofOnlyOffer, plansDimKey])
+  }, [plansDimKey])
   const getTabForPlan = useCallback(
     (planIdx: number): ReviewTab => {
-      if (roofOnlyOffer) {
-        return tabPerPlan[planIdx] === 'roof_windows' ? 'roof_windows' : 'roof'
-      }
-      return tabPerPlan[planIdx] ?? 'rooms'
+      const raw = tabPerPlan[planIdx] ?? 'rooms'
+      if (roofOnlyOffer && raw === 'doors') return 'rooms'
+      return raw
     },
     [roofOnlyOffer, tabPerPlan],
   )
@@ -353,6 +454,7 @@ export function DetectionsReviewEditor({
     if (!offerId || images.length === 0) {
       setLoading(false)
       setPlansData([])
+      setEditorConstraints(mergeEditorConstraints(undefined))
       return
     }
     let cancelled = false
@@ -365,7 +467,9 @@ export function DetectionsReviewEditor({
             plans?: PlanData[]
             floorLabels?: string[]
             floorPlanOrder?: number[]
+            editorConstraints?: Partial<EditorConstraints>
           }
+          const constraints = mergeEditorConstraints(res.editorConstraints)
           const plans = Array.isArray(res?.plans) ? res.plans : []
           const normalized = plans.map((p) => ({
             ...p,
@@ -389,17 +493,22 @@ export function DetectionsReviewEditor({
               type: normalizeDoorType(d.type),
             })), typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null),
           }))
-          lastPlans = normalized
+          const sanitized = normalized.map((p) => {
+            const { rooms, doors } = sanitizeRoomsAndDoorsAgainstConstraints(p.rooms, p.doors, constraints)
+            return { ...p, rooms, doors }
+          })
+          lastPlans = sanitized
           if (cancelled) return
+          setEditorConstraints(constraints)
           setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
-          const nl = normalized.length
+          const nl = sanitized.length
           const apiPerm = nl > 0 && isValidFloorPlanPerm(res?.floorPlanOrder, nl) ? (res!.floorPlanOrder as number[]) : null
           const initialOrder = nl > 0 ? (apiPerm ?? Array.from({ length: nl }, (_, i) => i)) : []
           setFloorPlanOrder(initialOrder)
           setFloorOrderDraft(initialOrder)
           floorPlanOrderRef.current = initialOrder
-          if (normalized.length > 0 || attempt === 11) {
-            setPlansData(normalized)
+          if (sanitized.length > 0 || attempt === 11) {
+            setPlansData(sanitized)
             setLoading(false)
             return
           }
@@ -647,6 +756,7 @@ export function DetectionsReviewEditor({
   }, [])
 
   const handlePickDoorType = useCallback((doorType: DoorType) => {
+    if (doorType === 'garage_door' && !editorConstraints.allowGarageDoor) return
     if (selectedPolygonIndex === null || planIndexClamped >= plansData.length) return
     const plan = plansData[planIndexClamped]
     if (!plan || getTabForPlan(planIndexClamped) !== 'doors' || selectedPolygonIndex >= plan.doors.length) return
@@ -662,7 +772,7 @@ export function DetectionsReviewEditor({
       return out
     })
     setDoors(planIndexClamped, next)
-  }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors, pushHistory, getTabForPlan])
+  }, [selectedPolygonIndex, planIndexClamped, plansData, setDoors, pushHistory, getTabForPlan, editorConstraints.allowGarageDoor])
 
   /** Nur Fenster: Höhe in cm bearbeiten (Speicherung als m). */
   const handleSetSelectedWindowHeightCm = useCallback(
@@ -747,11 +857,7 @@ export function DetectionsReviewEditor({
       setTabPerPlan((prev) => {
         const planIdx = planIndexClamped
         const raw = prev[planIdx]
-        const curMain: ReviewTab = roofOnlyOffer
-          ? raw === 'roof_windows'
-            ? 'roof_windows'
-            : 'roof'
-          : (raw ?? 'rooms')
+        const curMain: ReviewTab = raw ?? 'rooms'
         if (curMain !== 'roof' && curMain !== 'roof_windows') {
           return prev
         }
@@ -762,7 +868,7 @@ export function DetectionsReviewEditor({
         return { ...prev, [planIdx]: nextReview }
       })
     },
-    [planIndexClamped, roofOnlyOffer],
+    [planIndexClamped],
   )
 
   const handleUndo = useCallback(() => {
@@ -874,16 +980,11 @@ export function DetectionsReviewEditor({
     setRooms(planIdx, plan.rooms.map((r, i) => i !== polyIndex ? r : { points: newPts }))
   }, [plansData, setRooms, pushHistory])
 
-  const showRoofWorkspace =
-    roofOnlyOffer || activeTab === 'roof' || activeTab === 'roof_windows'
+  const showRoofWorkspace = activeTab === 'roof' || activeTab === 'roof_windows'
   const showRoomsCanvas =
-    !roofOnlyOffer &&
-    activeTab !== 'roof' &&
-    activeTab !== 'roof_windows' &&
-    plansData.length > 0
+    plansData.length > 0 && activeTab !== 'roof' && activeTab !== 'roof_windows'
 
-  const showWerkzeuge =
-    !roofOnlyOffer || (!!offerId && roofImgs.length > 0 && !loading)
+  const showWerkzeuge = !loading && plansData.length > 0
 
   const reviewFooterActions = (
     <div className="shrink-0 flex flex-wrap items-center justify-center gap-2 px-2 pt-1 w-full">
@@ -932,7 +1033,7 @@ export function DetectionsReviewEditor({
       */}
       <div className="grid w-full shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-x-3 px-2 pt-1 pb-1 min-w-0">
         <div className="flex min-h-0 min-w-0 flex-col items-start justify-center gap-1 self-stretch">
-          {!loading && n > 1 && (plansData.length > 0 || roofOnlyOffer) && !roofOnlyOffer && (
+          {!loading && n > 1 && plansData.length > 0 && (
             <div className="flex w-fit max-w-full flex-col items-stretch gap-2">
               <div
                 className="flex w-fit max-w-full flex-col-reverse items-stretch gap-1"
@@ -1051,44 +1152,11 @@ export function DetectionsReviewEditor({
               )}
             </div>
           )}
-          {!loading && n > 1 && roofOnlyOffer && (
-            <div
-              className="flex w-fit max-w-full flex-col-reverse items-stretch gap-1"
-              role="tablist"
-              aria-label="Etage wählen"
-            >
-              {Array.from({ length: n }).map((_, i) => {
-                const label = displayFloorTabLabelDe(floorLabels[i] ?? `Plan ${i + 1}`)
-                const isActive = planIndexClamped === i
-                return (
-                  <button
-                    key={`floor-tab-roof-${i}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => {
-                      setPlanIndex(i)
-                      setSelectedPolygonIndex(null)
-                      setNewPolygonPoints(null)
-                      if (tool === 'add') setTool('select')
-                    }}
-                    className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-left whitespace-nowrap transition-colors ${
-                      isActive
-                        ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50'
-                        : 'text-sand/80 border border-white/10 hover:bg-white/5'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-          )}
         </div>
         <div className="flex min-w-0 max-w-full flex-col items-center gap-3">
           <h2 className="text-white font-semibold text-base text-center max-w-2xl leading-snug mx-auto w-full">
             {roofOnlyOffer
-              ? 'Dach konfigurieren'
+              ? 'Grundriss (Räume), Dach und Öffnungen markieren'
               : 'Flächen und Elemente auswählen'}
           </h2>
 
@@ -1196,65 +1264,32 @@ export function DetectionsReviewEditor({
       {(tool === 'add' && activeTab === 'doors') && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
           <span className="text-sand/70 text-xs w-full text-center sm:w-auto">Element:</span>
-          <button
-            type="button"
-            onClick={() => setNewDoorType('door')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'door' ? 'bg-[#22c55e]/30 text-green-300 border border-green-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
-          >
-            Tür
-          </button>
-          <button
-            type="button"
-            onClick={() => setNewDoorType('window')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'window' ? 'bg-blue-500/30 text-blue-200 border border-blue-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
-          >
-            Fenster
-          </button>
-          <button
-            type="button"
-            onClick={() => setNewDoorType('sliding_door')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'sliding_door' ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
-          >
-            Schiebetür
-          </button>
-          <button
-            type="button"
-            onClick={() => setNewDoorType('garage_door')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'garage_door' ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
-          >
-            Garagentor
-          </button>
-          <button
-            type="button"
-            onClick={() => setNewDoorType('stairs')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === 'stairs' ? 'bg-orange-600/30 text-orange-200 border border-orange-500/50' : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
-          >
-            Treppe
-          </button>
+          {allowedDoorTypes.map((dt) => (
+            <button
+              key={dt}
+              type="button"
+              onClick={() => setNewDoorType(dt)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${newDoorType === dt ? DOOR_TOOLBAR_ACTIVE[dt] : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+            >
+              {DOOR_TYPE_LABELS_DE[dt]}
+            </button>
+          ))}
         </div>
       )}
       {tool === 'select' && activeTab === 'doors' && selectedPolygonIndex !== null && plansData[planIndexClamped]?.doors[selectedPolygonIndex] && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-2 py-1.5 flex-wrap">
           <span className="text-sand/70 text-xs">Typ:</span>
-          {(['door', 'window', 'sliding_door', 'garage_door', 'stairs'] as const).map((doorType) => {
-            const labels = { door: 'Tür', window: 'Fenster', sliding_door: 'Schiebetür', garage_door: 'Garagentor', stairs: 'Treppe' }
+          {allowedDoorTypes.map((doorType) => {
             const current = plansData[planIndexClamped]?.doors[selectedPolygonIndex]?.type ?? 'door'
             const isActive = normalizeDoorType(current) === doorType
-            const activeClasses: Record<string, string> = {
-              door: 'bg-[#22c55e]/30 text-green-300 border border-green-400/50',
-              window: 'bg-blue-500/30 text-blue-200 border border-blue-400/50',
-              sliding_door: 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50',
-              garage_door: 'bg-purple-500/30 text-purple-200 border border-purple-400/50',
-              stairs: 'bg-orange-600/30 text-orange-200 border border-orange-500/50',
-            }
             return (
               <button
                 key={doorType}
                 type="button"
                 onClick={() => handlePickDoorType(doorType)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive ? activeClasses[doorType] : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive ? DOOR_TOOLBAR_ACTIVE[doorType] : 'text-sand/70 border border-white/10 hover:bg-white/5'}`}
               >
-                {labels[doorType]}
+                {DOOR_TYPE_LABELS_DE[doorType]}
               </button>
             )
           })}
@@ -1303,65 +1338,7 @@ export function DetectionsReviewEditor({
             </div>
             <div className="shrink-0">{reviewFooterActions}</div>
           </div>
-        ) : roofOnlyOffer && offerId && roofImgs.length > 0 && !loading ? (
-          <div className="w-full flex-1 min-h-0 flex flex-col min-w-0 gap-2">
-            {showWerkzeuge && (
-              <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap w-full min-w-0">
-                <div className="flex gap-1 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTabForPlan(planIndexClamped, 'roof')
-                      setSelectedPolygonIndex(null)
-                      setNewPolygonPoints(null)
-                      if (tool === 'add') setTool('select')
-                      roofEditorRef.current?.roofApplyToolFromParent?.('select')
-                    }}
-                    className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${activeTab === 'roof' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
-                  >
-                    <Home size={14} strokeWidth={2} />
-                    <span>Dach</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTabForPlan(planIndexClamped, 'roof_windows')
-                      setSelectedPolygonIndex(null)
-                      setNewPolygonPoints(null)
-                      if (tool === 'add') setTool('select')
-                      roofEditorRef.current?.roofApplyToolFromParent?.('select')
-                    }}
-                    className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${activeTab === 'roof_windows' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
-                  >
-                    <AppWindow size={14} strokeWidth={2} />
-                    <span>Dachfenster</span>
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="w-full flex-1 min-h-0 min-w-0 flex flex-col">
-                <RoofReviewEditor
-                  key={offerId ? `roof-embed-${offerId}` : 'roof-embed'}
-                  ref={roofEditorRef}
-                  embedded
-                  chromeInParent
-                  dimsToolbarPortalTarget={roofDimsToolbarSlotEl}
-                  tool={tool}
-                  setTool={setTool}
-                  roofSurfaceTab={roofSurfaceTabForChild}
-                  setRoofSurfaceTab={setRoofSurfaceTabForEditor}
-                  embedPlanIndex={planIndexClamped}
-                  offerId={offerId}
-                  images={roofImgs}
-                  embeddedPlanSeeds={roofEmbeddedSeeds}
-                  layoutActive
-                  onConfirm={() => {}}
-                  onCancel={() => {}}
-                />
-            </div>
-            <div className="shrink-0">{reviewFooterActions}</div>
-          </div>
-        ) : plansData.length === 0 && !roofOnlyOffer ? (
+        ) : plansData.length === 0 && !loading ? (
           <div className="flex-1 min-h-0 flex flex-col w-full gap-2 overflow-y-auto overflow-x-hidden preisdatenbank-scroll">
             <div className="shrink-0 flex flex-col gap-2 w-full flex-1 min-h-0">
               <div className="flex flex-wrap gap-4 justify-center pb-1">
@@ -1385,10 +1362,10 @@ export function DetectionsReviewEditor({
             const plan = plansData[i]
             const imageUrlForPlan = getBaseImageUrl(i)
             const planTab = getTabForPlan(i)
-            if (!roofOnlyOffer && (!plan || !imageUrlForPlan)) return null
+            if (!plan || !imageUrlForPlan) return null
             return (
               <div className="w-full flex flex-col flex-1 min-h-0 min-w-0 gap-1.5">
-                {!roofOnlyOffer && plan && imageUrlForPlan && (
+                {plan && imageUrlForPlan && (
                 <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap w-full min-w-0">
                   <div className="flex gap-1 flex-wrap justify-end">
                     <button
@@ -1399,6 +1376,7 @@ export function DetectionsReviewEditor({
                       <LayoutGrid size={14} strokeWidth={2} />
                       <span>Räume</span>
                     </button>
+                    {!roofOnlyOffer && (
                     <button
                       type="button"
                       onClick={() => { setTabForPlan(i, 'doors'); setSelectedPolygonIndex(null); setNewPolygonPoints(null); if (tool === 'add') setTool('select') }}
@@ -1407,6 +1385,7 @@ export function DetectionsReviewEditor({
                       <DoorOpen size={14} strokeWidth={2} />
                       <span>Fenster / Türen</span>
                     </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -1447,7 +1426,7 @@ export function DetectionsReviewEditor({
                         {pendingNewRoomPoints ? (
                           <>
                             <span className="text-white text-sm font-medium w-full text-center">Raumart:</span>
-                            {ROOM_TYPE_OPTIONS.map((opt) => (
+                            {roomTypeOptions.map((opt) => (
                               <button
                                 key={opt}
                                 type="button"
@@ -1497,7 +1476,7 @@ export function DetectionsReviewEditor({
                         ) : roomTypePopoverIndex !== null ? (
                           <>
                             <span className="text-white text-sm font-medium w-full text-center">Raumtyp ändern:</span>
-                            {ROOM_TYPE_OPTIONS.map((opt) => (
+                            {roomTypeOptions.map((opt) => (
                               <button
                                 key={opt}
                                 type="button"
@@ -1585,7 +1564,7 @@ export function DetectionsReviewEditor({
                     />
                   </div>
                 )}
-                {!roofOnlyOffer && planTab === 'doors' && (
+                {planTab === 'doors' && (
                   <div className="shrink-0 rounded-xl border border-[#E5B800]/40 bg-black/25 p-2">
                     <p className="text-sand/80 text-xs font-normal leading-snug text-center">
                       Maße aus Planmaßstab. Fenster: Höhe beim Anlegen eingeben. Schiebetüren: Höhe fix 2,00 m, Breite aus der langen Seite.
