@@ -4,15 +4,28 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { motion, Variants } from 'framer-motion'
-import { LogIn, ArrowRight, Hammer, XCircle, CheckCircle2, FileText, Clock, TrendingUp, Shield, Users, Briefcase, Download, Check, Plus, Lightbulb, Mail, Play, Pause, RotateCcw } from 'lucide-react'
+import { LogIn, ArrowRight, Hammer, XCircle, CheckCircle2, FileText, Clock, TrendingUp, Shield, Users, Briefcase, Download, Check, Plus, Lightbulb, Mail, Play, Pause, RotateCcw, SkipBack, SkipForward } from 'lucide-react'
 
 // --- CONFIG ---
 const BACKGROUND_IMAGE_URL = '/images/landing-bg.png'
 const PRICING_BG_URL = '/images/construction-site.jpg' 
 const VIDEO_URL = '/videos/intro-video.mp4'
 const LOGO_IMAGE_URL = '/logo.png'
-const PDF_EXAMPLE_IMAGE = '/images/example-pdf-preview.png'
-const PDF_URL = '/projekt.pdf'
+/** Exemple PDF din public – servite prin /api/sample-pdf/* cu titlu BTN-2026-0072 (ca holzbot). */
+const PDF_PREVIEWS = [
+  {
+    image: '/angebot.png',
+    href: '/api/sample-pdf/angebot',
+    alt: 'Angebot PDF Vorschau',
+    buttonLabel: 'Angebot ansehen',
+  },
+  {
+    image: '/mengenermittlung.png',
+    href: '/api/sample-pdf/mengenermittlung',
+    alt: 'Mengenermittlung PDF Vorschau',
+    buttonLabel: 'Mengenermittlung ansehen',
+  },
+] as const
 const ORDER_FORM_URL = '/documents/bestellformular.pdf'
 const BENEFITS_IMAGE_URL = '/images/second-bg.png'
 const TESTIMONIAL_IMAGE_URL = '/images/testimonial.png'
@@ -59,7 +72,7 @@ function FeatureSection() {
       {/* UPDATE: Blob GIGANTIC pe mobil (180vw) */}
       <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ duration: 1.5 }} className="absolute top-20 left-[-20%] w-[180vw] h-[180vw] md:w-[500px] md:h-[500px] bg-[#E5B800]/5 blur-[80px] md:blur-[120px] rounded-full pointer-events-none" />
 
-      <div className="relative z-10 max-w-[1500px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-x-20 gap-y-12 items-center px-6 md:px-8">
+      <div className="relative z-10 max-w-[1700px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-x-8 xl:gap-x-10 gap-y-12 items-center px-1 md:px-2">
         {/* LEFT - PROBLEM */}
         <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={fadeInLeft} className="flex flex-col gap-6 md:gap-8 p-6 md:p-8 rounded-3xl border border-white/5 bg-white/5 backdrop-blur-sm shadow-2xl relative order-1 lg:order-1">
           <div className={`absolute -left-2 top-10 w-1 h-20 rounded-full bg-[${PROBLEM_BROWN}]`} />
@@ -85,23 +98,30 @@ function FeatureSection() {
 
         {/* CENTER - PDF */}
         <motion.div
-          id="pdf-previews"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-50px" }}
           variants={scaleIn}
-          className="relative flex justify-center order-2 lg:order-2 my-4 lg:my-0 scroll-mt-24 md:scroll-mt-28"
+          className="relative flex justify-center order-2 lg:order-2 my-4 lg:my-0"
         >
-          {/* Blob PDF mare */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[160%] h-[160%] bg-[#E5B800]/10 blur-3xl rounded-full" />
-          
-          <div className="relative w-full max-w-sm md:max-w-md group cursor-pointer">
-            {/* Imaginea PDF */}
-            <img src={PDF_EXAMPLE_IMAGE} alt="Beispiel PDF" className="rounded-2xl shadow-2xl border-4 border-white/10 w-full h-auto" />
-            
-            {/* BUTON PDF - ACUM VIZIBIL MEREU (Am scos opacity-0 si translate) */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <a href={PDF_URL} target="_blank" rel="noopener noreferrer" className="bg-[#E5B800] hover:bg-[#E5B800]/90 text-white font-bold text-base md:text-lg py-3 px-6 md:py-4 md:px-8 rounded-xl flex items-center gap-3 shadow-xl transition-transform duration-300 hover:scale-105">Beispiel PDF ansehen <ArrowRight size={20} /></a>
+          <div className="relative w-full max-w-3xl">
+            <div id="pdf-previews" className="grid grid-cols-1 md:grid-cols-2 gap-5 scroll-mt-24 md:scroll-mt-28">
+              {PDF_PREVIEWS.map((preview) => (
+                <div key={preview.href} className="relative group cursor-pointer">
+                  <img src={preview.image} alt={preview.alt} className="rounded-2xl shadow-2xl border-4 border-white/10 w-full h-auto" />
+                  <div className="absolute inset-0 flex items-center justify-center px-3">
+                    <a
+                      href={preview.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-[#E5B800] hover:bg-[#E5B800]/90 text-white font-bold text-sm md:text-base py-3 px-4 md:py-3.5 md:px-5 rounded-xl flex items-center gap-2 shadow-xl transition-transform duration-300 hover:scale-105 text-center"
+                    >
+                      {preview.buttonLabel} <ArrowRight size={18} />
+                    </a>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </motion.div>
@@ -653,6 +673,14 @@ export default function LandingPage() {
     }
   }
 
+  const seekBy = (deltaSeconds: number) => {
+    if (!videoRef.current) return
+    const video = videoRef.current
+    const duration = Number.isFinite(video.duration) ? video.duration : 0
+    const targetTime = Math.min(Math.max(video.currentTime + deltaSeconds, 0), duration || video.currentTime + deltaSeconds)
+    video.currentTime = targetTime
+  }
+
   if (loading) return null
 
   return (
@@ -697,7 +725,7 @@ export default function LandingPage() {
                   className="text-white hover:text-[#E5B800] transition font-bold text-lg md:text-xl flex items-center justify-center gap-3 border-2 border-white/20 hover:border-[#E5B800]/50 px-6 py-3 md:px-8 md:py-4 rounded-2xl w-full sm:w-auto"
                 >
                   <ArrowRight size={24} />
-                  PDF Beispielangebot
+                  PDF-Beispiele
                 </a>
               </motion.div>
             </div>
@@ -710,8 +738,10 @@ export default function LandingPage() {
                   {/* Custom Controls - SNAPPY HOVER FIX */}
                   {/* Am adaugat transform-gpu pentru hardware acceleration si am scos transition-all */}
                   <div className="absolute bottom-4 right-4 flex items-center gap-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <button onClick={togglePlay} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}</button>
-                    <button onClick={restartVideo} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label="Restart Video"><RotateCcw className="w-5 h-5" /></button>
+                    <button type="button" onClick={() => seekBy(-5)} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label="Zurueck 5 Sekunden"><SkipBack className="w-5 h-5" /></button>
+                    <button type="button" onClick={togglePlay} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}</button>
+                    <button type="button" onClick={restartVideo} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label="Restart Video"><RotateCcw className="w-5 h-5" /></button>
+                    <button type="button" onClick={() => seekBy(5)} className="bg-black/40 hover:bg-[#E5B800] backdrop-blur-xl border border-white/10 text-white p-3 rounded-full transition-colors transform-gpu duration-200 group/btn" aria-label="Vor 5 Sekunden"><SkipForward className="w-5 h-5" /></button>
                   </div>
               </div>
             </motion.div>

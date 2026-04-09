@@ -274,7 +274,18 @@ type TextItem = { kind: 'text'; stage: string; role: 'ai'|'formula'|'rezultat'; 
 type SpinnerItem = { kind: 'spinner'; stage: string; __id: string }
 type ImageItem = { kind: 'image'; stage: string; files: FeedFile[]; __id: string }
 type BreakItem = { kind: 'break'; stage: string; __id: string }
-type CongratsItem = { kind: 'congrats'; stage: 'final'; pdfUrl: string; offerId: string; adminPdfUrl?: string | null; canDownloadAdminPdf?: boolean; roofMeasurementsPdfUrl?: string | null; __id: string }
+type CongratsItem = {
+  kind: 'congrats'
+  stage: 'final'
+  pdfUrl: string
+  offerId: string
+  adminPdfUrl?: string | null
+  canDownloadAdminPdf?: boolean
+  roofMeasurementsPdfUrl?: string | null
+  /** Nur Maß-/Mengen-PDF (kein Angebots-PDF). */
+  measurementsOnlyOffer?: boolean
+  __id: string
+}
 type SyntheticItem = TextItem | SpinnerItem | ImageItem | BreakItem | CongratsItem
 type Group = { id: string; stage: string; startedAt: string; title: string; items: SyntheticItem[]; instant?: boolean }
 type Row = { kind: 'group'; id: string; group: Group } | { kind: 'gap'; id: string }
@@ -431,15 +442,22 @@ async function downloadPdfWithRefresh(
   offerId: string,
   currentUrl: string,
   kind: 'offer' | 'roofMeasurements' | 'admin' = 'offer',
+  isAllowed?: () => boolean,
 ) {
+  const allow = () => isAllowed == null || isAllowed()
+  if (!allow()) return
+
   let urlToUse = currentUrl
-  
+
   if (!currentUrl || currentUrl.startsWith('/') || !currentUrl.startsWith('http')) {
     try {
       const fresh = await apiFetch(`/offers/${offerId}/export-url`)
+      if (!allow()) return
       const freshUrl =
         kind === 'roofMeasurements'
-          ? (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
+          ? fresh?.measurements_only_offer === true
+            ? (fresh?.url || fresh?.download_url || fresh?.pdf)
+            : (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
           : kind === 'admin'
             ? (fresh?.adminPdf?.download_url || fresh?.adminPdf?.url)
             : (fresh?.url || fresh?.download_url || fresh?.pdf)
@@ -452,7 +470,13 @@ async function downloadPdfWithRefresh(
     if (!res.ok) throw new Error('fetch-failed')
     const disp = res.headers.get('content-disposition') || ''
     const nameMatch = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp)
-    const filename = nameMatch ? decodeURIComponent(nameMatch[1]) : 'angebot.pdf'
+    const defaultName =
+      kind === 'roofMeasurements'
+        ? 'mengenermittlung.pdf'
+        : kind === 'admin'
+          ? 'admin.pdf'
+          : 'angebot.pdf'
+    const filename = nameMatch ? decodeURIComponent(nameMatch[1]) : defaultName
     const blob = await res.blob()
     const objUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -463,34 +487,41 @@ async function downloadPdfWithRefresh(
     a.remove()
     URL.revokeObjectURL(objUrl)
   }
-  
-  const tryOpenAsLastResort = (url: string) => { 
-    window.open(url, '_blank', 'noopener,noreferrer') 
+
+  const tryOpenAsLastResort = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  try { 
-    await tryBlobDownload(urlToUse); 
-    return 
+  try {
+    if (!allow()) return
+    await tryBlobDownload(urlToUse)
+    return
   } catch {
     try {
-        const fresh = await apiFetch(`/offers/${offerId}/export-url`)
-        const freshUrl =
-          kind === 'roofMeasurements'
-            ? (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
-            : kind === 'admin'
-              ? (fresh?.adminPdf?.download_url || fresh?.adminPdf?.url)
-              : (fresh?.url || fresh?.download_url || fresh?.pdf)
-        if (freshUrl) { 
-            try { 
-                await tryBlobDownload(freshUrl); 
-                return 
-            } catch { 
-                tryOpenAsLastResort(freshUrl); 
-                return 
-            } 
+      const fresh = await apiFetch(`/offers/${offerId}/export-url`)
+      if (!allow()) return
+      const freshUrl =
+        kind === 'roofMeasurements'
+          ? fresh?.measurements_only_offer === true
+            ? (fresh?.url || fresh?.download_url || fresh?.pdf)
+            : (fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url)
+          : kind === 'admin'
+            ? (fresh?.adminPdf?.download_url || fresh?.adminPdf?.url)
+            : (fresh?.url || fresh?.download_url || fresh?.pdf)
+      if (freshUrl) {
+        try {
+          if (!allow()) return
+          await tryBlobDownload(freshUrl)
+          return
+        } catch {
+          if (!allow()) return
+          tryOpenAsLastResort(freshUrl)
+          return
         }
+      }
     } catch {}
-    
+
+    if (!allow()) return
     tryOpenAsLastResort(urlToUse)
   }
 }
@@ -670,7 +701,14 @@ export default function LiveFeed() {
   const allStagesCompleted = useRef(false)
 
   const queuedStages = useRef<Set<string>>(new Set())
-  const pendingCompletionRef = useRef<{ offerId: string; pdfUrl: string; adminPdfUrl?: string | null; canDownloadAdminPdf?: boolean; roofMeasurementsPdfUrl?: string | null } | null>(null)
+  const pendingCompletionRef = useRef<{
+    offerId: string
+    pdfUrl: string
+    adminPdfUrl?: string | null
+    canDownloadAdminPdf?: boolean
+    roofMeasurementsPdfUrl?: string | null
+    measurementsOnlyOffer?: boolean
+  } | null>(null)
   /** In history mode: first event created_at per stage (for correct timestamps) */
   const stageStartedAtRef = useRef<Record<string, string>>({})
   /** Când primim detections_review, afișăm editorul (input_resized + poligoane); nu afișăm alte detecții în feed */
@@ -1191,9 +1229,13 @@ export default function LiveFeed() {
             if (loadGen !== historyLoadGenRef.current) return
             const url = fresh?.url || fresh?.download_url || fresh?.pdf
             if (url) {
-              addCongrats(id, url)
-              window.dispatchEvent(new CustomEvent('offer:pdf-ready', { 
-                detail: { offerId: id, pdfUrl: url } 
+              addCongrats(id, url, {
+                measurementsOnlyOffer: fresh?.measurements_only_offer === true,
+                roofMeasurementsPdfUrl:
+                  fresh?.roofMeasurementsPdf?.download_url || fresh?.roofMeasurementsPdf?.url || null,
+              })
+              window.dispatchEvent(new CustomEvent('offer:pdf-ready', {
+                detail: { offerId: id, pdfUrl: url },
               }))
               window.dispatchEvent(new Event('tokens:refresh'))
             }
@@ -1395,11 +1437,13 @@ export default function LiveFeed() {
                 let realPdfUrl: string | null = finalPdfUrlRef.current || null
                 let adminPdfUrl: string | null = null
                 let roofMeasurementsPdfUrl: string | null = null
+                let measurementsOnlyFlag = false
                 try {
                   const exportRes = await apiFetch(`/offers/${offerId}/export-url`)
                   realPdfUrl = exportRes?.url || exportRes?.download_url || exportRes?.pdf || realPdfUrl
                   adminPdfUrl = exportRes?.adminPdf?.download_url || exportRes?.adminPdf?.url || null
                   roofMeasurementsPdfUrl = exportRes?.roofMeasurementsPdf?.download_url || exportRes?.roofMeasurementsPdf?.url || null
+                  measurementsOnlyFlag = exportRes?.measurements_only_offer === true
                 } catch (_) {}
                 pendingCompletionRef.current = {
                   offerId,
@@ -1407,6 +1451,7 @@ export default function LiveFeed() {
                   adminPdfUrl,
                   canDownloadAdminPdf,
                   roofMeasurementsPdfUrl,
+                  measurementsOnlyOffer: measurementsOnlyFlag,
                 }
               }
               if (STAGE_TO_SEQUENCE[stage] && !pendingStagesAfterRoofReviewRef.current.includes(stage)) {
@@ -1433,15 +1478,16 @@ export default function LiveFeed() {
               let realPdfUrl: string | null = null
               let adminPdfUrl: string | null = null
               let roofMeasurementsPdfUrl: string | null = null
-              if(offerId) {
+              let measurementsOnlyFlag = false
+              if (offerId) {
                 try {
-                    // Obține URL-ul pentru PDF-ul normal și admin PDF-ul dacă e disponibil
-                    const exportRes = await apiFetch(`/offers/${offerId}/export-url`)
-                    realPdfUrl = exportRes?.url || exportRes?.download_url || exportRes?.pdf
-                    adminPdfUrl = exportRes?.adminPdf?.download_url || exportRes?.adminPdf?.url || null
-                    roofMeasurementsPdfUrl = exportRes?.roofMeasurementsPdf?.download_url || exportRes?.roofMeasurementsPdf?.url || null
-                } catch(e) {
-                    console.warn("Failed to fetch export url on complete", e)
+                  const exportRes = await apiFetch(`/offers/${offerId}/export-url`)
+                  realPdfUrl = exportRes?.url || exportRes?.download_url || exportRes?.pdf
+                  adminPdfUrl = exportRes?.adminPdf?.download_url || exportRes?.adminPdf?.url || null
+                  roofMeasurementsPdfUrl = exportRes?.roofMeasurementsPdf?.download_url || exportRes?.roofMeasurementsPdf?.url || null
+                  measurementsOnlyFlag = exportRes?.measurements_only_offer === true
+                } catch (e) {
+                  console.warn('Failed to fetch export url on complete', e)
                 }
               }
 
@@ -1450,12 +1496,13 @@ export default function LiveFeed() {
               }
 
               if (offerId) {
-                pendingCompletionRef.current = { 
-                  offerId, 
+                pendingCompletionRef.current = {
+                  offerId,
                   pdfUrl: realPdfUrl || '',
                   adminPdfUrl: adminPdfUrl,
                   canDownloadAdminPdf: canDownloadAdminPdf,
-                  roofMeasurementsPdfUrl: roofMeasurementsPdfUrl
+                  roofMeasurementsPdfUrl: roofMeasurementsPdfUrl,
+                  measurementsOnlyOffer: measurementsOnlyFlag,
                 }
                 if (STAGE_TO_SEQUENCE[stage] && !queuedStages.current.has(stage)) {
                   queuedStages.current.add(stage)
@@ -1734,7 +1781,8 @@ export default function LiveFeed() {
           adminPdfUrl: completion.adminPdfUrl || null,
           canDownloadAdminPdf: completion.canDownloadAdminPdf || false,
           roofMeasurementsPdfUrl: completion.roofMeasurementsPdfUrl || null,
-          __id: 'final'
+          measurementsOnlyOffer: completion.measurementsOnlyOffer === true,
+          __id: 'final',
         }
         addItem(item)
         window.dispatchEvent(new CustomEvent('offer:pdf-ready', {
@@ -1876,22 +1924,36 @@ export default function LiveFeed() {
     }
   }
 
-  const addCongrats = (oid: string, url: string) => {
-     setGroups(prev => {
-         const clean = prev.filter(g => g.stage !== 'final')
-         const g: Group = { 
-           id: 'final', 
-           stage: 'final', 
-           startedAt: new Date().toISOString(), 
-           title: 'Fertig', 
-           items: [
-             { kind: 'congrats', stage: 'final', offerId: oid, pdfUrl: url, __id: 'final' } as CongratsItem
-           ]
-         }
-         const next = [...clean, g]
-         setRows(next.map(x => ({ kind: 'group', id: x.id, group: x })))
-         return next
-     })
+  const addCongrats = (
+    oid: string,
+    url: string,
+    opts?: { measurementsOnlyOffer?: boolean; roofMeasurementsPdfUrl?: string | null },
+  ) => {
+    const measOnly = opts?.measurementsOnlyOffer === true
+    const roofMeas = opts?.roofMeasurementsPdfUrl ?? null
+    setGroups((prev) => {
+      const clean = prev.filter((g) => g.stage !== 'final')
+      const g: Group = {
+        id: 'final',
+        stage: 'final',
+        startedAt: new Date().toISOString(),
+        title: 'Fertig',
+        items: [
+          {
+            kind: 'congrats',
+            stage: 'final',
+            offerId: oid,
+            pdfUrl: url,
+            roofMeasurementsPdfUrl: measOnly ? roofMeas || url : roofMeas,
+            measurementsOnlyOffer: measOnly,
+            __id: 'final',
+          } as CongratsItem,
+        ],
+      }
+      const next = [...clean, g]
+      setRows(next.map((x) => ({ kind: 'group', id: x.id, group: x })))
+      return next
+    })
   }
 
   return (
@@ -2002,12 +2064,17 @@ export default function LiveFeed() {
                                      </div>
                                      <div className="flex-1">
                                        <div className="text-[18px] font-semibold text-[#E5B800]">
-                                         Angebot erfolgreich erstellt!
+                                         {it.measurementsOnlyOffer
+                                           ? 'Mengenermittlung abgeschlossen'
+                                           : 'Angebot erfolgreich erstellt!'}
                                        </div>
                                        <div className="text-sm text-white/70 mt-1">
-                                         Das PDF ist bereit. Sie können die Dokumente über die Buttons unten herunterladen.
+                                         {it.measurementsOnlyOffer
+                                           ? 'Ihr Maß-/Mengen-PDF ist bereit. Es enthält keine Preisangaben.'
+                                           : 'Das PDF ist bereit. Sie können die Dokumente über die Buttons unten herunterladen.'}
                                        </div>
                                        <div className="mt-3 flex flex-col gap-2">
+                                        {!it.measurementsOnlyOffer && (
                                         <button
                                           onClick={async () => {
                                             let url: string | null = it.pdfUrl || null
@@ -2025,23 +2092,37 @@ export default function LiveFeed() {
                                         >
                                           <Download className="h-4 w-4" /> Angebot herunterladen (PDF)
                                         </button>
+                                        )}
+                                        {(it.measurementsOnlyOffer || it.roofMeasurementsPdfUrl || it.pdfUrl) && (
                                         <button
                                           onClick={async () => {
-                                            let url: string | null = it.roofMeasurementsPdfUrl || null
+                                            let url: string | null =
+                                              it.roofMeasurementsPdfUrl || (it.measurementsOnlyOffer ? it.pdfUrl : null) || null
                                             if (!url) {
                                               try {
-                                                const res = await apiFetch(`/offers/${it.offerId}/export-url`) as { roofMeasurementsPdf?: { download_url?: string; url?: string } }
-                                                url = res?.roofMeasurementsPdf?.download_url || res?.roofMeasurementsPdf?.url || null
+                                                const res = await apiFetch(`/offers/${it.offerId}/export-url`) as {
+                                                  measurements_only_offer?: boolean
+                                                  roofMeasurementsPdf?: { download_url?: string; url?: string }
+                                                  download_url?: string
+                                                  url?: string
+                                                  pdf?: string
+                                                }
+                                                if (res?.measurements_only_offer === true) {
+                                                  url = res?.url || res?.download_url || res?.pdf || null
+                                                } else {
+                                                  url = res?.roofMeasurementsPdf?.download_url || res?.roofMeasurementsPdf?.url || null
+                                                }
                                               } catch {
                                                 url = null
                                               }
                                             }
                                             if (url) downloadPdfWithRefresh(it.offerId, url, 'roofMeasurements')
                                           }}
-                                          className="btn-sun-secondary"
+                                          className={it.measurementsOnlyOffer ? 'btn-sun' : 'btn-sun-secondary'}
                                         >
                                           <Download className="h-4 w-4" /> Mengenermittlung herunterladen (PDF)
                                         </button>
+                                        )}
                                        </div>
                                      </div>
                                    </div>

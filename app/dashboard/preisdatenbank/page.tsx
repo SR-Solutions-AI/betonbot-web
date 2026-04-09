@@ -628,7 +628,7 @@ export default function PreisdatenbankPage() {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {saveMessage === 'success' && (
-              <span className="flex items-center gap-1.5 text-orange-400 text-base">
+              <span className="flex items-center gap-1.5 text-[#E5B800] text-base">
                 <CheckCircle2 size={18} /> Gespeichert
               </span>
             )}
@@ -1067,7 +1067,7 @@ export default function PreisdatenbankPage() {
   overflow-y: scroll !important;
   overflow-x: auto !important;
   scrollbar-width: thin !important;
-  scrollbar-color: #c9944a transparent !important;
+  scrollbar-color: #E5B800 transparent !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar {
   width: 10px !important;
@@ -1080,7 +1080,7 @@ export default function PreisdatenbankPage() {
   -webkit-appearance: none !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-thumb {
-  background: #c9944a !important;
+  background: #E5B800 !important;
   border-radius: 9999px !important;
   border: 2px solid transparent !important;
   background-clip: padding-box !important;
@@ -1088,7 +1088,7 @@ export default function PreisdatenbankPage() {
   min-height: 40px !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-thumb:hover {
-  background: #d8a25e !important;
+  background: #CC9900 !important;
 }
 .preisdatenbank-scroll::-webkit-scrollbar-corner {
   background: transparent !important;
@@ -1121,7 +1121,7 @@ export default function PreisdatenbankPage() {
             aria-label="Scroll"
           >
             <div
-              className="absolute left-0 w-full rounded-full bg-[#c9944a] hover:bg-[#d8a25e] min-h-[20px] cursor-grab active:cursor-grabbing"
+              className="absolute left-0 w-full rounded-full bg-[#E5B800] hover:bg-[#CC9900] min-h-[20px] cursor-grab active:cursor-grabbing"
               style={{
                 height: scrollThumb.height,
                 top: scrollThumb.top,
