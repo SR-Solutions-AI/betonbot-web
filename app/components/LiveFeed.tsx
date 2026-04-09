@@ -261,7 +261,15 @@ const SAFE_GAP_BETWEEN_ITEMS_MS = 0
 const EXTRA_MARGIN_AFTER_IMAGE_MS = 500
 
 /* ========= UTILS & COMPONENTS ========= */
-type FeedFile = { url: string; mime?: string; caption?: string; path?: string; name?: string }
+type FeedFile = {
+  url: string
+  mime?: string
+  caption?: string
+  path?: string
+  name?: string
+  storage_path?: string
+  storagePath?: string
+}
 type TextItem = { kind: 'text'; stage: string; role: 'ai'|'formula'|'rezultat'; text: string; __id: string }
 type SpinnerItem = { kind: 'spinner'; stage: string; __id: string }
 type ImageItem = { kind: 'image'; stage: string; files: FeedFile[]; __id: string }
@@ -274,6 +282,15 @@ type Row = { kind: 'group'; id: string; group: Group } | { kind: 'gap'; id: stri
 const isImage = (f: FeedFile) => (f.mime?.startsWith('image/') ?? true) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(f.url)
 const isPdf = (f: FeedFile) => f.mime?.includes('pdf') || /\.pdf(\?|$)/i.test(f.url)
 const isDisplayable = (f: FeedFile) => isImage(f)
+
+const shouldHideScaleWalls3dFromFeed = (stage: string, f: FeedFile): boolean => {
+  if (stage !== 'scale') return false
+  const raw = [f.url, f.path, f.name, f.caption, f.storage_path, f.storagePath]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return raw.includes('04_walls_3d.png')
+}
 
 const generateId = (prefix: string = '') => 
   `${prefix}${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 9)}`
@@ -917,11 +934,7 @@ export default function LiveFeed() {
                 const stage = match[1].trim()
                 const newFiles = ev.payload.files
                   .filter((f: any) => isDisplayable(f))
-                  .filter((f: FeedFile) => {
-                    if (stage !== 'scale' || flow !== 'dachstuhl') return true
-                    const raw = `${f.url || ''} ${f.path || ''} ${f.name || ''}`.toLowerCase()
-                    return !raw.includes('04_walls_3d.png')
-                  })
+                  .filter((f: FeedFile) => !shouldHideScaleWalls3dFromFeed(stage, f))
                 const existing = filesByStage.current[stage] || []
                 const uniqueNew = newFiles.filter((nf: FeedFile) => !existing.some((ex: FeedFile) => ex.url === nf.url))
                 if (uniqueNew.length > 0) {
@@ -1133,11 +1146,7 @@ export default function LiveFeed() {
               const stage = match[1].trim()
               const newFiles = ev.payload.files
                 .filter((f: any) => isDisplayable(f))
-                .filter((f: FeedFile) => {
-                  if (stage !== 'scale' || flowModeRef.current !== 'dachstuhl') return true
-                  const raw = `${f.url || ''} ${f.path || ''} ${f.name || ''}`.toLowerCase()
-                  return !raw.includes('04_walls_3d.png')
-                })
+                .filter((f: FeedFile) => !shouldHideScaleWalls3dFromFeed(stage, f))
               const existing = filesByStage.current[stage] || []
               const uniqueNew = newFiles.filter((nf: FeedFile) => !existing.some((ex: FeedFile) => ex.url === nf.url))
               
@@ -1283,20 +1292,6 @@ export default function LiveFeed() {
     // ✅ CAPTURE SESSIONS ID
     const mySessionId = sessionRef.current
 
-    const flowLooksDachstuhl = () => {
-      if (flowModeRef.current === 'dachstuhl' || offerFlow === 'dachstuhl') return true
-      try {
-        const raw = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_OFFER) : null
-        if (raw) {
-          const d = JSON.parse(raw) as { flow?: string }
-          if (d?.flow === 'dachstuhl') return true
-        }
-      } catch {
-        /* ignore */
-      }
-      return false
-    }
-    
     const iv = setInterval(async () => {
       // ✅ CHECK 1: Sesiune invalidată înainte de request
       if (sessionRef.current !== mySessionId) return
@@ -1339,12 +1334,9 @@ export default function LiveFeed() {
             }
             
             if(ev.payload?.files?.length) {
-              const hideWalls3dForRoofOnly = (f: FeedFile) => {
-                if (stage !== 'scale' || !flowLooksDachstuhl()) return false
-                const raw = `${f.url || ''} ${f.path || ''} ${f.name || ''}`.toLowerCase()
-                return raw.includes('04_walls_3d.png')
-              }
-              const newImages = ev.payload.files.filter(isDisplayable).filter((f: FeedFile) => !hideWalls3dForRoofOnly(f))
+              const newImages = ev.payload.files
+                .filter(isDisplayable)
+                .filter((f: FeedFile) => !shouldHideScaleWalls3dFromFeed(stage, f))
               const existing = filesByStage.current[stage] || []
               const uniqueNew = newImages.filter((nf: FeedFile) => !existing.some(ex => ex.url === nf.url))
               
@@ -1477,12 +1469,9 @@ export default function LiveFeed() {
             if (STAGE_TO_SEQUENCE[stage]) {
               if (processedStages.current.has(stage)) {
                 if (ev.payload?.files?.length) {
-                  const hideWalls3dForRoofOnly = (f: FeedFile) => {
-                    if (stage !== 'scale' || !flowLooksDachstuhl()) return false
-                    const raw = `${f.url || ''} ${f.path || ''} ${f.name || ''}`.toLowerCase()
-                    return raw.includes('04_walls_3d.png')
-                  }
-                  const newImages = ev.payload.files.filter(isDisplayable).filter((f: FeedFile) => !hideWalls3dForRoofOnly(f))
+                  const newImages = ev.payload.files
+                    .filter(isDisplayable)
+                    .filter((f: FeedFile) => !shouldHideScaleWalls3dFromFeed(stage, f))
                   setGroups(prev => {
                     const groupIndex = prev.findIndex(g => g.stage === stage)
                     if (groupIndex >= 0) {
