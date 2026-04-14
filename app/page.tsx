@@ -460,125 +460,108 @@ function LogoSection() {
   )
 }
 
-/* ================= PRICING SECTION (REFINED, GLASSMORPHISM & BG IMAGE) ================= */
+/* ================= PRICING SECTION (SINGLE WIDE LICENSE CARD) ================= */
+const BETONBOT_LICENSE_FEATURES = [
+  {
+    title: 'Automatische Plananalyse',
+    text: 'Betonbot erkennt Bauelemente, Flächen und Maße direkt aus dem Bauplan – für Neubau, Dachstuhl, Zubau und Aufstockung.',
+  },
+  {
+    title: 'Preisschätzung in Minuten',
+    text: 'Ihre Firmenpreise und Kalkulationslogik sind hinterlegt – Betonbot erstellt daraus automatisch eine strukturierte Preisschätzung inkl. Mengenübersicht.',
+  },
+  {
+    title: 'Alles in einem System',
+    text: 'Mengenermittlung, Kalkulation und Preisschätzung kombiniert – ideal für schnelle Vor-Kalkulationen und effiziente Angebotsprozesse.',
+  },
+] as const
+
+const BETONBOT_PRICE_TIERS = [
+  { label: '10 Projekte / Monat', price: '390 €' },
+  { label: '25 Projekte / Monat', price: '590 €' },
+  { label: 'Unbegrenzte Projekte', price: '990 €', highlight: true },
+] as const
+
 function PricingSection() {
   return (
-    <section className="relative w-full py-16 md:py-32 px-6 overflow-hidden z-20">
-      
-      {/* --- NOU: Imagine de fundal cu overlay --- */}
-      <div className="absolute inset-0 z-0">
-          <img src={PRICING_BG_URL} alt="Construction site background" className="w-full h-full object-cover" />
-          {/* Overlay întunecat și multiply pentru a se integra in tema maro */}
-          <div className="absolute inset-0 bg-black/70 mix-blend-multiply" />
-           {/* Gradient subtil sus pentru tranzitie */}
-          <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-coffee-900 to-transparent" />
-      </div>
-      
-      {/* Decor subtil de lumină - Blob urias pe mobil (180vw) */}
-      <motion.div animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.1, 1] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }} className="absolute top-0 right-0 w-[180vw] h-[180vw] md:w-[600px] md:h-[600px] bg-[#E5B800]/10 blur-[100px] md:blur-[150px] rounded-full pointer-events-none z-1" />
+    <section
+      id="preise"
+      className="relative w-full min-h-[min(60vh,560px)] py-12 md:py-16 px-4 sm:px-6 overflow-hidden z-20 scroll-mt-24 md:scroll-mt-28 bg-coffee-900 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: `url("${PRICING_BG_URL}")` }}
+    >
+      <div className="pointer-events-none absolute inset-0 z-0 bg-black/65 mix-blend-multiply" />
+      <div className="pointer-events-none absolute top-0 left-0 z-0 w-full h-28 bg-gradient-to-b from-coffee-900 to-transparent" />
 
+      <motion.div animate={{ opacity: [0.25, 0.45, 0.25], scale: [1, 1.05, 1] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }} className="absolute top-0 right-0 w-[140vw] h-[140vw] md:w-[420px] md:h-[420px] bg-[#E5B800]/10 blur-[90px] md:blur-[120px] rounded-full pointer-events-none z-[1]" />
 
-      <div className="relative z-10 max-w-7xl mx-auto">
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-stretch max-w-4xl mx-auto">
-            
-            {/* === Card 1: Betonbot Mengen-Paket === */}
-            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeInLeft} className="bg-black/50 backdrop-blur-xl rounded-[2.5rem] border border-white/10 flex flex-col justify-between shadow-2xl relative overflow-hidden">
-                 
-                 <div className="absolute top-0 right-0 w-48 h-48 bg-[#E5B800]/15 blur-[80px] rounded-full pointer-events-none mix-blend-screen" />
+      <div className="relative z-10 max-w-6xl mx-auto w-full">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-80px' }}
+          variants={fadeInUp}
+          className="rounded-2xl md:rounded-3xl border border-white/10 bg-black/50 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.4)] overflow-hidden ring-1 ring-white/[0.06]"
+        >
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E5B800]/35 to-transparent pointer-events-none" />
 
-                 <div>
-                    <div className="flex justify-center pt-8 md:pt-12 mb-6">
-                        <img src="/images/blueprint.png" alt="Mengen-Paket" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30 grayscale contrast-[1.05]" />
-                    </div>
+          <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[max-content_minmax(0,1fr)] lg:items-stretch">
+            <aside className="order-2 lg:order-1 flex min-h-0 w-full max-w-md shrink-0 flex-col overflow-hidden border-t border-white/10 bg-white aspect-[1000/1300] mx-auto lg:mx-0 lg:max-w-none lg:aspect-[1000/1300] lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0 lg:border-t-0 lg:border-r">
+              <img
+                src="/images/betonpaket.png"
+                alt="Betonbot Softwarelizenz"
+                className="block h-full w-full min-h-0 min-w-0 flex-1 object-contain object-center"
+              />
+            </aside>
 
-                    <h3 className="px-6 md:px-12 text-xl md:text-2xl font-bold text-[#E5B800] mb-4 text-center">Betonbot Mengen-Paket</h3>
-                    <p className="px-6 md:px-12 text-white text-lg md:text-xl mb-6 text-center">Für Mengenermittlung &amp; Projektvorbereitung</p>
+            <div className="order-1 lg:order-2 min-w-0 p-6 md:p-8 lg:p-9">
+              <div className="pb-6 border-b border-white/10">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#E5B800]/25 bg-[#E5B800]/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#E5B800] mb-3">
+                  Lizenz
+                </div>
+                <h3 className="text-xl md:text-2xl lg:text-[1.65rem] font-extrabold text-white tracking-tight mb-1.5 leading-snug">Betonbot Softwarelizenz</h3>
+                <p className="text-sand/85 text-sm md:text-[0.95rem] font-medium leading-relaxed max-w-xl">Komplett-Paket für Preisschätzungen im Bau</p>
+              </div>
 
-                    <div className="px-6 md:px-12 space-y-4 mb-8">
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Automatische Mengenermittlung: Betonbot erkennt Bauteile, Wandflächen, Decken und Öffnungen direkt aus dem Bauplan.</p>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Strukturierte Ausgabe: Saubere Mengenermittlung als Excel oder PDF – ideal für Arbeitsvorbereitung und Kalkulation.</p>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Schnelle Projektanalyse: In Sekunden konsistente Mengen als Grundlage für Angebot, AVA oder weitere Planung.</p>
-                        </div>
-                    </div>
-                 </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-8 lg:gap-x-10 pt-6">
+                <ul className="space-y-4 md:space-y-4 pb-6 md:pb-0 md:pr-2 border-b md:border-b-0 md:border-r border-white/10">
+                  {BETONBOT_LICENSE_FEATURES.map((item) => (
+                    <li key={item.title} className="flex gap-3">
+                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#E5B800]/15 text-[#E5B800] ring-1 ring-[#E5B800]/30">
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                      </span>
+                      <div>
+                        <p className="font-bold text-white text-sm mb-0.5">{item.title}</p>
+                        <p className="text-sand/75 text-xs md:text-[0.8125rem] leading-relaxed">{item.text}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
 
-                 <div className="mt-auto">
-                    <div className="mx-6 md:mx-12 rounded-xl border border-white/10 bg-white/5 overflow-hidden mb-4">
-                        <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">10 Projekte / Monat</span>
-                            <span className="text-sm font-bold text-white">200 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">25 Projekte / Monat</span>
-                            <span className="text-sm font-bold text-white">400 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 py-2 px-4">
-                            <span className="text-xs text-sand/90">Unbegrenzte Projekte</span>
-                            <span className="text-sm font-bold text-white">700 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                    </div>
-                    <p className="mx-6 md:mx-12 text-sand/50 text-[11px] mb-8 italic pl-2 border-l-2 border-[#E5B800]/30">Alle Preise zzgl. gesetzlicher MwSt.</p>
-                 </div>
-            </motion.div>
+                <div className="pt-6 md:pt-0 md:pl-2">
+                  <h4 className="text-lg md:text-xl font-extrabold text-white mb-1">Preisstruktur</h4>
+                  <p className="text-sand/65 text-xs md:text-sm mb-4">Transparente Preise basierend auf Nutzung.</p>
 
-            {/* === Card 2: Betonbot Neubau-Paket === */}
-            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeInRight} className="bg-black/50 backdrop-blur-xl rounded-[2.5rem] border border-white/10 flex flex-col justify-between shadow-2xl relative overflow-hidden">
-                 
-                 <div className="absolute top-0 right-0 w-48 h-48 bg-[#E5B800]/15 blur-[80px] rounded-full pointer-events-none mix-blend-screen" />
+                  <div className="rounded-xl border border-white/10 overflow-hidden bg-black/45">
+                    {BETONBOT_PRICE_TIERS.map((tier, i) => (
+                      <div
+                        key={tier.label}
+                        className={`flex flex-row items-center justify-between gap-3 px-3.5 py-3 ${'highlight' in tier && tier.highlight ? 'bg-[#E5B800]/[0.06]' : ''} ${i < BETONBOT_PRICE_TIERS.length - 1 ? 'border-b border-white/10' : ''}`}
+                      >
+                        <span className={`text-xs md:text-sm leading-snug ${'highlight' in tier && tier.highlight ? 'text-white font-semibold' : 'text-sand/90 font-medium'}`}>{tier.label}</span>
+                        <div className="flex items-baseline gap-1.5 shrink-0">
+                          <span className="text-base md:text-lg font-extrabold text-white tabular-nums">{tier.price}</span>
+                          <span className="text-[10px] md:text-[11px] text-sand/50">zzgl. MwSt.</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                 <div>
-                    <div className="flex justify-center pt-8 md:pt-12 mb-6">
-                        <img src="/images/house.png" alt="Neubau" className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-[#E5B800]/30 grayscale contrast-[1.05]" />
-                    </div>
-
-                    <h3 className="px-6 md:px-12 text-xl md:text-2xl font-bold text-[#E5B800] mb-4 text-center">Betonbot Neubau-Paket</h3>
-                    <p className="px-6 md:px-12 text-white text-lg md:text-xl mb-6 text-center">Für schnelle Angebotskalkulation im Massivbau</p>
-
-                    <div className="px-6 md:px-12 space-y-4 mb-8">
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Grundriss-Analyse: Betonbot erkennt Bauelemente und ermittelt automatisch die wichtigsten Maße aus dem Plan.</p>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Schätzungsangebot in Minuten: Ihre Firmenpreise und Kalkulationslogik sind hinterlegt – Ausgabe als übersichtliches PDF.</p>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <Check className="text-[#E5B800] shrink-0 mt-0.5" size={18} />
-                            <p className="text-sand/90 text-sm md:text-base leading-relaxed">Schnelle Angebotsphase: Ideal für Bauunternehmen, um aus Einreichplänen in kürzester Zeit eine realistische Kostenschätzung zu erstellen.</p>
-                        </div>
-                    </div>
-                 </div>
-
-                 <div className="mt-auto">
-                    <div className="mx-6 md:mx-12 rounded-xl border border-white/10 bg-white/5 overflow-hidden mb-4">
-                        <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">10 Projekte / Monat</span>
-                            <span className="text-sm font-bold text-white">300 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 py-2 px-4 border-b border-white/10">
-                            <span className="text-xs text-sand/90">25 Projekte / Monat</span>
-                            <span className="text-sm font-bold text-white">500 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 py-2 px-4">
-                            <span className="text-xs text-sand/90">Unbegrenzte Projekte</span>
-                            <span className="text-sm font-bold text-white">800 € <span className="font-normal text-white/70 text-[10px]">zzgl. MwSt.</span></span>
-                        </div>
-                    </div>
-                    <p className="mx-6 md:mx-12 text-sand/50 text-[11px] mb-8 italic pl-2 border-l-2 border-[#E5B800]/30">Alle Preise zzgl. gesetzlicher MwSt.</p>
-                 </div>
-            </motion.div>
-
-        </div>
+                  <p className="mt-3 text-sand/45 text-[10px] md:text-[11px] pl-2.5 border-l-2 border-[#E5B800]/35">Alle Preise zzgl. gesetzlicher MwSt.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   )

@@ -714,6 +714,7 @@ export default function StepWizard() {
   const [cancelDialog, setCancelDialog] = useState<null | 'delete_offer' | 'abort_edit'>(null)
 
   const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | null>(null)
+  const [packagePickerMengenSub, setPackagePickerMengenSub] = useState(false)
   /** Monatslimit für Projekte erreicht; Paket-Karten nicht klickbar. */
   const [tokensBlocked, setTokensBlocked] = useState(false)
 
@@ -2563,6 +2564,14 @@ export default function StepWizard() {
           </div>
         ) : showPackagePicker ? (
           <div className="w-full max-w-full self-stretch flex flex-1 min-h-0 flex-col justify-center px-2 page-enter">
+            <div className="mb-5 sm:mb-6 px-3 text-center">
+              <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-white/45 font-semibold mb-1.5">Projektwahl</p>
+              <h2 className="text-white/95 text-2xl sm:text-3xl font-semibold tracking-tight leading-snug">
+                {packagePickerMengenSub
+                  ? 'Für welches Projekt brauchen Sie eine Mengenübersicht?'
+                  : 'Für welches Projekt brauchen Sie eine Preisschätzung?'}
+              </h2>
+            </div>
             {tokensBlocked ? (
               <p className="text-center text-amber-100/90 text-sm sm:text-base font-medium mb-4 max-w-xl mx-auto px-3 leading-snug">
                 Sie haben für diesen Monat keine Projekte mehr im Rahmen Ihres Limits. Am 1. des nächsten Monats stehen
@@ -2570,38 +2579,45 @@ export default function StepWizard() {
               </p>
             ) : null}
             <div
-              className="w-full max-w-3xl mx-auto px-1 flex flex-1 min-h-0 flex-col items-center justify-center"
+              className="w-full max-w-[760px] mx-auto px-1 relative flex-1 min-h-0 flex flex-col"
               style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
             >
               <div
-                className={`grid grid-cols-1 sm:grid-cols-2 gap-3 justify-items-stretch items-stretch w-full ${
-                  tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
+                className={`absolute inset-0 flex items-center justify-center px-1 transition-all duration-300 ease-out ${
+                  packagePickerMengenSub
+                    ? 'opacity-0 scale-[0.97] pointer-events-none -translate-y-2'
+                    : 'opacity-100 scale-100 translate-y-0'
                 }`}
+                aria-hidden={packagePickerMengenSub}
               >
-                {/* Mengenermittlung: Blueprint-Icon in Graustufen */}
-                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
+                <div
+                  className={`grid grid-cols-1 sm:grid-cols-2 gap-3 justify-items-stretch items-stretch w-full ${
+                    tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
+                  }`}
+                >
+                {/* Mengenübersicht: Blueprint-Icon in Graustufen */}
+                <div className="order-last bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
                   <div className="flex items-center justify-center mb-3">
                     <img
                       src="/images/blueprint.png"
-                      alt="Mengenermittlung"
+                      alt="Mengenübersicht"
                       className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/35 grayscale contrast-[1.05]"
                     />
                   </div>
-                  <div className="text-white font-extrabold text-lg text-center">Mengenermittlung</div>
-                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Nur Maß-/Mengen-PDF für Neubau – ohne Preisangebot</div>
+                  <div className="text-white font-extrabold text-lg text-center">Mengenübersicht</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Nur Maß-/Mengen-PDF – ohne Preisangebot</div>
                   <div className="flex-1" />
                   <button
                     type="button"
                     disabled={tokensBlocked}
                     onClick={() => {
                       if (tokensBlocked) return
-                      setMeasurementsOnlyFlow(true)
                       roofOnlyOfferRef.current = false
-                      setSelectedPackage('neubau')
+                      setPackagePickerMengenSub(true)
                     }}
                     className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    Kalkulation starten
+                    Weiter
                     <ChevronRight size={18} className="opacity-85" />
                   </button>
                 </div>
@@ -2615,7 +2631,7 @@ export default function StepWizard() {
                     />
                   </div>
                   <div className="text-white font-extrabold text-lg text-center">Neubau</div>
-                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung eines Schätzungsangebots für Neubauten</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer Preisschätzung für Neubauten</div>
                   <div className="flex-1" />
                   <button
                     type="button"
@@ -2631,6 +2647,147 @@ export default function StepWizard() {
                     Kalkulation starten
                     <ChevronRight size={18} className="opacity-85" />
                   </button>
+                </div>
+
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
+                  <div className="flex items-center justify-center mb-3">
+                    <img
+                      src="/images/aufstockung.png"
+                      alt="Aufstockung"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
+                    />
+                  </div>
+                  <div className="text-white font-extrabold text-lg text-center">Aufstockung</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer Preisschätzung für Aufstockungen</div>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => {}}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                  >
+                    Kalkulation starten
+                  </button>
+                </div>
+
+                <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] sm:max-w-none mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
+                  <div className="flex items-center justify-center mb-3">
+                    <img
+                      src="/images/zubau.png"
+                      alt="Zubau"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
+                    />
+                  </div>
+                  <div className="text-white font-extrabold text-lg text-center">Zubau</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer Preisschätzung für Zubauten</div>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => {}}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                  >
+                    Kalkulation starten
+                  </button>
+                </div>
+              </div>
+              </div>
+
+              <div
+                className={`flex flex-col flex-1 min-h-0 transition-all duration-300 ease-out ${
+                  packagePickerMengenSub
+                    ? 'opacity-100 scale-100 relative'
+                    : 'opacity-0 scale-[0.97] pointer-events-none absolute inset-0 translate-y-3'
+                }`}
+                aria-hidden={!packagePickerMengenSub}
+              >
+                <div className="flex-1 flex flex-col items-center justify-center px-2 py-8 sm:py-10 min-h-[280px]">
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(320px,320px))] gap-4 w-full max-w-[1024px] justify-center justify-items-stretch items-stretch ${
+                    tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
+                  }`}>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <button
+                      type="button"
+                      onClick={() => setPackagePickerMengenSub(false)}
+                      className="flex items-center gap-1.5 text-sm text-sand/80 hover:text-sand transition-colors py-1"
+                    >
+                      <ChevronLeft size={18} />
+                      Zurück zur Auswahl
+                    </button>
+                  </div>
+
+                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
+                    <div className="flex items-center justify-center mb-3">
+                      <img
+                        src="/images/blueprint.png"
+                        alt="Neubau Mengenübersicht"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/35 grayscale contrast-[1.05]"
+                      />
+                    </div>
+                    <div className="text-white font-extrabold text-lg text-center">Neubau Mengenübersicht</div>
+                    <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
+                      Nur Maß-/Mengen-PDF – ohne Preisangebot
+                    </div>
+                      <button
+                      type="button"
+                      disabled={tokensBlocked}
+                      onClick={() => {
+                        if (tokensBlocked) return
+                        setMeasurementsOnlyFlow(true)
+                        roofOnlyOfferRef.current = false
+                        setPackagePickerMengenSub(false)
+                        setSelectedPackage('neubau')
+                      }}
+                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                      >
+                        Kalkulation starten
+                      <ChevronRight size={18} className="opacity-85" />
+                    </button>
+                  </div>
+
+                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
+                    <div className="flex items-center justify-center mb-3">
+                      <img
+                        src="/images/aufstockung.png"
+                        alt="Aufstockung Mengenübersicht"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
+                      />
+                    </div>
+                    <div className="text-white font-extrabold text-lg text-center">Aufstockung Mengenübersicht</div>
+                    <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
+                      Nur Maß-/Mengen-PDF – ohne Preisangebot
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {}}
+                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                    >
+                      Kalkulation starten
+                      <ChevronRight size={18} className="opacity-85" />
+                    </button>
+                  </div>
+
+                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
+                    <div className="flex items-center justify-center mb-3">
+                      <img
+                        src="/images/zubau.png"
+                        alt="Zubau Mengenübersicht"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
+                      />
+                    </div>
+                    <div className="text-white font-extrabold text-lg text-center">Zubau Mengenübersicht</div>
+                    <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
+                      Nur Maß-/Mengen-PDF – ohne Preisangebot
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {}}
+                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                    >
+                      Kalkulation starten
+                      <ChevronRight size={18} className="opacity-85" />
+                    </button>
+                  </div>
+
+                  </div>
                 </div>
               </div>
             </div>
