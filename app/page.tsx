@@ -486,7 +486,7 @@ function PricingSection() {
   return (
     <section
       id="preise"
-      className="relative w-full min-h-[min(60vh,560px)] py-12 md:py-16 px-4 sm:px-6 overflow-hidden z-20 scroll-mt-24 md:scroll-mt-28 bg-coffee-900 bg-cover bg-center bg-no-repeat"
+      className="relative w-full min-h-[620px] md:min-h-[680px] py-12 md:py-16 px-4 sm:px-6 overflow-hidden z-20 scroll-mt-24 md:scroll-mt-28 bg-coffee-900 bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url("${PRICING_BG_URL}")` }}
     >
       <div className="pointer-events-none absolute inset-0 z-0 bg-black/65 mix-blend-multiply" />
@@ -504,12 +504,13 @@ function PricingSection() {
         >
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E5B800]/35 to-transparent pointer-events-none" />
 
-          <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[max-content_minmax(0,1fr)] lg:items-stretch">
-            <aside className="order-2 lg:order-1 flex min-h-0 w-full max-w-md shrink-0 flex-col overflow-hidden border-t border-white/10 bg-white aspect-[1000/1300] mx-auto lg:mx-0 lg:max-w-none lg:aspect-[1000/1300] lg:h-full lg:min-h-0 lg:w-auto lg:shrink-0 lg:border-t-0 lg:border-r">
-              <img
-                src="/images/betonpaket.png"
-                alt="Betonbot Softwarelizenz"
-                className="block h-full w-full min-h-0 min-w-0 flex-1 object-contain object-center"
+          <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[clamp(280px,32vw,420px)_minmax(0,1fr)] lg:items-stretch">
+            <aside className="order-2 lg:order-1 flex min-h-0 w-full max-w-md shrink-0 flex-col overflow-hidden border-t border-white/10 bg-white aspect-[1000/1300] mx-auto lg:mx-0 lg:max-w-none lg:aspect-[1000/1300] lg:h-full lg:min-h-0 lg:w-full lg:shrink-0 lg:border-t-0 lg:border-r">
+              <div
+                role="img"
+                aria-label="Betonbot Softwarelizenz"
+                className="flex-1 min-h-0 w-full bg-center bg-cover bg-no-repeat"
+                style={{ backgroundImage: 'url("/images/betonpaket.png")' }}
               />
             </aside>
 
