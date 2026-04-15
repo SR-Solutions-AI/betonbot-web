@@ -154,7 +154,7 @@ function FeatureSection() {
             </li>
              <li className="flex items-start gap-4">
                 <CheckCircle2 className="text-[#E5B800] shrink-0 w-8 h-8 mt-1" />
-                <span className="text-lg md:text-xl font-bold text-white">Schätzungsangebot als PDF erhalten (± 8-10 % Genauigkeit)</span>
+                <span className="text-lg md:text-xl font-bold text-white">Schätzungsangebot als PDF erhalten</span>
             </li>
           </ol>
         </motion.div>

@@ -2560,7 +2560,7 @@ export default function StepWizard() {
   return (
     <div
       className={`wizard-wrap${showProgressHeader ? '' : ' wizard-wrap--solo'}`}
-      style={{ height: '100%', minHeight: 0, maxHeight: '100%' }}
+      style={{ height: '100%', minHeight: 0, maxHeight: '100%', position: 'relative' }}
     >
       {showProgressHeader && (
       <div className="px-2 mt-1 page-enter">
@@ -3206,13 +3206,8 @@ export default function StepWizard() {
             <div className="wizard-footer flex items-center justify-between mt-4 gap-2 flex-wrap">
               <div className="flex items-center gap-2 min-w-0">
                 <button 
-                  onClick={isFirst && !editOfferSkipUpload
-                    ? () => {
-                        if (!offerId) { void handleResetToNewProject() }
-                        else { setCancelDialog('delete_offer') }
-                      }
-                    : onBack}
-                  disabled={saving || (isFirst && editOfferSkipUpload)}
+                  onClick={onBack} 
+                  disabled={isFirst || saving}
                   className={`
                     flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 ease-in-out
                     border border-[#D8A25E]/30 text-[#D8A25E] bg-transparent
@@ -3221,7 +3216,7 @@ export default function StepWizard() {
                   `}
                 >
                   <ChevronLeft size={19} /> 
-                  {isFirst && !editOfferSkipUpload ? 'Zurück zur Übersicht' : DE.common.btnBack}
+                  {DE.common.btnBack}
                 </button>
                 {editOfferSkipUpload ? (
                   <button
@@ -3260,6 +3255,19 @@ export default function StepWizard() {
             </div>
           </div>
         )}
+      {showProgressHeader && !editOfferSkipUpload && (
+        <button
+          type="button"
+          onClick={() => {
+            if (!offerId) { void handleResetToNewProject() }
+            else { setCancelDialog('delete_offer') }
+          }}
+          className="absolute bottom-3 left-3 flex items-center gap-1 text-sm text-sand/70 hover:text-sand/95 transition-colors py-1 px-2 z-10"
+        >
+          <ChevronLeft size={14} />
+          Zurück zur Auswahl
+        </button>
+      )}
       </div>
 
       {!computing && saveStatus !== 'idle' && (

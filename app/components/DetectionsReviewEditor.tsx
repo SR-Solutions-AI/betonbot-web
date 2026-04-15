@@ -118,6 +118,11 @@ export type ReviewImage = { url: string; caption?: string }
 
 type Tool = 'select' | 'add' | 'remove' | 'edit'
 
+type StatikChoice = {
+  mode: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'
+  customPiecePrice?: number
+}
+
 type PlanData = {
   imageWidth: number
   imageHeight: number
@@ -126,6 +131,8 @@ type PlanData = {
   doors: DoorRect[]
   roofDemolitions?: RoofDemolitionPoly[]
   stairOpenings?: Array<DoorRect & { price_key?: string; quantity?: number }>
+  customDemolitionPrice?: number | null
+  statikChoice?: StatikChoice
 }
 
 type DoorType = 'door' | 'window' | 'sliding_door' | 'garage_door' | 'stairs'
@@ -416,7 +423,6 @@ export function DetectionsReviewEditor({
   const [floorKinds, setFloorKinds] = useState<string[]>([])
   /** Din `GET .../detections-review-data` (`offers.meta.wizard_package`); dacă StepWizard pierde fluxul, tot deschidem Aufstockung. */
   const [wizardPackageFromApi, setWizardPackageFromApi] = useState('')
-  const [statikChoice, setStatikChoice] = useState<{ mode: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'; customPiecePrice?: number }>({ mode: 'none' })
   /** Permutation: index from bottom (0 = lowest floor) → raster/plan index. PDF & tabs use this order (top tab = lowest floor). */
   const [floorPlanOrder, setFloorPlanOrder] = useState<number[]>([])
   const [floorOrderDraft, setFloorOrderDraft] = useState<number[]>([])
@@ -448,22 +454,36 @@ export function DetectionsReviewEditor({
   const [roofDimsToolbarSlotEl, setRoofDimsToolbarSlotEl] = useState<HTMLDivElement | null>(null)
   const statikCustomPriceRef = useRef<HTMLInputElement>(null)
   const [statikPriceDraft, setStatikPriceDraft] = useState('')
-  const lastStatikModeRef = useRef(statikChoice.mode)
+  const lastStatikModeRef = useRef<StatikChoice['mode']>('none')
+  const demolitionPriceInputRef = useRef<HTMLInputElement>(null)
+  const [demolitionPriceDraft, setDemolitionPriceDraft] = useState('')
+
+  const currentPlanStatikChoice: StatikChoice = useMemo(() => {
+    const raw = plansData[planIndex]?.statikChoice
+    if (!raw?.mode) return { mode: 'none' }
+    return {
+      mode: raw.mode,
+      customPiecePrice:
+        typeof raw.customPiecePrice === 'number' && Number.isFinite(raw.customPiecePrice)
+          ? raw.customPiecePrice
+          : undefined,
+    }
+  }, [plansData, planIndex])
 
   useEffect(() => {
     const prev = lastStatikModeRef.current
     const enteredSonder =
-      statikChoice.mode === 'sonderkonstruktion' && prev !== 'sonderkonstruktion'
+      currentPlanStatikChoice.mode === 'sonderkonstruktion' && prev !== 'sonderkonstruktion'
     if (enteredSonder) {
-      const p = statikChoice.customPiecePrice
+      const p = currentPlanStatikChoice.customPiecePrice
       setStatikPriceDraft(p !== undefined && Number.isFinite(p) ? String(p) : '')
       queueMicrotask(() => statikCustomPriceRef.current?.focus())
     }
-    if (statikChoice.mode !== 'sonderkonstruktion') {
+    if (currentPlanStatikChoice.mode !== 'sonderkonstruktion') {
       setStatikPriceDraft('')
     }
-    lastStatikModeRef.current = statikChoice.mode
-  }, [statikChoice.mode])
+    lastStatikModeRef.current = currentPlanStatikChoice.mode
+  }, [currentPlanStatikChoice.mode, currentPlanStatikChoice.customPiecePrice])
 
   useEffect(() => {
     plansDataRef.current = plansData
@@ -524,6 +544,14 @@ export function DetectionsReviewEditor({
   const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
   const currentPlan = plansData[planIndexClamped]
+
+  // Sync the demolition price draft text when navigating between plans.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const price = plansData[planIndexClamped]?.customDemolitionPrice
+    setDemolitionPriceDraft(typeof price === 'number' && Number.isFinite(price) ? String(price) : '')
+  }, [planIndexClamped])
+
   // O imagine de bază per plan (fără poligoane); canvas-ul desenează rooms/doors din API
   const getBaseImageUrl = (planIdx: number) => images[planIdx]?.url ?? images[0]?.url
   // Același blueprint ca Räume / Fenster; roofImages poate veni mai târziu sau cu alt URL → încărcare lentă / refresh.
@@ -543,12 +571,33 @@ export function DetectionsReviewEditor({
   const effectiveForceAufstockung =
     forceAufstockungFlow || String(wizardPackageFromApi).toLowerCase().trim() === 'aufstockung'
   const effectiveFloorKinds = useMemo(() => {
-    const normalized = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing'))
-    if (normalized.length > 0) return normalized
-    if (!effectiveForceAufstockung) return normalized
+    const normalized = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing')) as ('new' | 'existing')[]
     const hintN = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
-    return Array.from({ length: hintN }, (_, i) => (i === hintN - 1 ? 'new' : 'existing'))
+    if (normalized.length > 0) {
+      // Right-align: prepend 'existing' for implicit EG when listaEtaje starts above ground.
+      if (normalized.length < hintN) {
+        const pad = hintN - normalized.length
+        return [...Array<'existing'>(pad).fill('existing'), ...normalized]
+      }
+      return normalized
+    }
+    if (!effectiveForceAufstockung) return normalized
+    // Fallback when no floor-kinds saved yet: all floors default to 'existing'.
+    // User can mark specific floors as Aufstockung in the reorder panel.
+    return Array.from({ length: hintN }, (): 'existing' => 'existing')
   }, [floorKinds, effectiveForceAufstockung, plansData.length, images.length])
+
+  /** m²/px from the first new-floor plan that has a valid scale — used for area calculations on existing floors. */
+  const mppFromNewFloors = useMemo(() => {
+    for (let i = 0; i < plansData.length; i++) {
+      if (String(effectiveFloorKinds[i] ?? 'new').toLowerCase() === 'new') {
+        const mpp = plansData[i]?.metersPerPixel
+        if (typeof mpp === 'number' && mpp > 0) return mpp
+      }
+    }
+    return null
+  }, [plansData, effectiveFloorKinds])
+
   const getTabForPlan = useCallback(
     (planIdx: number): ReviewTab => {
       const raw = tabPerPlan[planIdx] ?? 'rooms'
@@ -557,7 +606,7 @@ export function DetectionsReviewEditor({
       const auf = effectiveFloorKinds.length > 0
       const fk = String(effectiveFloorKinds[planIdx] ?? 'new').toLowerCase() === 'new' ? 'new' : 'existing'
       if (auf && fk === 'existing') {
-        if (raw === 'phase1_demolition' || raw === 'phase1_stair') return raw
+        if (raw === 'phase1_demolition' || raw === 'phase1_stair' || raw === 'roof' || raw === 'roof_windows') return raw
         return 'phase1_demolition'
       }
       if (raw === 'phase1_demolition' || raw === 'phase1_stair') return 'rooms'
@@ -629,6 +678,23 @@ export function DetectionsReviewEditor({
             metersPerPixel: typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null,
             roofDemolitions,
             stairOpenings,
+            customDemolitionPrice: typeof (p as { customDemolitionPrice?: unknown }).customDemolitionPrice === 'number' ? (p as { customDemolitionPrice?: unknown }).customDemolitionPrice as number : null,
+            statikChoice: (() => {
+              const planStatik = (p as { statikChoice?: StatikChoice }).statikChoice
+              const raw = planStatik?.mode
+                ? planStatik
+                : res?.statikChoice?.mode
+                  ? (res.statikChoice as StatikChoice)
+                  : null
+              if (!raw) return { mode: 'none' } as StatikChoice
+              return {
+                mode: raw.mode,
+                customPiecePrice:
+                  typeof raw.customPiecePrice === 'number' && Number.isFinite(raw.customPiecePrice)
+                    ? raw.customPiecePrice
+                    : undefined,
+              } as StatikChoice
+            })(),
             rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => {
               const rt = migrateRoomLabelDe(r.roomType ?? 'Raum')
               const rn = migrateRoomLabelDe(
@@ -662,12 +728,6 @@ export function DetectionsReviewEditor({
           setWizardPackageFromApi(typeof res?.wizardPackage === 'string' ? res.wizardPackage : '')
           setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
           setFloorKinds(Array.isArray(res?.floorKinds) ? res.floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing')) : [])
-          if (res?.statikChoice?.mode) {
-            setStatikChoice({
-              mode: res.statikChoice.mode,
-              customPiecePrice: typeof res.statikChoice.customPiecePrice === 'number' ? res.statikChoice.customPiecePrice : undefined,
-            })
-          }
           const nl = sanitized.length
           const apiPerm = nl > 0 && isValidFloorPlanPerm(res?.floorPlanOrder, nl) ? (res!.floorPlanOrder as number[]) : null
           const initialOrder = nl > 0 ? (apiPerm ?? Array.from({ length: nl }, (_, i) => i)) : []
@@ -705,16 +765,18 @@ export function DetectionsReviewEditor({
     const ord = floorPlanOrderRef.current
     const n = snapshot.length
     const body: {
-      plans: { rooms: RoomPolygon[]; doors: DoorRect[]; roofDemolitions?: unknown[]; stairOpenings?: unknown[] }[]
+      plans: { rooms: RoomPolygon[]; doors: DoorRect[]; roofDemolitions?: unknown[]; stairOpenings?: unknown[]; customDemolitionPrice?: number | null; statikChoice?: StatikChoice }[]
       floorPlanOrder?: number[]
       floorKinds?: string[]
-      statikChoice?: { mode: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'; customPiecePrice?: number }
+      statikChoice?: StatikChoice
     } = {
       plans: snapshot.map((p) => ({
         rooms: p.rooms,
         doors: p.doors,
         roofDemolitions: Array.isArray(p.roofDemolitions) ? p.roofDemolitions : [],
         stairOpenings: Array.isArray(p.stairOpenings) ? p.stairOpenings : [],
+        customDemolitionPrice: typeof p.customDemolitionPrice === 'number' ? p.customDemolitionPrice : null,
+        statikChoice: p.statikChoice && p.statikChoice.mode ? p.statikChoice : { mode: 'none' },
       })),
     }
     if (n > 0 && ord.length === n && isValidFloorPlanPerm(ord, n)) {
@@ -723,9 +785,14 @@ export function DetectionsReviewEditor({
     if (floorKinds.length > 0) {
       body.floorKinds = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing'))
     }
-    body.statikChoice = statikChoice
+    const firstExistingIdx = floorKinds.findIndex((k) => String(k).toLowerCase() !== 'new')
+    if (firstExistingIdx >= 0 && firstExistingIdx < snapshot.length) {
+      body.statikChoice = snapshot[firstExistingIdx]?.statikChoice ?? { mode: 'none' }
+    } else {
+      body.statikChoice = { mode: 'none' }
+    }
     return JSON.stringify(body)
-  }, [floorKinds, statikChoice])
+  }, [floorKinds])
 
   const persistDetectionsPayload = useCallback(async (payload: string): Promise<boolean> => {
     if (!offerId) return false
@@ -814,12 +881,30 @@ export function DetectionsReviewEditor({
     })
   }, [])
 
-  const setRoofDemolitions = useCallback((planIdx: number, polys: RoofDemolitionPoly[]) => {
+  const setRoofDemolitions = useCallback((planIdx: number, polys: RoofDemolitionPoly[], mppOverride?: number | null) => {
     setPlansData((prev) => {
       const next = [...prev]
       if (planIdx >= next.length) return next
-      const mpp = next[planIdx]?.metersPerPixel
+      const mpp = mppOverride ?? next[planIdx]?.metersPerPixel
       next[planIdx] = { ...next[planIdx], roofDemolitions: withDemolitionAreas(polys, mpp) }
+      return next
+    })
+  }, [])
+
+  const setCustomDemolitionPrice = useCallback((planIdx: number, price: number | null) => {
+    setPlansData((prev) => {
+      const next = [...prev]
+      if (planIdx >= next.length) return next
+      next[planIdx] = { ...next[planIdx], customDemolitionPrice: price }
+      return next
+    })
+  }, [])
+
+  const setPlanStatikChoice = useCallback((planIdx: number, choice: StatikChoice) => {
+    setPlansData((prev) => {
+      const next = [...prev]
+      if (planIdx >= next.length) return next
+      next[planIdx] = { ...next[planIdx], statikChoice: choice }
       return next
     })
   }, [])
@@ -955,24 +1040,33 @@ export function DetectionsReviewEditor({
     if (!newPolygonPoints || newPolygonPoints.length < 3 || !currentPlan) return
     const t = getTabForPlan(planIndexClamped)
     if (t === 'phase1_demolition') {
-      setPendingDemolitionPoints([...newPolygonPoints])
+      pushHistory()
+      const isExistingFloor = String(effectiveFloorKinds[planIndexClamped] ?? 'new').toLowerCase() !== 'new'
+      const mpp = isExistingFloor ? (mppFromNewFloors ?? currentPlan.metersPerPixel) : currentPlan.metersPerPixel
+      const area_m2 = polygonAreaM2FromPx(newPolygonPoints, mpp)
+      const prev = currentPlan.roofDemolitions ?? []
+      const fallbackKey = DEMOLITION_PRICE_OPTIONS[0]?.key ?? 'aufstockung_roof_demolition_m2'
+      // Aufstandsfläche is a single-step action: save polygon immediately, no price-choice popup.
+      setRoofDemolitions(planIndexClamped, [...prev, { points: [...newPolygonPoints], price_key: fallbackKey, area_m2 }], mpp)
       setNewPolygonPoints(null)
       return
     }
     setPendingNewRoomPoints([...newPolygonPoints])
     setNewPolygonPoints(null)
-  }, [newPolygonPoints, currentPlan, getTabForPlan, planIndexClamped])
+  }, [newPolygonPoints, currentPlan, getTabForPlan, planIndexClamped, pushHistory, effectiveFloorKinds, mppFromNewFloors, setRoofDemolitions])
 
   const handlePickDemolitionPriceKey = useCallback(
     (price_key: string) => {
       if (!pendingDemolitionPoints || pendingDemolitionPoints.length < 3 || !currentPlan) return
       pushHistory()
-      const area_m2 = polygonAreaM2FromPx(pendingDemolitionPoints, currentPlan.metersPerPixel)
+      const isExistingFloor = String(effectiveFloorKinds[planIndexClamped] ?? 'new').toLowerCase() !== 'new'
+      const mpp = isExistingFloor ? (mppFromNewFloors ?? currentPlan.metersPerPixel) : currentPlan.metersPerPixel
+      const area_m2 = polygonAreaM2FromPx(pendingDemolitionPoints, mpp)
       const prev = currentPlan.roofDemolitions ?? []
-      setRoofDemolitions(planIndexClamped, [...prev, { points: pendingDemolitionPoints, price_key, area_m2 }])
+      setRoofDemolitions(planIndexClamped, [...prev, { points: pendingDemolitionPoints, price_key, area_m2 }], mpp)
       setPendingDemolitionPoints(null)
     },
-    [pendingDemolitionPoints, currentPlan, pushHistory, setRoofDemolitions, planIndexClamped],
+    [pendingDemolitionPoints, currentPlan, pushHistory, setRoofDemolitions, planIndexClamped, effectiveFloorKinds, mppFromNewFloors],
   )
 
   const handlePickNewRoomType = useCallback((roomType: RoomTypeOption) => {
@@ -1407,7 +1501,7 @@ export function DetectionsReviewEditor({
                                     : 'border-white/25 text-sand/90 bg-white/5'
                                 }`}
                               >
-                                {floorKindLabel === 'new' ? 'Zubau' : 'Bestand'}
+                                {floorKindLabel === 'new' ? 'Aufstockung' : 'Bestand'}
                               </span>
                             )}
                           </span>
@@ -1423,7 +1517,7 @@ export function DetectionsReviewEditor({
                             <span className="text-xs text-sand/90">Erdgeschoss (immer Bestand)</span>
                           ) : (
                             <>
-                              <span className="text-[10px] text-sand/50">Bestand oder Zubau</span>
+                              <span className="text-[10px] text-sand/50">Bestand oder Aufstockung</span>
                               <div className="flex flex-wrap items-center gap-1">
                                 <button
                                   type="button"
@@ -1457,7 +1551,7 @@ export function DetectionsReviewEditor({
                                     })
                                   }
                                 >
-                                  Zubau
+                                  Aufstockung
                                 </button>
                               </div>
                             </>
@@ -1536,7 +1630,7 @@ export function DetectionsReviewEditor({
                 {reorderFloorsMode && (
                   <p className="text-[10px] leading-snug text-sand/55">
                     Griffe ziehen
-                    {isAufstockungFlow ? ' · Bestand/Zubau' : ''}.
+                    {isAufstockungFlow ? ' · Bestand/Aufstockung' : ''}.
                   </p>
                 )}
                 {reorderKindsError && (
@@ -1719,64 +1813,96 @@ export function DetectionsReviewEditor({
         <div className="flex min-h-0 min-w-0 flex-col self-start pt-0.5 w-full">
           {existingFloorEditing && (
             <div
-              className="ml-auto flex w-full max-w-56 flex-col gap-1"
-              title="Wirkt auf das gesamte Angebot. Nur auf Bestandsgeschossen sichtbar."
+              className="ml-auto flex w-full max-w-56 flex-col gap-2"
+              title="Nur auf Bestandsgeschossen sichtbar."
             >
-              <span className="text-sand/72 text-xs text-right font-medium tracking-tight">
-                Statik / Verstärkung
-              </span>
-              {statikChoice.mode !== 'sonderkonstruktion' ? (
-                <SelectSun
-                  variant="editor"
-                  editorTheme="beton"
-                  editorSize="sm"
-                  value={statikChoice.mode}
-                  onChange={(v) => {
-                    if (v === 'stahlbetonverbunddecke') {
-                      setStatikChoice({ mode: 'stahlbetonverbunddecke' })
-                    } else if (v === 'sonderkonstruktion') {
-                      setStatikChoice((prev) => ({ ...prev, mode: 'sonderkonstruktion' }))
-                    } else {
-                      setStatikChoice({ mode: 'none' })
-                    }
-                  }}
-                  options={STATIK_MODE_OPTIONS}
-                  placeholder="Typ wählen"
-                />
-              ) : (
-                <div className="flex w-full items-stretch gap-1">
-                  <button
-                    type="button"
-                    title="Ertüchtigungsart wählen"
-                    onClick={() => setStatikChoice({ mode: 'none' })}
-                    className="shrink-0 self-stretch rounded-md border border-white/12 bg-black/34 px-2 text-sand/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] transition-colors [-webkit-tap-highlight-color:transparent] hover:border-white/18 hover:bg-black/40 hover:text-sand/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5B800]/40 focus-visible:ring-offset-0"
-                  >
-                    <ChevronLeft size={15} strokeWidth={2} className="block" aria-hidden />
-                  </button>
-                  <input
-                    ref={statikCustomPriceRef}
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="EUR / Stück"
-                    autoComplete="off"
-                    className="editor-statik-eur-beton min-w-0 flex-1 rounded-md border border-white/12 bg-black/34 px-2.5 py-2 text-xs text-sand/95 placeholder:text-sand/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-[2px] outline-none transition-[border-color,box-shadow] selection:bg-[#E5B800]/28 selection:text-sand/95 [-webkit-tap-highlight-color:transparent]"
-                    value={statikPriceDraft}
-                    onChange={(e) => {
-                      const t = e.target.value
-                      setStatikPriceDraft(t)
-                      const normalized = t.replace(/\s/g, '').replace(',', '.')
-                      if (normalized === '' || normalized === '-') {
-                        setStatikChoice((prev) => ({ ...prev, customPiecePrice: undefined }))
-                        return
-                      }
-                      const n = Number(normalized)
-                      if (Number.isFinite(n)) {
-                        setStatikChoice((prev) => ({ ...prev, customPiecePrice: n }))
+              <div className="flex flex-col gap-1">
+                <span className="text-sand/72 text-xs text-right font-medium tracking-tight">
+                  Statik / Verstärkung
+                </span>
+                {currentPlanStatikChoice.mode !== 'sonderkonstruktion' ? (
+                  <SelectSun
+                    variant="editor"
+                    editorTheme="beton"
+                    editorSize="sm"
+                    value={currentPlanStatikChoice.mode}
+                    onChange={(v) => {
+                      if (v === 'stahlbetonverbunddecke') {
+                        setPlanStatikChoice(planIndexClamped, { mode: 'stahlbetonverbunddecke' })
+                      } else if (v === 'sonderkonstruktion') {
+                        setPlanStatikChoice(planIndexClamped, {
+                          mode: 'sonderkonstruktion',
+                          customPiecePrice: currentPlanStatikChoice.customPiecePrice,
+                        })
+                      } else {
+                        setPlanStatikChoice(planIndexClamped, { mode: 'none' })
                       }
                     }}
+                    options={STATIK_MODE_OPTIONS}
+                    placeholder="Typ wählen"
                   />
-                </div>
-              )}
+                ) : (
+                  <div className="flex w-full items-stretch gap-1">
+                    <button
+                      type="button"
+                      title="Ertüchtigungsart wählen"
+                      onClick={() => setPlanStatikChoice(planIndexClamped, { mode: 'none' })}
+                      className="shrink-0 self-stretch rounded-md border border-white/12 bg-black/34 px-2 text-sand/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] transition-colors [-webkit-tap-highlight-color:transparent] hover:border-white/18 hover:bg-black/40 hover:text-sand/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5B800]/40 focus-visible:ring-offset-0"
+                    >
+                      <ChevronLeft size={15} strokeWidth={2} className="block" aria-hidden />
+                    </button>
+                    <input
+                      ref={statikCustomPriceRef}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="EUR / Stück"
+                      autoComplete="off"
+                      className="editor-statik-eur-beton min-w-0 flex-1 rounded-md border border-white/12 bg-black/34 px-2.5 py-2 text-xs text-sand/95 placeholder:text-sand/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-[2px] outline-none transition-[border-color,box-shadow] selection:bg-[#E5B800]/28 selection:text-sand/95 [-webkit-tap-highlight-color:transparent]"
+                      value={statikPriceDraft}
+                      onChange={(e) => {
+                        const t = e.target.value
+                        setStatikPriceDraft(t)
+                        const normalized = t.replace(/\s/g, '').replace(',', '.')
+                        if (normalized === '' || normalized === '-') {
+                          setPlanStatikChoice(planIndexClamped, { mode: 'sonderkonstruktion', customPiecePrice: undefined })
+                          return
+                        }
+                        const n = Number(normalized)
+                        if (Number.isFinite(n)) {
+                          setPlanStatikChoice(planIndexClamped, { mode: 'sonderkonstruktion', customPiecePrice: n })
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-sand/72 text-xs text-right font-medium tracking-tight">
+                  Abbruch-Eigenpreis
+                </span>
+                <input
+                  ref={demolitionPriceInputRef}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="EUR (optional)"
+                  autoComplete="off"
+                  className="editor-statik-eur-beton min-w-0 w-full rounded-md border border-white/12 bg-black/34 px-2.5 py-2 text-xs text-sand/95 placeholder:text-sand/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-[2px] outline-none transition-[border-color,box-shadow] selection:bg-[#E5B800]/28 selection:text-sand/95 [-webkit-tap-highlight-color:transparent]"
+                  value={demolitionPriceDraft}
+                  onChange={(e) => {
+                    const t = e.target.value
+                    setDemolitionPriceDraft(t)
+                    const normalized = t.replace(/\s/g, '').replace(',', '.')
+                    if (normalized === '' || normalized === '-') {
+                      setCustomDemolitionPrice(planIndexClamped, null)
+                      return
+                    }
+                    const n = Number(normalized)
+                    if (Number.isFinite(n)) {
+                      setCustomDemolitionPrice(planIndexClamped, n)
+                    }
+                  }}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -1844,8 +1970,8 @@ export function DetectionsReviewEditor({
                       }}
                       className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'phase1_demolition' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
                     >
-                      <Home size={14} strokeWidth={2} />
-                      <span>Dach-Rückbau</span>
+                      <LayoutGrid size={14} strokeWidth={2} />
+                      <span>Aufstandsfläche</span>
                     </button>
                     <button
                       type="button"
@@ -1860,6 +1986,36 @@ export function DetectionsReviewEditor({
                       <DoorOpen size={14} strokeWidth={2} />
                       <span>Treppenöffnung</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTabForPlan(i, 'roof')
+                        setSelectedPolygonIndex(null)
+                        setNewPolygonPoints(null)
+                        if (tool === 'add') setTool('select')
+                        roofEditorRef.current?.roofApplyToolFromParent?.('select')
+                      }}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'roof' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                    >
+                      <Home size={14} strokeWidth={2} />
+                      <span>Dach</span>
+                    </button>
+                    {editorConstraints.allowRoofWindows && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTabForPlan(i, 'roof_windows')
+                        setSelectedPolygonIndex(null)
+                        setNewPolygonPoints(null)
+                        if (tool === 'add') setTool('select')
+                        roofEditorRef.current?.roofApplyToolFromParent?.('select')
+                      }}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'roof_windows' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                    >
+                      <AppWindow size={14} strokeWidth={2} />
+                      <span>Dachfenster</span>
+                    </button>
+                    )}
                   </div>
                 </div>
                 )}
@@ -1921,7 +2077,6 @@ export function DetectionsReviewEditor({
                   {showRoomsCanvas && plan && imageUrlForPlan && (
                 <div className="relative w-full flex-1 min-h-0 rounded-lg overflow-hidden border border-[#E5B800]/50 ring-1 ring-[#E5B800]/30 bg-black/30">
                   {(pendingNewRoomPoints ||
-                    pendingDemolitionPoints ||
                     pendingNewDoorBbox ||
                     (roomTypePopoverIndex !== null && plansData[planIndexClamped]?.rooms[roomTypePopoverIndex])) && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
@@ -1940,21 +2095,6 @@ export function DetectionsReviewEditor({
                               </button>
                             ))}
                             <button type="button" onClick={() => setPendingNewRoomPoints(null)} className="text-sand/60 text-sm hover:underline mt-1">Abbrechen</button>
-                          </>
-                        ) : pendingDemolitionPoints ? (
-                          <>
-                            <span className="text-white text-sm font-medium w-full text-center">Rückbautyp (Preis je m²):</span>
-                            {DEMOLITION_PRICE_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.key}
-                                type="button"
-                                onClick={() => handlePickDemolitionPriceKey(opt.key)}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/60 hover:bg-[#E5B800]/35"
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                            <button type="button" onClick={() => setPendingDemolitionPoints(null)} className="text-sand/60 text-sm hover:underline mt-1 w-full text-center">Abbrechen</button>
                           </>
                         ) : pendingNewDoorBbox ? (
                           <>
