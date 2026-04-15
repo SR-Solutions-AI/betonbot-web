@@ -1608,6 +1608,43 @@
             ]
           },
           {
+            "title": "Aufstockung: Rückbau / Statik",
+            "subtitle": "Zusatzkosten für Aufstockung Phase 1",
+            "fieldTag": "aufstockung_phase1",
+            "variables": [
+              {
+                "key": "aufstockung_demolition_roof_basic_m2",
+                "label": "Dachrückbau Standard (€/m²)",
+                "unit": "€/m²",
+                "value": 85
+              },
+              {
+                "key": "aufstockung_demolition_roof_complex_m2",
+                "label": "Dachrückbau Komplex (€/m²)",
+                "unit": "€/m²",
+                "value": 120
+              },
+              {
+                "key": "aufstockung_demolition_roof_special_m2",
+                "label": "Dachrückbau Sonder (€/m²)",
+                "unit": "€/m²",
+                "value": 160
+              },
+              {
+                "key": "aufstockung_stair_opening_piece",
+                "label": "Treppenöffnung (€/Stück)",
+                "unit": "€/Stück",
+                "value": 2800
+              },
+              {
+                "key": "aufstockung_statik_stahlbetonverbunddecke_m2",
+                "label": "Statik Stahlbetonverbunddecke (€/m²)",
+                "unit": "€/m²",
+                "value": 145
+              }
+            ]
+          },
+          {
             "title": "Raumhöhe",
             "subtitle": "Raumhöhen die Ihr Unternehmen anbietet.",
             "fieldTag": "floor_height",

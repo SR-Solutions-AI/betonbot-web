@@ -1,7 +1,7 @@
 'use client'
 /**
  * Editor verificare detecții: camere (poligoane + etichete) și uși/geamuri.
- * Datele vin din detections_review_data.json (API compute/detections-review-data):
+ * Datele vin din API compute/detections-review-data (baseline KI + detections_edited îmbinate):
  * - Etichete camere = room_scales.json (pipeline per-crop Gemini, OCR exact).
  * - Tipuri uși/geamuri = doors_types.json (Gemini) + euristică aspect – aceeași clasificare ca în LiveFeed.
  */
@@ -21,8 +21,15 @@ import {
   Undo2,
   GripVertical,
   Loader2,
+  ChevronLeft,
 } from 'lucide-react'
-import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
+import {
+  DetectionsPolygonCanvas,
+  type Point,
+  type RoomPolygon,
+  type DoorRect,
+  type RoofDemolitionPoly,
+} from './DetectionsPolygonCanvas'
 import {
   RoofReviewEditor,
   type RoofReviewEditorHandle,
@@ -30,7 +37,7 @@ import {
 } from './RoofReviewEditor'
 import { apiFetch } from '../lib/supabaseClient'
 import { displayFloorTabLabelDe } from '@/lib/displayFloorTabLabelDe'
-
+import { SelectSun } from './SunSelect'
 /** Unire vârfuri consecutive foarte apropiate (în px imagine) – la randarea poligoanelor prima dată. */
 const MERGE_VERTEX_DIST_PX = 14
 
@@ -78,6 +85,12 @@ function mergeEditorConstraints(raw: Partial<EditorConstraints> | undefined | nu
   }
 }
 
+const STATIK_MODE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'none', label: 'Keine' },
+  { value: 'stahlbetonverbunddecke', label: 'Stahlbetonverbunddecke (PDB m²)' },
+  { value: 'sonderkonstruktion', label: 'Eigener Stückpreis' },
+]
+
 const ALL_ROOM_TYPE_OPTIONS = ['Garage', 'Balkon', 'Wintergarten', 'Raum gedämmt', 'Raum ungedämmt'] as const
 type RoomTypeOption = (typeof ALL_ROOM_TYPE_OPTIONS)[number]
 const FALLBACK_ROOM_TYPE = 'Raum ungedämmt'
@@ -93,7 +106,13 @@ function mergeClosePolygonPoints(points: Point[], minDistPx: number): Point[] {
   return out.length >= 3 ? out : points
 }
 
-export type ReviewTab = 'rooms' | 'doors' | 'roof' | 'roof_windows'
+export type ReviewTab =
+  | 'rooms'
+  | 'doors'
+  | 'roof'
+  | 'roof_windows'
+  | 'phase1_demolition'
+  | 'phase1_stair'
 
 export type ReviewImage = { url: string; caption?: string }
 
@@ -105,10 +124,11 @@ type PlanData = {
   metersPerPixel?: number | null
   rooms: RoomPolygon[]
   doors: DoorRect[]
+  roofDemolitions?: RoofDemolitionPoly[]
+  stairOpenings?: Array<DoorRect & { price_key?: string; quantity?: number }>
 }
 
 type DoorType = 'door' | 'window' | 'sliding_door' | 'garage_door' | 'stairs'
-
 const DOOR_TYPE_LABELS_DE: Record<DoorType, string> = {
   door: 'Tür',
   window: 'Fenster',
@@ -173,6 +193,35 @@ function sanitizeRoomsAndDoorsAgainstConstraints(
 const round2 = (v: number) => Math.round(v * 100) / 100
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const DEMOLITION_PRICE_OPTIONS: { key: string; label: string }[] = [
+  { key: 'aufstockung_demolition_roof_basic_m2', label: 'Standard / Flach' },
+  { key: 'aufstockung_demolition_roof_complex_m2', label: 'Komplex / steile Form' },
+  { key: 'aufstockung_demolition_roof_special_m2', label: 'Sonderlage' },
+]
+
+function polygonAreaM2FromPx(points: Point[], metersPerPixel: number | null | undefined): number {
+  if (points.length < 3) return 0
+  let a = 0
+  for (let i = 0, n = points.length; i < n; i++) {
+    const [x1, y1] = points[i]
+    const [x2, y2] = points[(i + 1) % n]
+    a += x1 * y2 - x2 * y1
+  }
+  const pxArea = Math.abs(a) / 2
+  if (!metersPerPixel || metersPerPixel <= 0) return 0
+  return round2(pxArea * metersPerPixel * metersPerPixel)
+}
+
+function withDemolitionAreas(
+  polys: RoofDemolitionPoly[],
+  metersPerPixel: number | null | undefined,
+): RoofDemolitionPoly[] {
+  return polys.map((d) => ({
+    ...d,
+    area_m2: polygonAreaM2FromPx(d.points, metersPerPixel),
+  }))
+}
+
 function isValidFloorPlanPerm(perm: unknown, n: number): perm is number[] {
   if (!Array.isArray(perm) || perm.length !== n || n === 0) return false
   const ints = perm.map((x) => Math.round(Number(x)))
@@ -183,6 +232,14 @@ function isValidFloorPlanPerm(perm: unknown, n: number): perm is number[] {
     if (sorted[i] !== i) return false
   }
   return true
+}
+
+function normalizeFloorKindForAufstockung(k: unknown): 'new' | 'existing' {
+  return String(k ?? '').toLowerCase() === 'new' ? 'new' : 'existing'
+}
+
+function padFloorKindsToN(kinds: Array<string | 'new' | 'existing' | undefined>, n: number): ('new' | 'existing')[] {
+  return Array.from({ length: n }, (_, i) => normalizeFloorKindForAufstockung(kinds[i]))
 }
 const isTooManyRequestsError = (err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err ?? '')
@@ -337,6 +394,7 @@ type DetectionsReviewEditorProps = {
   /** Pentru tab-ul Dach: dacă lipsesc, se folosesc `images`. */
   roofImages?: ReviewImage[]
   roofOnlyOffer?: boolean
+  forceAufstockungFlow?: boolean
   onConfirm: () => void | Promise<void>
   onCancel: () => void
 }
@@ -346,6 +404,7 @@ export function DetectionsReviewEditor({
   images,
   roofImages,
   roofOnlyOffer = false,
+  forceAufstockungFlow = false,
   onConfirm,
   onCancel,
 }: DetectionsReviewEditorProps) {
@@ -354,9 +413,16 @@ export function DetectionsReviewEditor({
   const [tabPerPlan, setTabPerPlan] = useState<Record<number, ReviewTab>>({})
   const [plansData, setPlansData] = useState<PlanData[]>([])
   const [floorLabels, setFloorLabels] = useState<string[]>([])
+  const [floorKinds, setFloorKinds] = useState<string[]>([])
+  /** Din `GET .../detections-review-data` (`offers.meta.wizard_package`); dacă StepWizard pierde fluxul, tot deschidem Aufstockung. */
+  const [wizardPackageFromApi, setWizardPackageFromApi] = useState('')
+  const [statikChoice, setStatikChoice] = useState<{ mode: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'; customPiecePrice?: number }>({ mode: 'none' })
   /** Permutation: index from bottom (0 = lowest floor) → raster/plan index. PDF & tabs use this order (top tab = lowest floor). */
   const [floorPlanOrder, setFloorPlanOrder] = useState<number[]>([])
   const [floorOrderDraft, setFloorOrderDraft] = useState<number[]>([])
+  /** În modul reordonare (Aufstockung): Bestand / Zubau per planIdx, ca în formularul Gebäudestruktur. */
+  const [floorKindsDraft, setFloorKindsDraft] = useState<('new' | 'existing')[]>([])
+  const [reorderKindsError, setReorderKindsError] = useState<string | null>(null)
   const [reorderFloorsMode, setReorderFloorsMode] = useState(false)
   const [dragFromDisplayIdx, setDragFromDisplayIdx] = useState<number | null>(null)
   const floorPlanOrderRef = useRef<number[]>([])
@@ -366,6 +432,7 @@ export function DetectionsReviewEditor({
   const [newDoorType, setNewDoorType] = useState<DoorType>('door')
   const [editorConstraints, setEditorConstraints] = useState<EditorConstraints>(() => mergeEditorConstraints(undefined))
   const [pendingNewRoomPoints, setPendingNewRoomPoints] = useState<Point[] | null>(null)
+  const [pendingDemolitionPoints, setPendingDemolitionPoints] = useState<Point[] | null>(null)
   const [pendingNewDoorBbox, setPendingNewDoorBbox] = useState<[number, number, number, number] | null>(null)
   const [pendingNewDoorType, setPendingNewDoorType] = useState<'window' | 'sliding_door' | null>(null)
   const [roomTypePopoverIndex, setRoomTypePopoverIndex] = useState<number | null>(null)
@@ -379,6 +446,25 @@ export function DetectionsReviewEditor({
   /** Popup „Neues Fenster – Höhe“: focus + Enter = Speichern */
   const newWindowHeightInputRef = useRef<HTMLInputElement>(null)
   const [roofDimsToolbarSlotEl, setRoofDimsToolbarSlotEl] = useState<HTMLDivElement | null>(null)
+  const statikCustomPriceRef = useRef<HTMLInputElement>(null)
+  const [statikPriceDraft, setStatikPriceDraft] = useState('')
+  const lastStatikModeRef = useRef(statikChoice.mode)
+
+  useEffect(() => {
+    const prev = lastStatikModeRef.current
+    const enteredSonder =
+      statikChoice.mode === 'sonderkonstruktion' && prev !== 'sonderkonstruktion'
+    if (enteredSonder) {
+      const p = statikChoice.customPiecePrice
+      setStatikPriceDraft(p !== undefined && Number.isFinite(p) ? String(p) : '')
+      queueMicrotask(() => statikCustomPriceRef.current?.focus())
+    }
+    if (statikChoice.mode !== 'sonderkonstruktion') {
+      setStatikPriceDraft('')
+    }
+    lastStatikModeRef.current = statikChoice.mode
+  }, [statikChoice.mode])
+
   useEffect(() => {
     plansDataRef.current = plansData
   }, [plansData])
@@ -454,14 +540,30 @@ export function DetectionsReviewEditor({
       imageHeight: Number(p.imageHeight) || 0,
     }))
   }, [plansDimKey])
+  const effectiveForceAufstockung =
+    forceAufstockungFlow || String(wizardPackageFromApi).toLowerCase().trim() === 'aufstockung'
+  const effectiveFloorKinds = useMemo(() => {
+    const normalized = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing'))
+    if (normalized.length > 0) return normalized
+    if (!effectiveForceAufstockung) return normalized
+    const hintN = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
+    return Array.from({ length: hintN }, (_, i) => (i === hintN - 1 ? 'new' : 'existing'))
+  }, [floorKinds, effectiveForceAufstockung, plansData.length, images.length])
   const getTabForPlan = useCallback(
     (planIdx: number): ReviewTab => {
       const raw = tabPerPlan[planIdx] ?? 'rooms'
       if (roofOnlyOffer && raw === 'doors') return 'rooms'
       if (!editorConstraints.allowRoofWindows && raw === 'roof_windows') return 'roof'
+      const auf = effectiveFloorKinds.length > 0
+      const fk = String(effectiveFloorKinds[planIdx] ?? 'new').toLowerCase() === 'new' ? 'new' : 'existing'
+      if (auf && fk === 'existing') {
+        if (raw === 'phase1_demolition' || raw === 'phase1_stair') return raw
+        return 'phase1_demolition'
+      }
+      if (raw === 'phase1_demolition' || raw === 'phase1_stair') return 'rooms'
       return raw
     },
-    [roofOnlyOffer, tabPerPlan, editorConstraints.allowRoofWindows],
+    [roofOnlyOffer, tabPerPlan, editorConstraints.allowRoofWindows, effectiveFloorKinds],
   )
   const setTabForPlan = useCallback((planIdx: number, t: ReviewTab) => {
     setTabPerPlan((prev) => ({ ...prev, [planIdx]: t }))
@@ -474,6 +576,7 @@ export function DetectionsReviewEditor({
     if (!offerId || images.length === 0) {
       setLoading(false)
       setPlansData([])
+      setWizardPackageFromApi('')
       setEditorConstraints(mergeEditorConstraints(undefined))
       return
     }
@@ -487,13 +590,45 @@ export function DetectionsReviewEditor({
             plans?: PlanData[]
             floorLabels?: string[]
             floorPlanOrder?: number[]
+            floorKinds?: string[]
+            wizardPackage?: string
+            statikChoice?: { mode?: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'; customPiecePrice?: number }
             editorConstraints?: Partial<EditorConstraints>
           }
           const constraints = mergeEditorConstraints(res.editorConstraints)
           const plans = Array.isArray(res?.plans) ? res.plans : []
-          const normalized = plans.map((p) => ({
+          const normalized = plans.map((p) => {
+            const rawDemo = Array.isArray(p.roofDemolitions) ? p.roofDemolitions : []
+            const roofDemolitions: RoofDemolitionPoly[] = rawDemo
+              .map((d: { points?: Point[]; price_key?: string; priceKey?: string; area_m2?: number; area?: number }) => ({
+                points: Array.isArray(d.points) ? mergeClosePolygonPoints(d.points, MERGE_VERTEX_DIST_PX) : [],
+                price_key:
+                  typeof d.price_key === 'string'
+                    ? d.price_key
+                    : typeof d.priceKey === 'string'
+                      ? d.priceKey
+                      : 'aufstockung_demolition_roof_basic_m2',
+                area_m2: typeof d.area_m2 === 'number' ? d.area_m2 : typeof d.area === 'number' ? d.area : undefined,
+              }))
+              .filter((d) => d.points.length >= 3)
+            const rawStairs = Array.isArray(p.stairOpenings) ? p.stairOpenings : []
+            const stairOpenings = rawStairs
+              .map((s: { bbox?: DoorRect['bbox']; price_key?: string; quantity?: number }) => {
+                const b = s.bbox
+                if (!Array.isArray(b) || b.length < 4) return null
+                return {
+                  bbox: b as DoorRect['bbox'],
+                  type: 'stair_opening',
+                  price_key: typeof s.price_key === 'string' ? s.price_key : 'aufstockung_stair_opening_piece',
+                  quantity: typeof s.quantity === 'number' ? s.quantity : 1,
+                }
+              })
+              .filter(Boolean) as Array<DoorRect & { price_key?: string; quantity?: number }>
+            return {
             ...p,
             metersPerPixel: typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null,
+            roofDemolitions,
+            stairOpenings,
             rooms: (p.rooms || []).map((r: RoomPolygon & { room_name?: string }) => {
               const rt = migrateRoomLabelDe(r.roomType ?? 'Raum')
               const rn = migrateRoomLabelDe(
@@ -512,7 +647,8 @@ export function DetectionsReviewEditor({
               ...d,
               type: normalizeDoorType(d.type),
             })), typeof p.metersPerPixel === 'number' ? p.metersPerPixel : null),
-          }))
+          }
+          })
           const sanitizeConstraints: EditorConstraints = roofOnlyOffer
             ? { ...constraints, allowWintergartenRoomType: true, allowBalkonRoomType: true }
             : constraints
@@ -523,7 +659,15 @@ export function DetectionsReviewEditor({
           lastPlans = sanitized
           if (cancelled) return
           setEditorConstraints(constraints)
+          setWizardPackageFromApi(typeof res?.wizardPackage === 'string' ? res.wizardPackage : '')
           setFloorLabels(Array.isArray(res?.floorLabels) ? res.floorLabels : [])
+          setFloorKinds(Array.isArray(res?.floorKinds) ? res.floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing')) : [])
+          if (res?.statikChoice?.mode) {
+            setStatikChoice({
+              mode: res.statikChoice.mode,
+              customPiecePrice: typeof res.statikChoice.customPiecePrice === 'number' ? res.statikChoice.customPiecePrice : undefined,
+            })
+          }
           const nl = sanitized.length
           const apiPerm = nl > 0 && isValidFloorPlanPerm(res?.floorPlanOrder, nl) ? (res!.floorPlanOrder as number[]) : null
           const initialOrder = nl > 0 ? (apiPerm ?? Array.from({ length: nl }, (_, i) => i)) : []
@@ -560,14 +704,29 @@ export function DetectionsReviewEditor({
   const buildDetectionsPayload = useCallback((snapshot: PlanData[]) => {
     const ord = floorPlanOrderRef.current
     const n = snapshot.length
-    const body: { plans: { rooms: RoomPolygon[]; doors: DoorRect[] }[]; floorPlanOrder?: number[] } = {
-      plans: snapshot.map((p) => ({ rooms: p.rooms, doors: p.doors })),
+    const body: {
+      plans: { rooms: RoomPolygon[]; doors: DoorRect[]; roofDemolitions?: unknown[]; stairOpenings?: unknown[] }[]
+      floorPlanOrder?: number[]
+      floorKinds?: string[]
+      statikChoice?: { mode: 'none' | 'stahlbetonverbunddecke' | 'sonderkonstruktion'; customPiecePrice?: number }
+    } = {
+      plans: snapshot.map((p) => ({
+        rooms: p.rooms,
+        doors: p.doors,
+        roofDemolitions: Array.isArray(p.roofDemolitions) ? p.roofDemolitions : [],
+        stairOpenings: Array.isArray(p.stairOpenings) ? p.stairOpenings : [],
+      })),
     }
     if (n > 0 && ord.length === n && isValidFloorPlanPerm(ord, n)) {
       body.floorPlanOrder = ord
     }
+    if (floorKinds.length > 0) {
+      body.floorKinds = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing'))
+    }
+    body.statikChoice = statikChoice
     return JSON.stringify(body)
-  }, [])
+  }, [floorKinds, statikChoice])
+
   const persistDetectionsPayload = useCallback(async (payload: string): Promise<boolean> => {
     if (!offerId) return false
     for (let attempt = 0; attempt < DETECTIONS_PATCH_MAX_ATTEMPTS; attempt++) {
@@ -655,6 +814,33 @@ export function DetectionsReviewEditor({
     })
   }, [])
 
+  const setRoofDemolitions = useCallback((planIdx: number, polys: RoofDemolitionPoly[]) => {
+    setPlansData((prev) => {
+      const next = [...prev]
+      if (planIdx >= next.length) return next
+      const mpp = next[planIdx]?.metersPerPixel
+      next[planIdx] = { ...next[planIdx], roofDemolitions: withDemolitionAreas(polys, mpp) }
+      return next
+    })
+  }, [])
+
+  const setStairOpenings = useCallback((planIdx: number, rects: DoorRect[]) => {
+    setPlansData((prev) => {
+      const next = [...prev]
+      if (planIdx >= next.length) return next
+      const old =
+        (next[planIdx].stairOpenings as Array<DoorRect & { price_key?: string; quantity?: number }>) ?? []
+      const out = rects.map((r, i) => ({
+        ...r,
+        type: 'stair_opening',
+        price_key: old[i]?.price_key ?? 'aufstockung_stair_opening_piece',
+        quantity: old[i]?.quantity ?? 1,
+      }))
+      next[planIdx] = { ...next[planIdx], stairOpenings: out }
+      return next
+    })
+  }, [])
+
   const handleConfirm = useCallback(async () => {
     if (!offerId) {
       await onConfirm()
@@ -712,30 +898,40 @@ export function DetectionsReviewEditor({
     if (idx === null || typeof idx !== 'number' || idx < 0) return
     pushHistory()
     const pi = planIndexClamped
-    const activeTab = getTabForPlan(pi)
-    if (activeTab === 'roof' || activeTab === 'roof_windows') return
+    const tabNow = getTabForPlan(pi)
+    if (tabNow === 'roof' || tabNow === 'roof_windows') return
     setPlansData((prev) => {
       if (pi >= prev.length) return prev
       const plan = prev[pi]
       if (!plan) return prev
-      if (activeTab === 'rooms') {
+      const out = [...prev]
+      if (tabNow === 'rooms') {
         if (idx >= plan.rooms.length) return prev
-        const next = plan.rooms.filter((_, i) => i !== idx)
-        const nextPlan = { ...plan, rooms: next }
-        const out = [...prev]
-        out[pi] = nextPlan
-        return out
-      } else {
-        if (idx >= plan.doors.length) return prev
-        const next = plan.doors.filter((_, i) => i !== idx)
-        const nextPlan = { ...plan, doors: next }
-        const out = [...prev]
-        out[pi] = nextPlan
+        out[pi] = { ...plan, rooms: plan.rooms.filter((_, i) => i !== idx) }
         return out
       }
+      if (tabNow === 'phase1_demolition') {
+        const list = plan.roofDemolitions ?? []
+        if (idx >= list.length) return prev
+        const next = list.filter((_, i) => i !== idx)
+        out[pi] = { ...plan, roofDemolitions: withDemolitionAreas(next, plan.metersPerPixel) }
+        return out
+      }
+      if (tabNow === 'phase1_stair') {
+        const list = plan.stairOpenings ?? []
+        if (idx >= list.length) return prev
+        out[pi] = { ...plan, stairOpenings: list.filter((_, i) => i !== idx) as typeof list }
+        return out
+      }
+      if (tabNow === 'doors') {
+        if (idx >= plan.doors.length) return prev
+        out[pi] = { ...plan, doors: plan.doors.filter((_, i) => i !== idx) }
+        return out
+      }
+      return prev
     })
     setSelectedPolygonIndex(null)
-  }, [tabPerPlan, selectedPolygonIndex, planIndexClamped])
+  }, [getTabForPlan, selectedPolygonIndex, planIndexClamped, pushHistory])
 
   useEffect(() => {
     const onDeleteKey = (e: KeyboardEvent) => {
@@ -757,9 +953,27 @@ export function DetectionsReviewEditor({
 
   const handleRequestCloseNewPolygon = useCallback(() => {
     if (!newPolygonPoints || newPolygonPoints.length < 3 || !currentPlan) return
+    const t = getTabForPlan(planIndexClamped)
+    if (t === 'phase1_demolition') {
+      setPendingDemolitionPoints([...newPolygonPoints])
+      setNewPolygonPoints(null)
+      return
+    }
     setPendingNewRoomPoints([...newPolygonPoints])
     setNewPolygonPoints(null)
-  }, [newPolygonPoints, currentPlan])
+  }, [newPolygonPoints, currentPlan, getTabForPlan, planIndexClamped])
+
+  const handlePickDemolitionPriceKey = useCallback(
+    (price_key: string) => {
+      if (!pendingDemolitionPoints || pendingDemolitionPoints.length < 3 || !currentPlan) return
+      pushHistory()
+      const area_m2 = polygonAreaM2FromPx(pendingDemolitionPoints, currentPlan.metersPerPixel)
+      const prev = currentPlan.roofDemolitions ?? []
+      setRoofDemolitions(planIndexClamped, [...prev, { points: pendingDemolitionPoints, price_key, area_m2 }])
+      setPendingDemolitionPoints(null)
+    },
+    [pendingDemolitionPoints, currentPlan, pushHistory, setRoofDemolitions, planIndexClamped],
+  )
 
   const handlePickNewRoomType = useCallback((roomType: RoomTypeOption) => {
     if (!pendingNewRoomPoints || pendingNewRoomPoints.length < 3 || !currentPlan) return
@@ -832,10 +1046,13 @@ export function DetectionsReviewEditor({
     setSelectedPolygonIndex(null)
     setNewPolygonPoints(null)
     setPendingNewDoorBbox(null)
+    setPendingDemolitionPoints(null)
   }, [planIndex])
 
   useEffect(() => {
-    if (newPolygonPoints?.length !== 2 || getTabForPlan(planIndexClamped) !== 'doors') return
+    if (newPolygonPoints?.length !== 2) return
+    const t = getTabForPlan(planIndexClamped)
+    if (t !== 'doors' && t !== 'phase1_stair') return
     const [a, b] = newPolygonPoints
     const bbox: [number, number, number, number] = [
       Math.min(a[0], b[0]),
@@ -847,6 +1064,20 @@ export function DetectionsReviewEditor({
 
     const plan = plansData[planIndexClamped]
     if (!plan) return
+
+    if (t === 'phase1_stair') {
+      pushHistory()
+      setStairOpenings(planIndexClamped, [
+        ...(plan.stairOpenings ?? []),
+        {
+          bbox,
+          type: 'stair_opening',
+          price_key: 'aufstockung_stair_opening_piece',
+          quantity: 1,
+        },
+      ])
+      return
+    }
 
     if (newDoorType === 'window') {
       setPendingNewDoorBbox(bbox)
@@ -868,9 +1099,13 @@ export function DetectionsReviewEditor({
         dimensionsEdited: true,
       },
     ])
-  }, [newPolygonPoints, planIndexClamped, getTabForPlan, plansData, newDoorType, pushHistory, setDoors])
+  }, [newPolygonPoints, planIndexClamped, getTabForPlan, plansData, newDoorType, pushHistory, setDoors, setStairOpenings])
 
   const activeTab = getTabForPlan(planIndexClamped)
+  const isAufstockungFlow = effectiveFloorKinds.length > 0
+  const currentFloorKind = String(effectiveFloorKinds[planIndexClamped] ?? 'new').toLowerCase() === 'new' ? 'new' : 'existing'
+  /** Bestand etaj în Aufstockung: Dach-Rückbau + Treppenöffnung; Zubau: Räume / Türen / Dach wie Neubau. */
+  const existingFloorEditing = isAufstockungFlow && currentFloorKind === 'existing'
 
   const roofSurfaceTabForChild: RoofSurfaceTab =
     activeTab === 'roof_windows' ? 'windows' : 'surfaces'
@@ -983,19 +1218,39 @@ export function DetectionsReviewEditor({
               : tool === 'edit'
                 ? 'Punkte und Kanten ziehen'
                 : ''
-        : tool === 'select' && activeTab === 'doors'
-          ? 'Element wählen und ziehen zum Verschieben'
-          : tool === 'select'
-            ? 'Auf Element klicken und ziehen zum Verschieben'
-            : tool === 'add' && activeTab === 'rooms'
-              ? 'Klicken Sie um Punkte zu setzen – ersten Punkt erneut klicken zum Schließen'
-              : tool === 'add' && activeTab === 'doors'
-                ? 'Zwei Ecken für Öffnung ziehen (Rechteck)'
-                : tool === 'remove'
-                  ? 'Element zum Entfernen anklicken'
-                  : tool === 'edit'
-                    ? 'Punkte und Kanten ziehen'
-                    : ''
+      : activeTab === 'phase1_demolition'
+        ? tool === 'select'
+          ? 'Fläche wählen und verschieben'
+          : tool === 'add'
+            ? 'Polygon für Dachrückbau – ersten Punkt erneut klicken zum Schließen, dann Rückbautyp wählen'
+            : tool === 'remove'
+              ? 'Fläche zum Entfernen anklicken'
+              : tool === 'edit'
+                ? 'Punkte und Kanten ziehen'
+                : ''
+        : activeTab === 'phase1_stair'
+          ? tool === 'select'
+            ? 'Rechteck wählen und verschieben'
+            : tool === 'add'
+              ? 'Zwei Ecken für Treppenöffnung (Rechteck)'
+              : tool === 'remove'
+                ? 'Öffnung zum Entfernen anklicken'
+                : tool === 'edit'
+                  ? 'Ecken ziehen'
+                  : ''
+          : tool === 'select' && activeTab === 'doors'
+            ? 'Element wählen und ziehen zum Verschieben'
+            : tool === 'select'
+              ? 'Auf Element klicken und ziehen zum Verschieben'
+              : tool === 'add' && activeTab === 'rooms'
+                ? 'Klicken Sie um Punkte zu setzen – ersten Punkt erneut klicken zum Schließen'
+                : tool === 'add' && activeTab === 'doors'
+                  ? 'Zwei Ecken für Öffnung ziehen (Rechteck)'
+                  : tool === 'remove'
+                    ? 'Element zum Entfernen anklicken'
+                    : tool === 'edit'
+                      ? 'Punkte und Kanten ziehen'
+                      : ''
 
   const handleInsertVertex = useCallback((planIdx: number, polyIndex: number, afterVertexIndex: number, x: number, y: number) => {
     const plan = plansData[planIdx]
@@ -1005,6 +1260,20 @@ export function DetectionsReviewEditor({
     const newPts = [...pts.slice(0, afterVertexIndex + 1), [x, y] as Point, ...pts.slice(afterVertexIndex + 1)]
     setRooms(planIdx, plan.rooms.map((r, i) => i !== polyIndex ? r : { points: newPts }))
   }, [plansData, setRooms, pushHistory])
+
+  const handleInsertDemolitionVertex = useCallback(
+    (planIdx: number, polyIndex: number, afterVertexIndex: number, x: number, y: number) => {
+      const plan = plansData[planIdx]
+      const list = plan?.roofDemolitions ?? []
+      if (!plan || polyIndex >= list.length || afterVertexIndex < 0) return
+      pushHistory()
+      const pts = list[polyIndex].points
+      const newPts = [...pts.slice(0, afterVertexIndex + 1), [x, y] as Point, ...pts.slice(afterVertexIndex + 1)]
+      const next = list.map((d, i) => (i !== polyIndex ? d : { ...d, points: newPts }))
+      setRoofDemolitions(planIdx, next)
+    },
+    [plansData, setRoofDemolitions, pushHistory],
+  )
 
   const showRoofWorkspace = activeTab === 'roof' || activeTab === 'roof_windows'
   const showRoomsCanvas =
@@ -1026,7 +1295,7 @@ export function DetectionsReviewEditor({
           }
         }}
         disabled={isConfirming}
-        className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#1a0f0a] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#c9a800] to-[#E5B800] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
+        className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#ffffff] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
       >
         <Check size={16} strokeWidth={2.25} />
         {isConfirming ? 'Speichern…' : 'Erkennung bestätigen – weiter'}
@@ -1055,11 +1324,11 @@ export function DetectionsReviewEditor({
         </div>
       )}
       {/*
-        1fr | auto | 1fr: titlu + Werkzeuge rămân centrate pe lățimea completă; etajele sunt doar în coloana stângă.
+        1fr | auto | 1fr: etaje stânga, titlu + Werkzeuge centru, Statik dreapta (Aufstockung Bestand).
       */}
       <div className="grid w-full shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-x-3 px-2 pt-1 pb-1 min-w-0">
         <div className="flex min-h-0 min-w-0 flex-col items-start justify-center gap-1 self-stretch">
-          {!loading && n > 1 && plansData.length > 0 && (
+          {!loading && plansData.length > 0 && n > 1 && (
             <div className="flex w-fit max-w-full flex-col items-stretch gap-2">
               <div
                 className="flex w-fit max-w-full flex-col-reverse items-stretch gap-1"
@@ -1069,10 +1338,15 @@ export function DetectionsReviewEditor({
                 {(reorderFloorsMode ? floorOrderDraft : floorPlanOrder).map((planIdx, displayPos) => {
                   const label = displayFloorTabLabelDe(floorLabels[planIdx] ?? `Plan ${planIdx + 1}`)
                   const isActive = planIndexClamped === planIdx
+                  const floorKindLabel =
+                    String(effectiveFloorKinds[planIdx] ?? 'new').toLowerCase() === 'new' ? 'new' : 'existing'
+                  const bottomPlanIdx = reorderFloorsMode ? (floorOrderDraft[0] ?? -1) : (floorPlanOrder[0] ?? -1)
+                  const isBottomPhysicalFloor = reorderFloorsMode && isAufstockungFlow && planIdx === bottomPlanIdx
+                  const draftKind = normalizeFloorKindForAufstockung(floorKindsDraft[planIdx])
                   return (
                     <div
                       key={`floor-tab-wrap-${planIdx}-${displayPos}`}
-                      className="flex items-stretch gap-1 min-w-0"
+                      className="flex flex-col gap-0 min-w-0"
                       onDragOver={reorderFloorsMode ? (e) => e.preventDefault() : undefined}
                       onDrop={
                         reorderFloorsMode
@@ -1091,99 +1365,190 @@ export function DetectionsReviewEditor({
                           : undefined
                       }
                     >
-                      {reorderFloorsMode && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          draggable
-                          onDragStart={() => setDragFromDisplayIdx(displayPos)}
-                          onDragEnd={() => setDragFromDisplayIdx(null)}
-                          className="shrink-0 flex items-center justify-center px-1 rounded-md border border-white/15 text-sand/60 cursor-grab active:cursor-grabbing hover:bg-white/10"
-                          title="Ziehen zum Sortieren"
-                          aria-label="Stockwerk verschieben"
+                      <div className="flex items-stretch gap-1 min-w-0">
+                        {reorderFloorsMode && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            draggable
+                            onDragStart={() => setDragFromDisplayIdx(displayPos)}
+                            onDragEnd={() => setDragFromDisplayIdx(null)}
+                            className="shrink-0 flex items-center justify-center px-0.5 text-sand/55 cursor-grab active:cursor-grabbing hover:text-sand/80"
+                            title="Ziehen zum Sortieren"
+                            aria-label="Stockwerk verschieben"
+                          >
+                            <GripVertical size={16} />
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          title={label}
+                          onClick={() => {
+                            setPlanIndex(planIdx)
+                            setSelectedPolygonIndex(null)
+                            setNewPolygonPoints(null)
+                            if (tool === 'add') setTool('select')
+                          }}
+                          className={`flex-1 min-w-0 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-left transition-colors ${
+                            isActive
+                              ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50'
+                              : 'text-sand/80 border border-white/10 hover:bg-white/5'
+                          }`}
                         >
-                          <GripVertical size={16} />
-                        </span>
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="whitespace-nowrap">{label}</span>
+                            {isAufstockungFlow && !reorderFloorsMode && (
+                              <span
+                                className={`text-[9px] font-semibold px-1.5 py-0 rounded border shrink-0 ${
+                                  floorKindLabel === 'new'
+                                    ? 'border-[#E5B800]/50 text-[#E5B800] bg-[#E5B800]/10'
+                                    : 'border-white/25 text-sand/90 bg-white/5'
+                                }`}
+                              >
+                                {floorKindLabel === 'new' ? 'Zubau' : 'Bestand'}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      </div>
+                      {reorderFloorsMode && isAufstockungFlow && (
+                        <div
+                          className="flex flex-col gap-1 pt-1.5 pl-1 border-l border-white/10 ml-1.5 mt-0.5 max-w-[260px]"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          {isBottomPhysicalFloor ? (
+                            <span className="text-xs text-sand/90">Erdgeschoss (immer Bestand)</span>
+                          ) : (
+                            <>
+                              <span className="text-[10px] text-sand/50">Bestand oder Zubau</span>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                                    draftKind === 'existing'
+                                      ? 'border-[#E5B800]/60 bg-[#E5B800]/15 text-[#E5B800]'
+                                      : 'border-white/15 text-sand/70 hover:bg-white/5'
+                                  }`}
+                                  onClick={() =>
+                                    setFloorKindsDraft((d) => {
+                                      const next = padFloorKindsToN(d, n)
+                                      next[planIdx] = 'existing'
+                                      return next
+                                    })
+                                  }
+                                >
+                                  Bestand
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                                    draftKind === 'new'
+                                      ? 'border-[#E5B800]/60 bg-[#E5B800]/15 text-[#E5B800]'
+                                      : 'border-white/15 text-sand/70 hover:bg-white/5'
+                                  }`}
+                                  onClick={() =>
+                                    setFloorKindsDraft((d) => {
+                                      const next = padFloorKindsToN(d, n)
+                                      next[planIdx] = 'new'
+                                      return next
+                                    })
+                                  }
+                                >
+                                  Zubau
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       )}
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        onClick={() => {
-                          setPlanIndex(planIdx)
-                          setSelectedPolygonIndex(null)
-                          setNewPolygonPoints(null)
-                          if (tool === 'add') setTool('select')
-                        }}
-                        className={`flex-1 min-w-0 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-left whitespace-nowrap transition-colors ${
-                          isActive
-                            ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50'
-                            : 'text-sand/80 border border-white/10 hover:bg-white/5'
-                        }`}
-                      >
-                        {label}
-                      </button>
                     </div>
                   )
                 })}
               </div>
-              <label className="flex items-start gap-2 text-sand/80 text-xs cursor-pointer select-none max-w-[220px]">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-white/30"
-                  checked={reorderFloorsMode}
-                  onChange={(e) => {
-                    const on = e.target.checked
-                    if (on) {
-                      setFloorOrderDraft([...floorPlanOrder])
-                      setReorderFloorsMode(true)
-                    } else {
-                      setFloorOrderDraft([...floorPlanOrder])
-                      setReorderFloorsMode(false)
-                      setDragFromDisplayIdx(null)
-                    }
-                  }}
-                />
-                <span>Reihenfolge der Stockwerke ändern</span>
-              </label>
-              {reorderFloorsMode && (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
+
+              <div className="mt-1.5 flex w-full max-w-[240px] flex-col gap-1">
+                {reorderFloorsMode ? (
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const nextOrder = [...floorOrderDraft]
+                        if (!isValidFloorPlanPerm(nextOrder, n)) return
+                        setReorderKindsError(null)
+                        if (isAufstockungFlow) {
+                          let nextKinds = padFloorKindsToN(floorKindsDraft, n)
+                          const bottom = nextOrder[0]
+                          if (bottom >= 0 && bottom < n) nextKinds[bottom] = 'existing'
+                          if (!nextKinds.some((k) => k === 'new')) {
+                            setReorderKindsError('Bitte markieren Sie mindestens ein neues Geschoss.')
+                            return
+                          }
+                          setFloorKinds(nextKinds.map((k) => k))
+                        }
+                        floorPlanOrderRef.current = nextOrder
+                        setFloorPlanOrder(nextOrder)
+                        setFloorKindsDraft([])
+                        setReorderFloorsMode(false)
+                        setDragFromDisplayIdx(null)
+                        await saveDetectionsToServer(true)
+                      }}
+                      className="min-w-0 flex-1 rounded-lg border border-[#E5B800]/40 bg-[#E5B800] px-2 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                    >
+                      Speichern
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFloorOrderDraft([...floorPlanOrder])
+                        setFloorKindsDraft([])
+                        setReorderKindsError(null)
+                        setReorderFloorsMode(false)
+                        setDragFromDisplayIdx(null)
+                      }}
+                      className="min-w-0 flex-1 rounded-lg border border-white/15 px-2 py-1.5 text-xs font-medium text-sand/85 hover:bg-white/5"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={async () => {
-                      const next = [...floorOrderDraft]
-                      if (!isValidFloorPlanPerm(next, n)) return
-                      floorPlanOrderRef.current = next
-                      setFloorPlanOrder(next)
-                      setReorderFloorsMode(false)
-                      setDragFromDisplayIdx(null)
-                      await saveDetectionsToServer(true)
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#E5B800] text-white hover:brightness-110"
-                  >
-                    Speichern
-                  </button>
-                  <button
-                    type="button"
+                    title="Etagen neu anordnen (Griffe ziehen)"
                     onClick={() => {
                       setFloorOrderDraft([...floorPlanOrder])
-                      setReorderFloorsMode(false)
-                      setDragFromDisplayIdx(null)
+                      setReorderKindsError(null)
+                      if (isAufstockungFlow) {
+                        setFloorKindsDraft(padFloorKindsToN(effectiveFloorKinds, n))
+                      } else {
+                        setFloorKindsDraft([])
+                      }
+                      setReorderFloorsMode(true)
                     }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/25 text-sand/90 hover:bg-white/10"
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#E5B800] px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:brightness-110"
                   >
-                    Abbrechen
+                    <GripVertical size={14} strokeWidth={2.25} className="shrink-0 opacity-90" aria-hidden />
+                    Reihenfolge
                   </button>
-                </div>
-              )}
+                )}
+                {reorderFloorsMode && (
+                  <p className="text-[10px] leading-snug text-sand/55">
+                    Griffe ziehen
+                    {isAufstockungFlow ? ' · Bestand/Zubau' : ''}.
+                  </p>
+                )}
+                {reorderKindsError && (
+                  <p className="text-[10px] leading-snug text-orange-400/90">{reorderKindsError}</p>
+                )}
+              </div>
             </div>
           )}
         </div>
         <div className="flex min-w-0 max-w-full flex-col items-center gap-3">
           <h2 className="text-white font-semibold text-base text-center max-w-2xl leading-snug mx-auto w-full">
-            {roofOnlyOffer
-              ? 'Grundriss (Räume), Dach und Öffnungen markieren'
-              : 'Flächen und Elemente auswählen'}
+            {roofOnlyOffer ? 'Grundriss (Räume), Dach und Öffnungen markieren' : 'Flächen und Elemente auswählen'}
           </h2>
 
       {showWerkzeuge && (
@@ -1222,13 +1587,17 @@ export function DetectionsReviewEditor({
               setNewPolygonPoints([])
             }}
             title={
-              activeTab === 'rooms'
-                ? 'Polygon (Zimmer) hinzufügen'
-                : activeTab === 'doors'
-                  ? 'Tür oder Fenster hinzufügen'
-                  : activeTab === 'roof'
-                    ? 'Polygon (Dachfläche) hinzufügen'
-                    : 'Dachfenster hinzufügen'
+              activeTab === 'phase1_demolition'
+                ? 'Dachrückbau-Fläche (Polygon) hinzufügen'
+                : activeTab === 'phase1_stair'
+                  ? 'Treppenöffnung (Rechteck) hinzufügen'
+                  : activeTab === 'rooms'
+                    ? 'Polygon (Zimmer) hinzufügen'
+                    : activeTab === 'doors'
+                      ? 'Tür oder Fenster hinzufügen'
+                      : activeTab === 'roof'
+                        ? 'Polygon (Dachfläche) hinzufügen'
+                        : 'Dachfenster hinzufügen'
             }
             className={`p-2 rounded-lg transition-colors cursor-pointer ${tool === 'add' ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/70 hover:bg-white/5'}`}
           >
@@ -1347,7 +1716,70 @@ export function DetectionsReviewEditor({
         <div ref={setRoofDimsToolbarSlotEl} className="w-full flex min-h-0 shrink-0 justify-center" />
       )}
         </div>
-        <div className="min-w-0" aria-hidden="true" />
+        <div className="flex min-h-0 min-w-0 flex-col self-start pt-0.5 w-full">
+          {existingFloorEditing && (
+            <div
+              className="ml-auto flex w-full max-w-56 flex-col gap-1"
+              title="Wirkt auf das gesamte Angebot. Nur auf Bestandsgeschossen sichtbar."
+            >
+              <span className="text-sand/72 text-xs text-right font-medium tracking-tight">
+                Statik / Verstärkung
+              </span>
+              {statikChoice.mode !== 'sonderkonstruktion' ? (
+                <SelectSun
+                  variant="editor"
+                  editorTheme="beton"
+                  editorSize="sm"
+                  value={statikChoice.mode}
+                  onChange={(v) => {
+                    if (v === 'stahlbetonverbunddecke') {
+                      setStatikChoice({ mode: 'stahlbetonverbunddecke' })
+                    } else if (v === 'sonderkonstruktion') {
+                      setStatikChoice((prev) => ({ ...prev, mode: 'sonderkonstruktion' }))
+                    } else {
+                      setStatikChoice({ mode: 'none' })
+                    }
+                  }}
+                  options={STATIK_MODE_OPTIONS}
+                  placeholder="Typ wählen"
+                />
+              ) : (
+                <div className="flex w-full items-stretch gap-1">
+                  <button
+                    type="button"
+                    title="Ertüchtigungsart wählen"
+                    onClick={() => setStatikChoice({ mode: 'none' })}
+                    className="shrink-0 self-stretch rounded-md border border-white/12 bg-black/34 px-2 text-sand/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] transition-colors [-webkit-tap-highlight-color:transparent] hover:border-white/18 hover:bg-black/40 hover:text-sand/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5B800]/40 focus-visible:ring-offset-0"
+                  >
+                    <ChevronLeft size={15} strokeWidth={2} className="block" aria-hidden />
+                  </button>
+                  <input
+                    ref={statikCustomPriceRef}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="EUR / Stück"
+                    autoComplete="off"
+                    className="editor-statik-eur-beton min-w-0 flex-1 rounded-md border border-white/12 bg-black/34 px-2.5 py-2 text-xs text-sand/95 placeholder:text-sand/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-[2px] outline-none transition-[border-color,box-shadow] selection:bg-[#E5B800]/28 selection:text-sand/95 [-webkit-tap-highlight-color:transparent]"
+                    value={statikPriceDraft}
+                    onChange={(e) => {
+                      const t = e.target.value
+                      setStatikPriceDraft(t)
+                      const normalized = t.replace(/\s/g, '').replace(',', '.')
+                      if (normalized === '' || normalized === '-') {
+                        setStatikChoice((prev) => ({ ...prev, customPiecePrice: undefined }))
+                        return
+                      }
+                      const n = Number(normalized)
+                      if (Number.isFinite(n)) {
+                        setStatikChoice((prev) => ({ ...prev, customPiecePrice: n }))
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col px-2 pb-2 min-w-0 overflow-hidden">
@@ -1388,10 +1820,50 @@ export function DetectionsReviewEditor({
             const plan = plansData[i]
             const imageUrlForPlan = getBaseImageUrl(i)
             const planTab = getTabForPlan(i)
+            const canvasTab =
+              planTab === 'doors'
+                ? 'doors'
+                : planTab === 'phase1_demolition'
+                  ? 'demolition'
+                  : planTab === 'phase1_stair'
+                    ? 'stair_opening'
+                    : 'rooms'
             if (!plan || !imageUrlForPlan) return null
             return (
               <div className="w-full flex flex-col flex-1 min-h-0 min-w-0 gap-1.5">
-                {plan && imageUrlForPlan && (
+                {plan && imageUrlForPlan && existingFloorEditing && (
+                <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap w-full min-w-0">
+                  <div className="flex gap-1 flex-wrap justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTabForPlan(i, 'phase1_demolition')
+                        setSelectedPolygonIndex(null)
+                        setNewPolygonPoints(null)
+                        if (tool === 'add') setTool('select')
+                      }}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'phase1_demolition' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                    >
+                      <Home size={14} strokeWidth={2} />
+                      <span>Dach-Rückbau</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTabForPlan(i, 'phase1_stair')
+                        setSelectedPolygonIndex(null)
+                        setNewPolygonPoints(null)
+                        if (tool === 'add') setTool('select')
+                      }}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors ${planTab === 'phase1_stair' ? 'bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/50' : 'text-sand/80 border border-white/10 hover:bg-white/5'}`}
+                    >
+                      <DoorOpen size={14} strokeWidth={2} />
+                      <span>Treppenöffnung</span>
+                    </button>
+                  </div>
+                </div>
+                )}
+                {plan && imageUrlForPlan && !existingFloorEditing && (
                 <div className="shrink-0 flex items-center justify-end gap-2 flex-wrap w-full min-w-0">
                   <div className="flex gap-1 flex-wrap justify-end">
                     <button
@@ -1448,7 +1920,10 @@ export function DetectionsReviewEditor({
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col gap-2">
                   {showRoomsCanvas && plan && imageUrlForPlan && (
                 <div className="relative w-full flex-1 min-h-0 rounded-lg overflow-hidden border border-[#E5B800]/50 ring-1 ring-[#E5B800]/30 bg-black/30">
-                  {(pendingNewRoomPoints || pendingNewDoorBbox || (roomTypePopoverIndex !== null && plansData[planIndexClamped]?.rooms[roomTypePopoverIndex])) && (
+                  {(pendingNewRoomPoints ||
+                    pendingDemolitionPoints ||
+                    pendingNewDoorBbox ||
+                    (roomTypePopoverIndex !== null && plansData[planIndexClamped]?.rooms[roomTypePopoverIndex])) && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg">
                       <div className="flex flex-wrap items-center justify-center gap-2 p-4 bg-[#1a1a1a] rounded-xl border-2 border-[#E5B800]/60 shadow-xl max-w-md">
                         {pendingNewRoomPoints ? (
@@ -1465,6 +1940,21 @@ export function DetectionsReviewEditor({
                               </button>
                             ))}
                             <button type="button" onClick={() => setPendingNewRoomPoints(null)} className="text-sand/60 text-sm hover:underline mt-1">Abbrechen</button>
+                          </>
+                        ) : pendingDemolitionPoints ? (
+                          <>
+                            <span className="text-white text-sm font-medium w-full text-center">Rückbautyp (Preis je m²):</span>
+                            {DEMOLITION_PRICE_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => handlePickDemolitionPriceKey(opt.key)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#E5B800]/25 text-[#E5B800] border border-[#E5B800]/60 hover:bg-[#E5B800]/35"
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                            <button type="button" onClick={() => setPendingDemolitionPoints(null)} className="text-sand/60 text-sm hover:underline mt-1 w-full text-center">Abbrechen</button>
                           </>
                         ) : pendingNewDoorBbox ? (
                           <>
@@ -1527,23 +2017,43 @@ export function DetectionsReviewEditor({
                     imageHeight={plan.imageHeight}
                     rooms={plan.rooms}
                     doors={plan.doors}
-                    tab={planTab === 'doors' ? 'doors' : 'rooms'}
+                    demolitionPolys={plan.roofDemolitions ?? []}
+                    onDemolitionPolysChange={(polys) => setRoofDemolitions(i, polys)}
+                    stairOpeningRects={(plan.stairOpenings ?? []) as DoorRect[]}
+                    onStairOpeningRectsChange={(rects) => setStairOpenings(i, rects)}
+                    tab={canvasTab}
                     tool={tool}
                     selectedIndex={selectedPolygonIndex}
                     newPoints={tool === 'add' ? newPolygonPoints : null}
                     newDoorType={newDoorType}
-                    onInsertVertex={planTab === 'rooms' ? (polyIndex: number, afterVertexIndex: number, x: number, y: number) => handleInsertVertex(i, polyIndex, afterVertexIndex, x, y) : undefined}
+                    onInsertVertex={
+                      planTab === 'rooms'
+                        ? (polyIndex: number, afterVertexIndex: number, x: number, y: number) =>
+                            handleInsertVertex(i, polyIndex, afterVertexIndex, x, y)
+                        : planTab === 'phase1_demolition'
+                          ? (polyIndex: number, afterVertexIndex: number, x: number, y: number) =>
+                              handleInsertDemolitionVertex(i, polyIndex, afterVertexIndex, x, y)
+                          : undefined
+                    }
                     onSelect={setSelectedPolygonIndex}
                     onAddPoint={(x: number, y: number) => setNewPolygonPoints((prev) => prev ? [...prev, [x, y]] : [[x, y]])}
                     onCloseNewPolygon={handleRequestCloseNewPolygon}
-                    onRoomTypeLabelClick={handleRoomTypeLabelClick}
+                    onRoomTypeLabelClick={planTab === 'rooms' ? handleRoomTypeLabelClick : undefined}
                     onMoveVertex={(polyIndex: number, vertexIndex: number, x: number, y: number) => {
                       if (planTab === 'rooms') {
                         const next = plan.rooms.map((r, ri) =>
                           ri !== polyIndex ? r : { ...r, points: r.points.map((p: Point, vi: number) => vi === vertexIndex ? [x, y] as Point : p) }
                         )
                         setRooms(i, next)
-                      } else {
+                      } else if (planTab === 'phase1_demolition') {
+                        const list = plan.roofDemolitions ?? []
+                        const next = list.map((d, ri) =>
+                          ri !== polyIndex
+                            ? d
+                            : { ...d, points: d.points.map((p: Point, vi: number) => vi === vertexIndex ? [x, y] as Point : p) },
+                        )
+                        setRoofDemolitions(i, next)
+                      } else if (planTab === 'doors') {
                         const d = plan.doors[polyIndex]
                         const [x1, y1, x2, y2] = d.bbox
                         const corners: Point[] = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
@@ -1557,6 +2067,22 @@ export function DetectionsReviewEditor({
                         if (ny2 - ny1 < minPx) ny2 = ny1 + minPx
                         const next = plan.doors.map((dr, ri) => ri !== polyIndex ? dr : { ...dr, bbox: [nx1, ny1, nx2, ny2] as [number, number, number, number] })
                         setDoors(i, next)
+                      } else if (planTab === 'phase1_stair') {
+                        const stairs = (plan.stairOpenings ?? []) as DoorRect[]
+                        const d = stairs[polyIndex]
+                        if (!d) return
+                        const [x1, y1, x2, y2] = d.bbox
+                        const corners: Point[] = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+                        corners[vertexIndex] = [x, y]
+                        const nx1 = Math.min(...corners.map((c) => c[0]))
+                        let nx2 = Math.max(...corners.map((c) => c[0]))
+                        const ny1 = Math.min(...corners.map((c) => c[1]))
+                        let ny2 = Math.max(...corners.map((c) => c[1]))
+                        const minPx = 1
+                        if (nx2 - nx1 < minPx) nx2 = nx1 + minPx
+                        if (ny2 - ny1 < minPx) ny2 = ny1 + minPx
+                        const next = stairs.map((dr, ri) => ri !== polyIndex ? dr : { ...dr, bbox: [nx1, ny1, nx2, ny2] as [number, number, number, number] })
+                        setStairOpenings(i, next)
                       }
                     }}
                     onRemoveSelected={(index?: number) => handleRemoveSelected(index)}
@@ -1596,6 +2122,13 @@ export function DetectionsReviewEditor({
                   <div className="shrink-0 rounded-xl border border-[#E5B800]/40 bg-black/25 p-2">
                     <p className="text-sand/80 text-xs font-normal leading-snug text-center">
                       Maße aus Planmaßstab. Fenster: Höhe beim Anlegen eingeben. Schiebetüren: Höhe fix 2,00 m, Breite aus der langen Seite.
+                    </p>
+                  </div>
+                )}
+                {planTab === 'phase1_stair' && (
+                  <div className="shrink-0 rounded-xl border border-[#E5B800]/40 bg-black/25 p-2">
+                    <p className="text-sand/80 text-xs font-normal leading-snug text-center">
+                      Treppenöffnung als Rechteck auf dem Bestandsgrundriss. Pro Öffnung wird der Stückpreis aus der Preisdatenbank angesetzt.
                     </p>
                   </div>
                 )}

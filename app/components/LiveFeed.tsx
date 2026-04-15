@@ -6,7 +6,7 @@ import { apiFetch } from '../lib/supabaseClient'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { Cpu, FunctionSquare, CheckCircle2, Loader2, Download } from 'lucide-react'
-import { inferOfferFlow, type OfferFlow } from '../lib/offerFlow'
+import { inferOfferFlow, resolveOfferFlowWithExplicit, type OfferFlow } from '../lib/offerFlow'
 
 /* ========= CONFIGURARE ETAPE (Protocolul Nou) ========= */
 
@@ -916,9 +916,14 @@ export default function LiveFeed() {
       const offerId = e.detail.offerId
       const runId = e.detail.runId
       const detailFlow = e.detail?.flow as OfferFlow | undefined
-      let flow: OfferFlow = detailFlow === 'neubau' || detailFlow === 'dachstuhl' ? detailFlow : 'neubau'
-      flowModeRef.current = flow
-      setOfferFlow(flow)
+      const explicitFlow: OfferFlow | undefined =
+        detailFlow === 'neubau' || detailFlow === 'dachstuhl' || detailFlow === 'aufstockung'
+          ? detailFlow
+          : undefined
+      const provisional: OfferFlow =
+        explicitFlow === 'aufstockung' || explicitFlow === 'dachstuhl' ? explicitFlow : 'neubau'
+      flowModeRef.current = provisional
+      setOfferFlow(provisional)
       setIsMeasurementsOnlyOffer(e?.detail?.measurementsOnlyOffer === true)
 
       setOfferId(offerId); 
@@ -928,23 +933,21 @@ export default function LiveFeed() {
       activeRunIdRef.current = runId
       isHistoryMode.current = false
       allStagesCompleted.current = false
-      persistOfferState(offerId, runId, true, flow)
+      persistOfferState(offerId, runId, true, provisional)
 
-      if (!detailFlow) {
-        const metaSession = sessionRef.current
-        void apiFetch(`/offers/${encodeURIComponent(offerId)}`)
-          .then((o: any) => {
-            if (sessionRef.current !== metaSession) return
-            const meta = o?.meta ?? o?.offer?.meta
-            const slug = o?.offer_type_slug ?? o?.offer?.offer_type_slug
-            const inferred = inferOfferFlow({ ...meta, offer_type_slug: slug })
-            flowModeRef.current = inferred
-            setOfferFlow(inferred)
-        setIsMeasurementsOnlyOffer(meta?.measurements_only_offer === true)
-            persistOfferState(offerId, runId, true, inferred)
-          })
-          .catch(() => {})
-      }
+      const metaSession = sessionRef.current
+      void apiFetch(`/offers/${encodeURIComponent(offerId)}`)
+        .then((o: any) => {
+          if (sessionRef.current !== metaSession) return
+          const meta = o?.meta ?? o?.offer?.meta
+          const slug = o?.offer_type_slug ?? o?.offer?.offer_type_slug
+          const resolved = resolveOfferFlowWithExplicit(meta, slug, explicitFlow)
+          flowModeRef.current = resolved
+          setOfferFlow(resolved)
+          setIsMeasurementsOnlyOffer(meta?.measurements_only_offer === true)
+          persistOfferState(offerId, runId, true, resolved)
+        })
+        .catch(() => {})
       // Hydrate instant from history so spectators see everything immediately, then continue live.
       ;(async () => {
         const hydrateSession = sessionRef.current
@@ -1402,7 +1405,9 @@ export default function LiveFeed() {
                 reviewPendingRef.current = { files }
                 freezeProgressAtCurrent()
                 try {
-                  window.dispatchEvent(new CustomEvent('offer:detections-review', { detail: { files } }))
+                  window.dispatchEvent(new CustomEvent('offer:detections-review', {
+                    detail: { files, offerId: offerIdRef.current, runId: activeRunIdRef.current },
+                  }))
                 } catch (_) {}
               }
               continue
@@ -1967,10 +1972,22 @@ export default function LiveFeed() {
                 className={`shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                   offerFlow === 'dachstuhl'
                     ? 'border-[#E5B800]/50 text-[#F5D030] bg-[#E5B800]/12'
-                    : 'border-white/15 text-sand/75 bg-white/[0.06]'
+                    : offerFlow === 'aufstockung'
+                      ? 'border-[#C9A227]/55 text-[#F0E68C] bg-[#C9A227]/14'
+                      : 'border-white/15 text-sand/75 bg-white/[0.06]'
                 }`}
               >
-                {isMeasurementsOnlyOffer ? (offerFlow === 'dachstuhl' ? 'Dachstuhl Mengenermittlung' : 'Neubau Mengenermittlung') : (offerFlow === 'dachstuhl' ? 'Dachstuhl Angebot' : 'Neubau Angebot')}
+                {isMeasurementsOnlyOffer
+                  ? offerFlow === 'dachstuhl'
+                    ? 'Dachstuhl Mengenermittlung'
+                    : offerFlow === 'aufstockung'
+                      ? 'Aufstockung Mengenermittlung'
+                      : 'Neubau Mengenermittlung'
+                  : offerFlow === 'dachstuhl'
+                    ? 'Dachstuhl Angebot'
+                    : offerFlow === 'aufstockung'
+                      ? 'Aufstockung Angebot'
+                      : 'Neubau Angebot'}
               </span>
               <div className="text-xs font-medium text-sand/80 truncate">
                 {currentStageName || 'Verarbeitung...'}

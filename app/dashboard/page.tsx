@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/supabaseClient'
 import HistoryList from '../components/HistoryList'
 import LiveFeed from '../components/LiveFeed'
 import StepWizard from '../components/StepWizard'
+import type { OfferFlow } from '../lib/offerFlow'
 import AdminDashboard from '../components/AdminDashboard'
 
 export default function Home() {
@@ -57,12 +58,18 @@ export default function Home() {
     try {
       const raw = typeof window !== 'undefined' ? sessionStorage.getItem('holzbot_dashboard_offer') : null
       if (!raw) return
-      const data = JSON.parse(raw) as { offerId?: string; runId?: string | null; isComputing?: boolean; flow?: 'neubau' | 'dachstuhl' }
+      const data = JSON.parse(raw) as {
+        offerId?: string
+        runId?: string | null
+        isComputing?: boolean
+        flow?: OfferFlow
+      }
       const offerId = data?.offerId
       if (!offerId) return
       const runId = data?.runId ?? null
       const isComputing = data?.isComputing === true
-      const flow = data?.flow === 'dachstuhl' || data?.flow === 'neubau' ? data.flow : undefined
+      const flow =
+        data?.flow === 'dachstuhl' || data?.flow === 'neubau' || data?.flow === 'aufstockung' ? data.flow : undefined
       const timer = window.setTimeout(() => {
         if (isComputing && runId) {
           window.dispatchEvent(new CustomEvent('offer:compute-started', { detail: { offerId, runId, ...(flow ? { flow } : {}) } }))

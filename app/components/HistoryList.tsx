@@ -37,13 +37,14 @@ function translateText(text?: string | null): string {
   return (DE.translations as Record<string, string>)[t] || t
 }
 
-/** Same 3 types as Step Wizard package picker: Mengenermittlung, Dachstuhl, Neubau */
-const WIZARD_OFFER_SLUGS = ['mengenermittlung', 'mengen', 'dachstuhl', 'neubau', 'full_house'] as const
+/** Same wizard package types as Step Wizard package picker. */
+const WIZARD_OFFER_SLUGS = ['mengenermittlung', 'mengen', 'dachstuhl', 'neubau', 'aufstockung', 'full_house'] as const
 const SLUG_TO_LABEL: Record<string, string> = {
   mengenermittlung: 'Mengenermittlung',
   mengen: 'Mengenermittlung',
   dachstuhl: 'Dachstuhl Angebot',
   neubau: 'Neubau Angebot',
+  aufstockung: 'Aufstockung Angebot',
   full_house: 'Neubau Angebot',
 }
 
@@ -57,8 +58,13 @@ function getOfferTypeBadgeLabel(item: OfferListItem): string {
   const isRoofOffer = item.meta?.roof_only_offer === true || wizardPkg === 'dachstuhl'
   const isMeasurementsOnly = item.meta?.measurements_only_offer === true
 
-  if (isMeasurementsOnly) return isRoofOffer ? 'Dachstuhl Mengenermittlung' : 'Neubau Mengenermittlung'
+  if (isMeasurementsOnly) {
+    if (isRoofOffer) return 'Dachstuhl Mengenübersicht'
+    if (wizardPkg === 'aufstockung') return 'Aufstockung Mengenübersicht'
+    return 'Neubau Mengenübersicht'
+  }
   if (isRoofOffer) return 'Dachstuhl Angebot'
+  if (wizardPkg === 'aufstockung') return 'Aufstockung Angebot'
   return offerTypeLabel(item.offer_type_slug)
 }
 

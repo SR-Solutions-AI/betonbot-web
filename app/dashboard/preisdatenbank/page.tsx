@@ -111,6 +111,7 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Pfahlgründung': 'Preis €/m² bei Pfahlgründung',
   'Fläche & Treppe': 'Preis pro Stück',
   'Treppe': 'Preis pro Stück',
+  'Aufstockung: Rückbau / Statik': 'Rückbaufläche, Treppenöffnung und Statik-Zuschläge',
   'Raumhöhe': 'Raumhöhen die Ihr Unternehmen anbietet.',
   'Dämmung': 'Welche Dämmungsarten bieten Sie an?',
   'Unterdach': 'Welche Arten Unterdach bieten Sie an?',

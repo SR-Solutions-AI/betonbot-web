@@ -29,13 +29,26 @@ export type DoorRect = {
   editedInRun?: boolean
 }
 
+/** Aufstockung Phase 1: Dachrückbau-Fläche (Polygon in Bildkoordinaten). */
+export type RoofDemolitionPoly = {
+  points: Point[]
+  price_key?: string
+  area_m2?: number
+}
+
 type PolygonCanvasProps = {
   imageUrl: string
   imageWidth: number
   imageHeight: number
   rooms: RoomPolygon[]
   doors: DoorRect[]
-  tab: 'rooms' | 'doors'
+  tab: 'rooms' | 'doors' | 'demolition' | 'stair_opening'
+ /** Nur tab=demolition */
+  demolitionPolys?: RoofDemolitionPoly[]
+  onDemolitionPolysChange?: (polys: RoofDemolitionPoly[]) => void
+  /** Nur tab=stair_opening (Rechteck wie Tür/Fenster) */
+  stairOpeningRects?: DoorRect[]
+  onStairOpeningRectsChange?: (rects: DoorRect[]) => void
   tool: 'select' | 'add' | 'remove' | 'edit'
   selectedIndex: number | null
   newPoints: Point[] | null
@@ -147,6 +160,10 @@ export function DetectionsPolygonCanvas({
   rooms,
   doors,
   tab,
+  demolitionPolys = [],
+  onDemolitionPolysChange = () => {},
+  stairOpeningRects = [],
+  onStairOpeningRectsChange = () => {},
   tool,
   selectedIndex,
   newPoints,
@@ -189,8 +206,12 @@ export function DetectionsPolygonCanvas({
   const [previewEndPoint, setPreviewEndPoint] = useState<Point | null>(null)
   const doorsRef = useRef(doors)
   const roomsRef = useRef(rooms)
+  const demolitionRef = useRef(demolitionPolys)
+  const stairRectsRef = useRef(stairOpeningRects)
   doorsRef.current = doors
   roomsRef.current = rooms
+  demolitionRef.current = demolitionPolys
+  stairRectsRef.current = stairOpeningRects
 
   const effective = fit ? {
     scale: fit.scale * userZoom,
@@ -336,6 +357,8 @@ export function DetectionsPolygonCanvas({
     const ox = effective.offX
     const oy = effective.offY
     const useDimOthers = dimUnselectedRoomPolygons && selectedIndex !== null && rooms.length > 0
+    const stairPreviewStyle = { fill: '#a855f7', stroke: '#7c3aed' }
+    const rectsForDoorTab = tab === 'stair_opening' ? stairOpeningRects : doors
     if (tab === 'rooms') {
       rooms.forEach((room, i) => {
         const pts = room.points
@@ -414,8 +437,87 @@ export function DetectionsPolygonCanvas({
           ctx.fill()
         })
       }
+    } else if (tab === 'demolition') {
+      demolitionPolys.forEach((d, i) => {
+        const pts = d.points
+        if (pts.length < 2) return
+        const selected = selectedIndex === i
+        ctx.fillStyle = '#dc2626'
+        ctx.globalAlpha = selected ? 0.48 : 0.32
+        ctx.beginPath()
+        ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+        for (let k = 1; k < pts.length; k++) {
+          ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = selected ? '#E5B800' : 'rgba(248,113,113,0.95)'
+        ctx.lineWidth = selected ? 3 : 2
+        ctx.stroke()
+        if (pts.length > 0) {
+          let cx = 0
+          let cy = 0
+          pts.forEach((p) => {
+            cx += p[0]
+            cy += p[1]
+          })
+          cx /= pts.length
+          cy /= pts.length
+          const m2 = typeof d.area_m2 === 'number' && d.area_m2 > 0 ? `${d.area_m2.toFixed(2)} m²` : ''
+          const label = m2 ? `Rückbau #${i + 1} · ${m2}` : `Rückbau #${i + 1}`
+          ctx.font = 'bold 13px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          const textW = ctx.measureText(label).width
+          const pad = 6
+          const boxW = textW + pad * 2
+          const boxH = 20
+          const lx = ox + cx * s - boxW / 2
+          const ly = oy + cy * s - boxH / 2
+          ctx.fillStyle = 'rgba(0,0,0,0.82)'
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.rect(lx, ly, boxW, boxH)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = '#fecaca'
+          ctx.fillText(label, ox + cx * s, oy + cy * s)
+        }
+        if (tool === 'edit' && selected && pts.length > 0) {
+          pts.forEach((p) => {
+            ctx.fillStyle = '#E5B800'
+            ctx.beginPath()
+            ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.strokeStyle = '#fff'
+            ctx.lineWidth = 1
+            ctx.stroke()
+          })
+        }
+      })
+      if (newPoints && newPoints.length > 0) {
+        ctx.strokeStyle = '#E5B800'
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 4])
+        ctx.beginPath()
+        ctx.moveTo(ox + newPoints[0][0] * s, oy + newPoints[0][1] * s)
+        for (let k = 1; k < newPoints.length; k++) {
+          ctx.lineTo(ox + newPoints[k][0] * s, oy + newPoints[k][1] * s)
+        }
+        if (newPoints.length >= 3) ctx.closePath()
+        ctx.stroke()
+        ctx.setLineDash([])
+        newPoints.forEach((p, vi) => {
+          ctx.fillStyle = vi === 0 ? '#22c55e' : '#E5B800'
+          ctx.beginPath()
+          ctx.arc(ox + p[0] * s, oy + p[1] * s, HANDLE_R, 0, Math.PI * 2)
+          ctx.fill()
+        })
+      }
     } else {
-      if (showRoomPolygonsUnderDoors) {
+      if (showRoomPolygonsUnderDoors && tab === 'doors') {
         const underlayColors = ['#3b82f6', '#22c55e', '#eab308', '#8b5cf6', '#06b6d4']
         rooms.forEach((room, i) => {
           const pts = room.points
@@ -466,10 +568,10 @@ export function DetectionsPolygonCanvas({
           }
         })
       }
-      doors.forEach((door, i) => {
+      rectsForDoorTab.forEach((door, i) => {
         const [x1, y1, x2, y2] = door.bbox
         const selected = selectedIndex === i
-        const style = getDoorStyle(door.type)
+        const style = tab === 'stair_opening' ? stairPreviewStyle : getDoorStyle(door.type)
         ctx.fillStyle = style.fill
         ctx.globalAlpha = selected ? 0.5 : 0.35
         ctx.fillRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
@@ -491,7 +593,7 @@ export function DetectionsPolygonCanvas({
         }
       })
       if (newPoints && newPoints.length >= 1) {
-        const newStyle = getDoorStyle(newDoorType)
+        const newStyle = tab === 'stair_opening' ? stairPreviewStyle : getDoorStyle(newDoorType)
         const endPt = newPoints.length === 2 ? newPoints[1] : previewEndPoint
         const x1 = endPt != null ? Math.min(newPoints[0][0], endPt[0]) : newPoints[0][0]
         const y1 = endPt != null ? Math.min(newPoints[0][1], endPt[1]) : newPoints[0][1]
@@ -519,6 +621,8 @@ export function DetectionsPolygonCanvas({
     tab,
     rooms,
     doors,
+    demolitionPolys,
+    stairOpeningRects,
     selectedIndex,
     tool,
     newPoints,
@@ -544,40 +648,48 @@ export function DetectionsPolygonCanvas({
     const edgeR = EDGE_HIT_R / effective.scale
     const doorVertexR = DOOR_VERTEX_HIT_R / effective.scale
 
-    if (tab === 'rooms') {
-      if (tool === 'edit') {
-        // Mai întâi vârfuri/muchii ale camerei selectate, ca să nu „fure” click-ul camerele vecine
-        // (cercurile de hit se suprapun când poligoanele sunt apropiate).
-        const hitRoomVerticesAndEdges = (i: number) => {
-          const pts = rooms[i]?.points
-          if (!pts?.length) return null
-          for (let vi = 0; vi < pts.length; vi++) {
-            if (dist(pts[vi], [px, py]) <= hitR) return { kind: 'vertex' as const, index: i, vertexIndex: vi }
-          }
-          for (let ei = 0; ei < pts.length; ei++) {
-            const a = pts[ei]
-            const b = pts[(ei + 1) % pts.length]
-            if (distToSegment(px, py, a, b) <= edgeR) return { kind: 'edge' as const, index: i, edgeIndex: ei }
-          }
-          return null
+    const hitPolyVerticesAndEdges = (polys: { points: Point[] }[], n: number) => {
+      const hitAt = (i: number) => {
+        const pts = polys[i]?.points
+        if (!pts?.length) return null
+        for (let vi = 0; vi < pts.length; vi++) {
+          if (dist(pts[vi], [px, py]) <= hitR) return { kind: 'vertex' as const, index: i, vertexIndex: vi }
         }
-        if (selectedIndex != null && selectedIndex >= 0 && selectedIndex < rooms.length) {
-          const sel = hitRoomVerticesAndEdges(selectedIndex)
+        for (let ei = 0; ei < pts.length; ei++) {
+          const a = pts[ei]
+          const b = pts[(ei + 1) % pts.length]
+          if (distToSegment(px, py, a, b) <= edgeR) return { kind: 'edge' as const, index: i, edgeIndex: ei }
+        }
+        return null
+      }
+      if (tool === 'edit') {
+        if (selectedIndex != null && selectedIndex >= 0 && selectedIndex < n) {
+          const sel = hitAt(selectedIndex)
           if (sel) return sel
         }
-        for (let i = rooms.length - 1; i >= 0; i--) {
+        for (let i = n - 1; i >= 0; i--) {
           if (selectedIndex != null && i === selectedIndex) continue
-          const h = hitRoomVerticesAndEdges(i)
+          const h = hitAt(i)
           if (h) return h
         }
       }
-      for (let i = rooms.length - 1; i >= 0; i--) {
-        if (!pointInPolygon(px, py, rooms[i].points)) continue
-        return { kind: 'poly', index: i }
+      for (let i = n - 1; i >= 0; i--) {
+        if (!pointInPolygon(px, py, polys[i].points)) continue
+        return { kind: 'poly' as const, index: i }
       }
+      return null
+    }
+
+    if (tab === 'rooms') {
+      const h = hitPolyVerticesAndEdges(rooms, rooms.length)
+      if (h) return h
+    } else if (tab === 'demolition') {
+      const h = hitPolyVerticesAndEdges(demolitionPolys, demolitionPolys.length)
+      if (h) return h
     } else {
-      for (let i = doors.length - 1; i >= 0; i--) {
-        const [x1, y1, x2, y2] = doors[i].bbox
+      const rects = tab === 'stair_opening' ? stairOpeningRects : doors
+      for (let i = rects.length - 1; i >= 0; i--) {
+        const [x1, y1, x2, y2] = rects[i].bbox
         const minX = Math.min(x1, x2) - DOOR_HIT_PADDING
         const maxX = Math.max(x1, x2) + DOOR_HIT_PADDING
         const minY = Math.min(y1, y2) - DOOR_HIT_PADDING
@@ -585,7 +697,6 @@ export function DetectionsPolygonCanvas({
         const expandedBbox: [number, number, number, number] = [minX, minY, maxX, maxY]
         if (!pointInRect(px, py, expandedBbox)) continue
         if (tool === 'edit') {
-          const [x1, y1, x2, y2] = doors[i].bbox
           const corners: Point[] = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
           for (let vi = 0; vi < corners.length; vi++) {
             if (dist(corners[vi], [px, py]) <= doorVertexR) return { kind: 'vertex', index: i, vertexIndex: vi }
@@ -595,7 +706,7 @@ export function DetectionsPolygonCanvas({
       }
     }
     return null
-  }, [effective, tab, rooms, doors, tool, toImage, selectedIndex])
+  }, [effective, tab, rooms, doors, demolitionPolys, stairOpeningRects, tool, toImage, selectedIndex])
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current
@@ -610,7 +721,7 @@ export function DetectionsPolygonCanvas({
 
     const placePt = tool === 'add' ? toImageForPlacement(cx, cy) : pt
 
-    if (tool === 'add' && tab === 'rooms') {
+    if (tool === 'add' && (tab === 'rooms' || tab === 'demolition')) {
       if (!placePt) return
       if (newPoints && newPoints.length >= 3 && dist(newPoints[0], placePt) * effective.scale <= CLOSE_POLYGON_HIT_PX) {
         onCloseNewPolygon()
@@ -620,7 +731,7 @@ export function DetectionsPolygonCanvas({
       return
     }
 
-    if (tool === 'add' && tab === 'doors') {
+    if (tool === 'add' && (tab === 'doors' || tab === 'stair_opening')) {
       if (placePt) onAddPoint(placePt[0], placePt[1])
       return
     }
@@ -650,7 +761,8 @@ export function DetectionsPolygonCanvas({
           if (edgeDragTimeoutRef.current) clearTimeout(edgeDragTimeoutRef.current)
           onEditStart?.()
           ;(e.target as Element).setPointerCapture(e.pointerId)
-          const pts = rooms[hit.index].points
+          const polySource = tab === 'demolition' ? demolitionPolys : rooms
+          const pts = polySource[hit.index].points
           const i = hit.edgeIndex
           const j = (i + 1) % pts.length
           setDragging({
@@ -665,7 +777,8 @@ export function DetectionsPolygonCanvas({
       } else {
         onEditStart?.()
         ;(e.target as Element).setPointerCapture(e.pointerId)
-        const pts = rooms[hit.index].points
+        const polySource = tab === 'demolition' ? demolitionPolys : rooms
+        const pts = polySource[hit.index].points
         const i = hit.edgeIndex
         const j = (i + 1) % pts.length
         setDragging({
@@ -681,12 +794,12 @@ export function DetectionsPolygonCanvas({
     }
 
     if (hit?.kind === 'poly') {
-      if (tab === 'doors' && tool === 'remove') {
+      if ((tab === 'doors' || tab === 'stair_opening') && tool === 'remove') {
         onRemoveSelected(hit.index)
         return
       }
       // Select: tap = schimbare tip (callback); drag după prag = mutare dreptunghi
-      if (tab === 'doors' && tool === 'select' && pt) {
+      if ((tab === 'doors' || tab === 'stair_opening') && tool === 'select' && pt) {
         onSelect(hit.index)
         doorTapPendingRef.current = { index: hit.index, clientX: e.clientX, clientY: e.clientY, pt: [pt[0], pt[1]] }
         ;(e.target as Element).setPointerCapture(e.pointerId)
@@ -715,8 +828,17 @@ export function DetectionsPolygonCanvas({
         ;(e.target as Element).setPointerCapture(e.pointerId)
         if (tab === 'rooms' && hit.index < rooms.length)
           setDragging({ kind: 'poly', polyIndex: hit.index, startImage: [pt[0], pt[1]], initPoints: rooms[hit.index].points.map((p) => [...p]) })
+        else if (tab === 'demolition' && hit.index < demolitionPolys.length)
+          setDragging({
+            kind: 'poly',
+            polyIndex: hit.index,
+            startImage: [pt[0], pt[1]],
+            initPoints: demolitionPolys[hit.index].points.map((p) => [...p]),
+          })
         else if (tab === 'doors' && hit.index < doors.length)
           setDragging({ kind: 'poly', polyIndex: hit.index, startImage: [pt[0], pt[1]], initBbox: [...doors[hit.index].bbox] })
+        else if (tab === 'stair_opening' && hit.index < stairOpeningRects.length)
+          setDragging({ kind: 'poly', polyIndex: hit.index, startImage: [pt[0], pt[1]], initBbox: [...stairOpeningRects[hit.index].bbox] })
         return
       }
       onSelect(hit.index)
@@ -730,7 +852,7 @@ export function DetectionsPolygonCanvas({
     } else {
       onSelect(null)
     }
-  }, [effective, tool, tab, newPoints, userPan, hitTest, toImage, toImageForPlacement, onSelect, onAddPoint, onCloseNewPolygon, onRemoveSelected, onInsertVertex, onRoomTypeLabelClick, onEditStart, rooms, doors])
+  }, [effective, tool, tab, newPoints, userPan, hitTest, toImage, toImageForPlacement, onSelect, onAddPoint, onCloseNewPolygon, onRemoveSelected, onInsertVertex, onRoomTypeLabelClick, onEditStart, rooms, doors, demolitionPolys, stairOpeningRects])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current
@@ -744,7 +866,8 @@ export function DetectionsPolygonCanvas({
       const d = Math.hypot(e.clientX - pendingTap.clientX, e.clientY - pendingTap.clientY)
       if (d > DOOR_TAP_MAX_MOVE_PX) {
         const idx = pendingTap.index
-        const dr = doorsRef.current[idx]
+        const dr =
+          tab === 'stair_opening' ? stairRectsRef.current[idx] : doorsRef.current[idx]
         if (dr) {
           onEditStart?.()
           doorTapPendingRef.current = null
@@ -758,7 +881,7 @@ export function DetectionsPolygonCanvas({
       }
     }
     const hoverHit = hitTest(cx, cy)
-    if (tab === 'doors' && hoverHit?.kind === 'poly') {
+    if ((tab === 'doors' || tab === 'stair_opening') && hoverHit?.kind === 'poly') {
       onDoorHover?.({ index: hoverHit.index, x: cx, y: cy })
     } else {
       onDoorHover?.(null)
@@ -769,7 +892,7 @@ export function DetectionsPolygonCanvas({
       return
     }
 
-    if (tool === 'add' && tab === 'doors' && newPoints?.length === 1) {
+    if (tool === 'add' && (tab === 'doors' || tab === 'stair_opening') && newPoints?.length === 1) {
       const preview = toImageForPlacement(cx, cy)
       setPreviewEndPoint(preview)
     } else {
@@ -800,8 +923,20 @@ export function DetectionsPolygonCanvas({
             return { ...r, points: pts }
           })
           onRoomsChange(next)
-        } else if (tab === 'doors' && polyIndex < doorsRef.current.length) {
-          const d = doorsRef.current[polyIndex]
+        } else if (tab === 'demolition' && polyIndex < demolitionRef.current.length) {
+          const next = demolitionRef.current.map((d, i) => {
+            if (i !== polyIndex) return d
+            const pts = d.points.map((p, vi) =>
+              vi === vertexIndex
+                ? [Math.max(0, Math.min(imageWidth, pt[0])), Math.max(0, Math.min(imageHeight, pt[1]))] as Point
+                : p
+            )
+            return { ...d, points: pts }
+          })
+          onDemolitionPolysChange(next)
+        } else if ((tab === 'doors' || tab === 'stair_opening') && polyIndex < (tab === 'stair_opening' ? stairRectsRef.current.length : doorsRef.current.length)) {
+          const list = tab === 'stair_opening' ? stairRectsRef.current : doorsRef.current
+          const d = list[polyIndex]
           const [x1, y1, x2, y2] = d.bbox
           const left = Math.min(x1, x2)
           const right = Math.max(x1, x2)
@@ -819,26 +954,34 @@ export function DetectionsPolygonCanvas({
           const minPx = 1
           if (nx2 - nx1 < minPx) nx2 = nx1 + minPx
           if (ny2 - ny1 < minPx) ny2 = ny1 + minPx
-          const next = doorsRef.current.map((dr, i) =>
+          const next = list.map((dr, i) =>
             i !== polyIndex ? dr : { ...dr, bbox: [nx1, ny1, nx2, ny2] as [number, number, number, number] }
           )
-          onDoorsChange(next)
+          if (tab === 'stair_opening') onStairOpeningRectsChange(next)
+          else onDoorsChange(next)
         }
       } else if (dragging.kind === 'edge') {
+        if (tab !== 'rooms' && tab !== 'demolition') return
         const { polyIndex, edgeIndex, initV0, initV1, startImage } = dragging
         const dx = pt[0] - startImage[0]
         const dy = pt[1] - startImage[1]
         const newV0: Point = [Math.max(0, Math.min(imageWidth, initV0[0] + dx)), Math.max(0, Math.min(imageHeight, initV0[1] + dy))]
         const newV1: Point = [Math.max(0, Math.min(imageWidth, initV1[0] + dx)), Math.max(0, Math.min(imageHeight, initV1[1] + dy))]
-        const room = roomsRef.current[polyIndex]
-        const pts = room.points
+        const src = tab === 'demolition' ? demolitionRef.current : roomsRef.current
+        const roomOrDemo = src[polyIndex]
+        if (!roomOrDemo?.points) return
+        const pts = roomOrDemo.points
         const j = (edgeIndex + 1) % pts.length
         const nextPts = pts.map((p, vi) => {
           if (vi === edgeIndex) return newV0
           if (vi === j) return newV1
           return p
         })
-        onRoomsChange(roomsRef.current.map((r, i) => i !== polyIndex ? r : { ...r, points: nextPts }))
+        if (tab === 'demolition') {
+          onDemolitionPolysChange(demolitionRef.current.map((d, i) => (i !== polyIndex ? d : { ...d, points: nextPts })))
+        } else {
+          onRoomsChange(roomsRef.current.map((r, i) => (i !== polyIndex ? r : { ...r, points: nextPts })))
+        }
       } else if (dragging.kind === 'poly') {
         const { polyIndex, startImage, initPoints, initBbox } = dragging
         const dx = pt[0] - startImage[0]
@@ -847,6 +990,9 @@ export function DetectionsPolygonCanvas({
           const nextPts = initPoints.map((p) => [Math.max(0, Math.min(imageWidth, p[0] + dx)), Math.max(0, Math.min(imageHeight, p[1] + dy))] as Point)
           const next = roomsRef.current.map((r, i) => i !== polyIndex ? r : { ...r, points: nextPts })
           onRoomsChange(next)
+        } else if (tab === 'demolition' && initPoints && polyIndex < demolitionRef.current.length) {
+          const nextPts = initPoints.map((p) => [Math.max(0, Math.min(imageWidth, p[0] + dx)), Math.max(0, Math.min(imageHeight, p[1] + dy))] as Point)
+          onDemolitionPolysChange(demolitionRef.current.map((d, i) => (i !== polyIndex ? d : { ...d, points: nextPts })))
         } else if (tab === 'doors' && initBbox && polyIndex < doorsRef.current.length) {
           const [a, b, c, d] = initBbox
           const nx1 = Math.max(0, Math.min(imageWidth, a + dx))
@@ -864,10 +1010,27 @@ export function DetectionsPolygonCanvas({
             i !== polyIndex ? dr : { ...dr, bbox: [ax1, ay1, ax2, ay2] as [number, number, number, number] }
           )
           onDoorsChange(next)
+        } else if (tab === 'stair_opening' && initBbox && polyIndex < stairRectsRef.current.length) {
+          const [a, b, c, d] = initBbox
+          const nx1 = Math.max(0, Math.min(imageWidth, a + dx))
+          const ny1 = Math.max(0, Math.min(imageHeight, b + dy))
+          const nx2 = Math.max(0, Math.min(imageWidth, c + dx))
+          const ny2 = Math.max(0, Math.min(imageHeight, d + dy))
+          let ax1 = Math.min(nx1, nx2)
+          let ax2 = Math.max(nx1, nx2)
+          let ay1 = Math.min(ny1, ny2)
+          let ay2 = Math.max(ny1, ny2)
+          const minPx = 1
+          if (ax2 - ax1 < minPx) ax2 = ax1 + minPx
+          if (ay2 - ay1 < minPx) ay2 = ay1 + minPx
+          const next = stairRectsRef.current.map((dr, i) =>
+            i !== polyIndex ? dr : { ...dr, bbox: [ax1, ay1, ax2, ay2] as [number, number, number, number] }
+          )
+          onStairOpeningRectsChange(next)
         }
       }
     }
-  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, toImageForPlacement, hitTest, onDoorHover, onRoomsChange, onDoorsChange, onEditStart])
+  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, toImageForPlacement, hitTest, onDoorHover, onRoomsChange, onDoorsChange, onDemolitionPolysChange, onStairOpeningRectsChange, onEditStart])
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     const pendingTap = doorTapPendingRef.current
