@@ -2556,6 +2556,10 @@ export default function StepWizard() {
   const showForm = (selectedPackage === 'neubau' || selectedPackage === 'dachstuhl' || selectedPackage === 'mengen' || selectedPackage === 'aufstockung' || offerId) && !computing && !pdfUrl
   const showProgressHeader = !computing && !pdfUrl && !showPackagePicker && showForm
   const centerWizardSteps = progressBarSteps.length > 0 && progressBarSteps.length <= 5
+  const effectiveWizardPackage =
+    String(form.wizardPackage ?? '').toLowerCase() ||
+    (selectedPackage && selectedPackage !== 'mengen' ? selectedPackage : '') ||
+    ''
 
   return (
     <div
@@ -2616,6 +2620,7 @@ export default function StepWizard() {
               offerId={offerId ?? undefined}
               images={reviewImages.length > 0 ? reviewImages : planReviewImages}
               roofImages={roofReviewImages.length > 0 ? roofReviewImages : undefined}
+              displayCurrency={displayCurrency}
               roofOnlyOffer={activeRoofOnlyOffer || selectedPackage === 'dachstuhl'}
               forceAufstockungFlow={
                 selectedPackage === 'aufstockung' ||
@@ -3021,14 +3026,14 @@ export default function StepWizard() {
                     hiddenKeysForm={hiddenKeysForm}
                     preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
                     displayCurrency={displayCurrency}
+                    wizardPackage={effectiveWizardPackage}
                   />
                 </div>
               ) : step.key === 'structuraCladirii' ? (
                 <BuildingStructureStep
                   displayCurrency={displayCurrency}
                   wizardPackage={
-                    String(form.wizardPackage ?? '').toLowerCase() ||
-                    (selectedPackage ?? (activeRoofOnlyOffer ? 'dachstuhl' : 'neubau'))
+                    effectiveWizardPackage || (selectedPackage ?? (activeRoofOnlyOffer ? 'dachstuhl' : 'neubau'))
                   }
                   form={form}
                   setForm={(v) => {
@@ -3148,6 +3153,7 @@ export default function StepWizard() {
               ) : step.key === 'daemmungDachdeckung' && selectedPackage === 'dachstuhl' ? (
                 <DachOnlyDaemmungStepContent
                   displayCurrency={displayCurrency}
+                  wizardPackage={effectiveWizardPackage}
                   form={form}
                   drafts={drafts}
                   setForm={(v) => applyFormUpdate(step.key, v)}
@@ -3179,6 +3185,7 @@ export default function StepWizard() {
                     hiddenKeysForm={hiddenKeysForm}
                     preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
                     displayCurrency={displayCurrency}
+                    wizardPackage={effectiveWizardPackage}
                   />
                 </div>
               ) : (
@@ -3198,6 +3205,7 @@ export default function StepWizard() {
                     onEnter={onContinue}
                     preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
                     displayCurrency={displayCurrency}
+                    wizardPackage={effectiveWizardPackage}
                   />
                 </div>
               )}
@@ -3563,6 +3571,7 @@ function DachOnlyDaemmungStepContent({
   hiddenKeysForm,
   preisdatenbankOptionsByTag,
   displayCurrency = 'EUR',
+  wizardPackage = '',
 }: {
   form: Record<string, any>
   drafts: Drafts
@@ -3578,6 +3587,7 @@ function DachOnlyDaemmungStepContent({
   hiddenKeysForm?: Set<string>
   preisdatenbankOptionsByTag?: Record<string, string[]>
   displayCurrency?: DisplayCurrency
+  wizardPackage?: string
 }) {
   const projektumfang = (form.projektumfang || drafts?.projektdaten?.projektumfang || '').toString().trim()
   const includeDachstuhl = projektumfang === '' || projektumfang === 'Dachstuhl' || projektumfang === 'Dachstuhl + Dachdeckung'
@@ -3616,6 +3626,7 @@ function DachOnlyDaemmungStepContent({
       hiddenKeysForm={hiddenKeysForm}
       preisdatenbankOptionsByTag={preisdatenbankOptionsByTag}
       displayCurrency={displayCurrency}
+      wizardPackage={wizardPackage}
     />
   )
 }
@@ -3671,6 +3682,7 @@ function WandaufbauStep({
     : (Array.isArray(form.aufstockungFloorKinds) ? form.aufstockungFloorKinds : [])
   const isAufstockungFlow = resolveAufstockungFlow(form, wizardPackage)
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
+  const showBasementDetailFields = hasBasement && !isAufstockungFlow
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const mansardaIndex = listaEtaje.findIndex((e: string) => e.startsWith('mansarda'))
   const showMansardaFields = hasMansarda && (!isAufstockungFlow || String(aufstockungFloorKinds[mansardaIndex] ?? '').toLowerCase() === 'new')
@@ -3695,7 +3707,7 @@ function WandaufbauStep({
 
   return (
     <div className="space-y-4">
-      {hasBasement && (
+      {showBasementDetailFields && (
         <div className="flex gap-4 items-start">
           <label className="flex flex-col gap-1 flex-1" data-field="außenwandeBeci">
             <span className="wiz-label text-sun/90">Außenwände – Keller</span>
@@ -3882,6 +3894,7 @@ function BodenDeckeBelagStep({
     : (Array.isArray(form.aufstockungFloorKinds) ? form.aufstockungFloorKinds : [])
   const isAufstockungFlow = resolveAufstockungFlow(form, wizardPackage)
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
+  const showBasementDetailFields = hasBasement && !isAufstockungFlow
   const basementLivable = isKellerMitAusbauChoice(tipFundatieBeci)
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const hasPod = listaEtaje.some((e: string) => e === 'pod')
@@ -3915,7 +3928,7 @@ function BodenDeckeBelagStep({
   return (
     <div className="space-y-4">
       <p className="text-sun/70 text-sm">Wählen Sie für jede Etage die passende Konstruktion und den entsprechenden Bodenaufbau entsprechend Ihrer Gebäudeplanung.</p>
-      {hasBasement && basementLivable && (
+      {showBasementDetailFields && basementLivable && (
         <div className="rounded-lg border border-white/10 p-3 space-y-3 bg-panel/30">
           <span className="wiz-label text-sun/90 font-medium">Keller</span>
           <div className="flex flex-wrap gap-4 items-start">
@@ -4055,6 +4068,7 @@ function MaterialeFinisajStep({ form, setForm, errors, drafts, wizardPackage, cu
     : (Array.isArray(form.aufstockungFloorKinds) ? form.aufstockungFloorKinds : [])
   const isAufstockungFlow = resolveAufstockungFlow(form, wizardPackage)
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
+  const showBasementDetailFields = hasBasement && !isAufstockungFlow
   const basementLivable = isKellerMitAusbauChoice(tipFundatieBeci)
   const hasMansarda = listaEtaje.some((e: string) => e.startsWith('mansarda'))
   const mansardaIndex = listaEtaje.findIndex((e: string) => e.startsWith('mansarda'))
@@ -4087,7 +4101,7 @@ function MaterialeFinisajStep({ form, setForm, errors, drafts, wizardPackage, cu
 
   return (
     <div className="space-y-4">
-      {hasBasement && basementLivable && (
+      {showBasementDetailFields && basementLivable && (
         <label className="flex flex-col gap-1" data-field="finisajInteriorBeci">
           <span className="wiz-label text-sun/90">Innenausbau (Keller)</span>
           <div className={errors.finisajInteriorBeci ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
@@ -4212,12 +4226,15 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
         const v = String(source?.[idx] ?? '').toLowerCase()
         if (v === 'new') return 'new'
         if (v === 'existing') return 'existing'
-        // Parter defaults to 'existing'; all other unset floors default based on position (last = new)
         if (floorType === 'parter') return 'existing'
-        return idx === targetFloors.length - 1 ? 'new' : 'existing'
+        return 'existing'
       }),
     [listaEtaje],
   )
+  useEffect(() => {
+    if (!isAufstockungFlow) return
+    setForm((prev: Record<string, any>) => (prev.pilons ? { ...prev, pilons: false } : prev))
+  }, [isAufstockungFlow, setForm])
   useEffect(() => {
     if (!isAufstockungFlow) return
     const normalized = normalizeAufstockungFloorKinds(aufstockungFloorKinds)
@@ -4353,6 +4370,26 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
     setShowAddFloorDropdown(false)
   }
 
+  /** Indicii în `listaEtaje` pentru fiecare „Obergeschoss” din ilustrație (up-0, up-1, …). */
+  const intermediarListaIndices = useMemo(
+    () => listaEtaje.map((e, idx) => (e === 'intermediar' ? idx : -1)).filter((idx): idx is number => idx >= 0),
+    [listaEtaje],
+  )
+  const isBestandAtListaIdx = (listaIdx: number) => {
+    if (!isAufstockungFlow || listaIdx < 0) return false
+    return String(aufstockungFloorKinds[listaIdx] ?? 'existing').toLowerCase() !== 'new'
+  }
+  /** Aufstockung: straturi Bestand estompate ca „dezactivate”, Zubau rămâne clar. */
+  const illuBestandStyle = (muted: boolean): Record<string, string | number> =>
+    muted ? { opacity: 0.4, filter: 'grayscale(0.75) brightness(0.9)' } : {}
+  const lastRoofListaIdx = listaEtaje.length > 0 ? listaEtaje.length - 1 : -1
+  const lastEtaj = lastRoofListaIdx >= 0 ? String(listaEtaje[lastRoofListaIdx] ?? '') : ''
+  const roofLayerIsBestand =
+    isAufstockungFlow &&
+    lastRoofListaIdx >= 0 &&
+    (lastEtaj === 'pod' || lastEtaj.startsWith('mansarda')) &&
+    isBestandAtListaIdx(lastRoofListaIdx)
+
   return (
     <div className="w-full flex flex-col items-start">
       <div className="flex flex-col gap-4 !pb-0 w-full max-w-full">
@@ -4363,17 +4400,98 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
             style={{ paddingTop: `${paddingTopValue}px` }}
           >
             {/* Ground și etaje la spate; piloni, fundație, beci desenate în față (z-index mai mare) */}
-            <img src="/builder/ground.png" alt="Ground" className="absolute" style={{ width: `${getScaledWidth('ground')}px`, height: 'auto', bottom: `${groundBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('ground', img.naturalWidth, img.naturalHeight) }} />
-            <img src={downImage} alt="Down" className="absolute" style={{ width: `${getScaledWidth('down')}px`, height: 'auto', bottom: `${downBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 25 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('down', img.naturalWidth, img.naturalHeight) }} />
-            {upImages.map((img, i) => (
-              <img key={`up-${i}`} src={img} alt={`Floor ${i + 1}`} className="absolute" style={{ width: `${getScaledWidth(`up-${i}`)}px`, height: 'auto', bottom: `${upBottoms[i] ?? 0}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 30 + i }} onLoad={(e) => { const im = e.currentTarget; if (im?.naturalWidth > 0 && im.naturalHeight > 0) updateOriginalSize(`up-${i}`, im.naturalWidth, im.naturalHeight) }} />
-            ))}
-            {hasPod && roofBottom >= 0 && <img src="/builder/roof.png" alt="Dachboden" className="absolute" style={{ width: `${getScaledWidth('roof')}px`, height: 'auto', bottom: `${roofBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('roof', img.naturalWidth, img.naturalHeight) }} />}
-            {hasMansarda && roofBottom >= 0 && (mansardaType === 'ohne' ? <img src={mansardeSmallImage} alt="Dachgeschoss ohne Kniestock" className="absolute" style={{ width: `${getScaledWidth('mansarde-small')}px`, height: 'auto', bottom: `${roofBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('mansarde-small', img.naturalWidth, img.naturalHeight) }} /> : <img src={mansardeImage} alt="Dachgeschoss mit Kniestock" className="absolute" style={{ width: `${getScaledWidth('mansarde')}px`, height: 'auto', bottom: `${roofBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('mansarde', img.naturalWidth, img.naturalHeight) }} />)}
+            <img src="/builder/ground.png" alt="Ground" className="absolute" style={{ width: `${getScaledWidth('ground')}px`, height: 'auto', bottom: `${groundBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 1, ...illuBestandStyle(isAufstockungFlow) }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('ground', img.naturalWidth, img.naturalHeight) }} />
+            <img src={downImage} alt="Down" className="absolute" style={{ width: `${getScaledWidth('down')}px`, height: 'auto', bottom: `${downBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 25, ...illuBestandStyle(isAufstockungFlow) }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('down', img.naturalWidth, img.naturalHeight) }} />
+            {upImages.map((img, i) => {
+              const listaIdx = intermediarListaIndices[i] ?? -1
+              const muted = listaIdx >= 0 && isBestandAtListaIdx(listaIdx)
+              return (
+                <img
+                  key={`up-${i}`}
+                  src={img}
+                  alt={`Floor ${i + 1}`}
+                  className="absolute"
+                  style={{
+                    width: `${getScaledWidth(`up-${i}`)}px`,
+                    height: 'auto',
+                    bottom: `${upBottoms[i] ?? 0}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 30 + i,
+                    ...illuBestandStyle(muted),
+                  }}
+                  onLoad={(e) => {
+                    const im = e.currentTarget
+                    if (im?.naturalWidth > 0 && im.naturalHeight > 0) updateOriginalSize(`up-${i}`, im.naturalWidth, im.naturalHeight)
+                  }}
+                />
+              )
+            })}
+            {hasPod && roofBottom >= 0 && (
+              <img
+                src="/builder/roof.png"
+                alt="Dachboden"
+                className="absolute"
+                style={{
+                  width: `${getScaledWidth('roof')}px`,
+                  height: 'auto',
+                  bottom: `${roofBottom}px`,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 50,
+                  ...illuBestandStyle(roofLayerIsBestand),
+                }}
+                onLoad={(e) => {
+                  const img = e.currentTarget
+                  if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('roof', img.naturalWidth, img.naturalHeight)
+                }}
+              />
+            )}
+            {hasMansarda &&
+              roofBottom >= 0 &&
+              (mansardaType === 'ohne' ? (
+                <img
+                  src={mansardeSmallImage}
+                  alt="Dachgeschoss ohne Kniestock"
+                  className="absolute"
+                  style={{
+                    width: `${getScaledWidth('mansarde-small')}px`,
+                    height: 'auto',
+                    bottom: `${roofBottom}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 50,
+                    ...illuBestandStyle(roofLayerIsBestand),
+                  }}
+                  onLoad={(e) => {
+                    const img = e.currentTarget
+                    if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('mansarde-small', img.naturalWidth, img.naturalHeight)
+                  }}
+                />
+              ) : (
+                <img
+                  src={mansardeImage}
+                  alt="Dachgeschoss mit Kniestock"
+                  className="absolute"
+                  style={{
+                    width: `${getScaledWidth('mansarde')}px`,
+                    height: 'auto',
+                    bottom: `${roofBottom}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 50,
+                    ...illuBestandStyle(roofLayerIsBestand),
+                  }}
+                  onLoad={(e) => {
+                    const img = e.currentTarget
+                    if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('mansarde', img.naturalWidth, img.naturalHeight)
+                  }}
+                />
+              ))}
             {/* Piloni, fundație, beci în față (z-index > etaje) și aliniate cu partea de sus a ground */}
             {pilons && <img src="/builder/pilons.png" alt="Pilons" className="absolute" style={{ width: `${getScaledWidth('pilons')}px`, height: 'auto', bottom: `${pilonsBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 60 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('pilons', img.naturalWidth, img.naturalHeight) }} />}
             {hasBase && <img src="/builder/base.png" alt="Base" className="absolute" style={{ width: `${getScaledWidth('base')}px`, height: 'auto', bottom: `${baseBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 65 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('base', img.naturalWidth, img.naturalHeight) }} />}
-            {hasBasement && <img src={basementUse ? '/builder/basement-live.png' : '/builder/basement-empty.png'} alt="Basement" className="absolute object-cover object-center" style={{ width: `${getScaledWidth('basement')}px`, height: `${basementHeight}px`, bottom: `${basementBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 70 }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('basement', img.naturalWidth, img.naturalHeight) }} />}
+            {hasBasement && <img src={basementUse ? '/builder/basement-live.png' : '/builder/basement-empty.png'} alt="Basement" className="absolute object-cover object-center" style={{ width: `${getScaledWidth('basement')}px`, height: `${basementHeight}px`, bottom: `${basementBottom}px`, left: '50%', transform: 'translateX(-50%)', zIndex: 70, ...illuBestandStyle(isAufstockungFlow) }} onLoad={(e) => { const img = e.currentTarget; if (img?.naturalWidth > 0 && img.naturalHeight > 0) updateOriginalSize('basement', img.naturalWidth, img.naturalHeight) }} />}
           </div>
         </div>
 
@@ -4397,7 +4515,7 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
         </label>
 
         <label className="flex flex-col gap-1" data-field="tipFundatieBeci">
-          <span className="wiz-label text-sun/90">Untergeschoss / Fundament</span>
+          <span className="wiz-label text-sun/90">{isAufstockungFlow ? 'Untergeschoss' : 'Untergeschoss / Fundament'}</span>
           <div className={errors.tipFundatieBeci ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
             <SelectSun
               value={foundationOptions.includes(tipFundatieBeci) ? tipFundatieBeci : (foundationOptions[0] ?? '')}
@@ -4412,16 +4530,18 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
           {errors.tipFundatieBeci && <span className="text-xs text-orange-400">{errors.tipFundatieBeci}</span>}
         </label>
 
-        <label className="flex items-center gap-2 mt-1" data-field="pilons">
-          <input
-            type="checkbox"
-            className="sun-checkbox"
-            checked={pilons}
-            onChange={(e) => setForm(prev => ({ ...prev, pilons: e.target.checked }))}
-          />
-          <span className="text-sm font-medium text-sun/90">Pfahlgründung erforderlich</span>
-          {errors.pilons && <span className="ml-2 text-xs text-orange-400">{errors.pilons}</span>}
-        </label>
+        {!isAufstockungFlow ? (
+          <label className="flex items-center gap-2 mt-1" data-field="pilons">
+            <input
+              type="checkbox"
+              className="sun-checkbox"
+              checked={pilons}
+              onChange={(e) => setForm(prev => ({ ...prev, pilons: e.target.checked }))}
+            />
+            <span className="text-sm font-medium text-sun/90">Pfahlgründung erforderlich</span>
+            {errors.pilons && <span className="ml-2 text-xs text-orange-400">{errors.pilons}</span>}
+          </label>
+        ) : null}
 
         <div className="space-y-2 pt-2 border-t border-[#e3c7ab22]">
           {errors.listaEtaje && <span className="text-xs text-orange-400">{errors.listaEtaje}</span>}
@@ -4486,23 +4606,47 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
                   ×
                 </button>
               </div>
-              {isAufstockungFlow && (
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="sun-checkbox"
-                    checked={String(aufstockungFloorKinds[idx] ?? '').toLowerCase() !== 'new'}
-                    onChange={(e) => {
-                      setForm((prev: Record<string, any>) => {
-                        const current = normalizeAufstockungFloorKinds(Array.isArray(prev.aufstockungFloorKinds) ? prev.aufstockungFloorKinds : [])
-                        current[idx] = e.target.checked ? 'existing' : 'new'
-                        return { ...prev, aufstockungFloorKinds: current }
-                      })
-                    }}
-                  />
-                  <span className="text-xs text-sand/90">Bereits bestehendes Geschoss</span>
-                </label>
-              )}
+              {isAufstockungFlow && etaj !== 'pod' ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-sand/70 shrink-0">Geschoss:</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((prev: Record<string, any>) => {
+                          const current = normalizeAufstockungFloorKinds(Array.isArray(prev.aufstockungFloorKinds) ? prev.aufstockungFloorKinds : [])
+                          current[idx] = 'existing'
+                          return { ...prev, aufstockungFloorKinds: current }
+                        })
+                      }
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium border transition-colors ${
+                        String(aufstockungFloorKinds[idx] ?? '').toLowerCase() !== 'new'
+                          ? 'border-white/35 bg-white/10 text-white'
+                          : 'border-white/15 text-sand/75 hover:bg-white/5'
+                      }`}
+                    >
+                      Bestand
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((prev: Record<string, any>) => {
+                          const current = normalizeAufstockungFloorKinds(Array.isArray(prev.aufstockungFloorKinds) ? prev.aufstockungFloorKinds : [])
+                          current[idx] = 'new'
+                          return { ...prev, aufstockungFloorKinds: current }
+                        })
+                      }
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium border transition-colors ${
+                        String(aufstockungFloorKinds[idx] ?? '').toLowerCase() === 'new'
+                          ? 'border-[#E5B800]/55 bg-[#E5B800]/20 text-[#FCF4D0]'
+                          : 'border-white/15 text-sand/75 hover:bg-white/5'
+                      }`}
+                    >
+                      Aufstockung
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {etaj === 'mansarda_mit' && (
                 <label className="flex flex-col gap-1">
                   <span className="wiz-label text-sun/90 text-xs">Kniestock (cm)</span>
@@ -4609,6 +4753,7 @@ function DynamicFields({
   stepKey, fields, form, setForm, onUpload, ensureOffer, errors, onEnter, customOptionsForm = {},
   paramLabelOverrides = {}, optionValueToPriceKey = {}, hiddenKeysForm = new Set<string>(), preisdatenbankOptionsByTag = {},
   displayCurrency = 'EUR',
+  wizardPackage = '',
 }: {
   stepKey: string
   fields: Field[]
@@ -4624,8 +4769,11 @@ function DynamicFields({
   hiddenKeysForm?: Set<string>
   preisdatenbankOptionsByTag?: Record<string, string[]>
   displayCurrency?: DisplayCurrency
+  wizardPackage?: string
 }) {
   const fmt = (s: string) => adaptCurrencyCopy(s, displayCurrency)
+  const wp = String(wizardPackage ?? '').toLowerCase()
+  const isAufstockungWizard = wp === 'aufstockung'
 
   let currentFields = fields;
   if (stepKey === 'upload') {
@@ -4647,6 +4795,9 @@ function DynamicFields({
           return null
         }
         if (stepKey === 'ferestreUsi' && f.name === 'garageDoorType' && !asBool(form.garagentorGewuenscht)) {
+          return null
+        }
+        if (stepKey === 'ferestreUsi' && isAufstockungWizard && (f.name === 'garagentorGewuenscht' || f.name === 'garageDoorType')) {
           return null
         }
         if (f.type === 'upload') {
@@ -4710,6 +4861,9 @@ function DynamicFields({
                   placeholder={(displayPlaceholder || DE.common.selectPlaceholder) as string}
                   displayFor={(opt) => {
                     const val = typeof opt === 'string' ? opt : optValue(opt)
+                    if (f.name === 'nivelOferta' && /\bhaus\b/i.test(val)) {
+                      return fmt(val.replace(/\s*haus\b/gi, '').replace(/\s+/g, ' ').trim())
+                    }
                     const tag = (f as any).tag || FIELD_TAG_FALLBACK_BY_NAME[f.name]
                     const priceKey = tag && optionValueToPriceKey[tag]?.[val]
                     const override = priceKey && paramLabelOverrides[priceKey]

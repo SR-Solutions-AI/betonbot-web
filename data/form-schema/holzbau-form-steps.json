@@ -1637,6 +1637,12 @@
                 "value": 2800
               },
               {
+                "key": "aufstockung_stair_opening_m2",
+                "label": "Treppenöffnung Referenz (€/m², nicht für Kalkulation)",
+                "unit": "€/m²",
+                "value": 320
+              },
+              {
                 "key": "aufstockung_statik_stahlbetonverbunddecke_m2",
                 "label": "Statik Stahlbetonverbunddecke (€/m²)",
                 "unit": "€/m²",

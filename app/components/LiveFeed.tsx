@@ -1970,11 +1970,9 @@ export default function LiveFeed() {
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <span
                 className={`shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                  offerFlow === 'dachstuhl'
-                    ? 'border-[#E5B800]/50 text-[#F5D030] bg-[#E5B800]/12'
-                    : offerFlow === 'aufstockung'
-                      ? 'border-[#C9A227]/55 text-[#F0E68C] bg-[#C9A227]/14'
-                      : 'border-white/15 text-sand/75 bg-white/[0.06]'
+                  isMeasurementsOnlyOffer
+                    ? 'border-[#E5B800]/28 text-sand/75 bg-[#E5B800]/[0.08]'
+                    : 'border-[#E5B800]/45 text-[#F5D86A] bg-[#E5B800]/12'
                 }`}
               >
                 {isMeasurementsOnlyOffer

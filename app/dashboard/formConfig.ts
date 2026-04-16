@@ -695,6 +695,33 @@ export const PRICING_VARIABLES_SECTIONS: PricingVariablesSectionDef[] = [
       },
     ],
   },
+  {
+    title: 'Aufstockung Phase 1',
+    subtitle: 'Rückbau, Treppenöffnung, Statik (gleiche Keys wie holzbau-form-steps.json preisdatenbank)',
+    subsections: [
+      {
+        title: 'Rückbau / Statik',
+        variables: [
+          { key: 'aufstockung_demolition_roof_basic_m2', label: 'Dachrückbau Standard (€/m²)', unit: '€/m²', default: 85 },
+          { key: 'aufstockung_demolition_roof_complex_m2', label: 'Dachrückbau Komplex (€/m²)', unit: '€/m²', default: 120 },
+          { key: 'aufstockung_demolition_roof_special_m2', label: 'Dachrückbau Sonder (€/m²)', unit: '€/m²', default: 160 },
+          {
+            key: 'aufstockung_stair_opening_piece',
+            label: 'Treppenöffnung (€/Stück)',
+            unit: '€/Stück',
+            default: 2800,
+          },
+          { key: 'aufstockung_stair_opening_m2', label: 'Treppenöffnung Referenz (€/m², nicht für Kalkulation)', unit: '€/m²', default: 320 },
+          {
+            key: 'aufstockung_statik_stahlbetonverbunddecke_m2',
+            label: 'Statik Stahlbetonverbunddecke (€/m²)',
+            unit: '€/m²',
+            default: 145,
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 /**

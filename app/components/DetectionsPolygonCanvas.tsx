@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
 
 export type Point = [number, number]
 
@@ -80,6 +80,62 @@ type PolygonCanvasProps = {
    * Altfel getBoundingClientRect() rămâne 0×0 și planul pare negru până la resize/refresh.
    */
   layoutActive?: boolean
+  /** Crește la schimbare tab/stack (Aufstockung Bestand) ca să forțeze `recomputeFit` după layout. */
+  layoutRevealKey?: number
+  blendAufstockungPhase1Overlays?: boolean
+  useAufstockungsBasisDemolitionLabels?: boolean
+  /** Nu desena imaginea de plan (fundal transparent) — strat vectorial peste același blueprint ca în părinte. */
+  hideBasemap?: boolean
+  /** Preview Dach (din roof-review-data) sub stratul interactiv, împreună cu blend Phase 1. */
+  roofOverlayRooms?: RoomPolygon[]
+  /**
+   * Aufstockung Dach-Stack: același zoom/pan pe două canvas-uri (fundal + vector).
+   * Când e setat, `zoom`/`pan` vin din părinte; `onStackedViewChange` pe stratul interactiv actualizează părintele.
+   */
+  stackedView?: { zoom: number; pan: { x: number; y: number } } | null
+  onStackedViewChange?: (next: { zoom: number; pan: { x: number; y: number } }) => void
+}
+
+/** Preview semi-transparent pentru poligoane Dach (Aufstockung: același ecran cu Aufstandsfläche + Treppenöffnung). */
+function drawAufstockungRoofOverlayPreview(
+  ctx: CanvasRenderingContext2D,
+  ox: number,
+  oy: number,
+  s: number,
+  roofOverlayRooms: RoomPolygon[],
+) {
+  if (roofOverlayRooms.length === 0) return
+  const roofOvColors = ['#0ea5e9', '#06b6d4', '#38bdf8']
+  roofOverlayRooms.forEach((room, ri) => {
+    const pts = room.points
+    if (pts.length < 2) return
+    ctx.fillStyle = roofOvColors[ri % roofOvColors.length]
+    ctx.globalAlpha = 0.18
+    ctx.beginPath()
+    ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+    for (let k = 1; k < pts.length; k++) {
+      ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+    }
+    ctx.closePath()
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = 'rgba(14,165,233,0.85)'
+    ctx.lineWidth = 1.75
+    ctx.stroke()
+  })
+}
+
+/** Etichetă canvas pentru suprafețe de acoperiș (legacy `S0` → `Dach-Basis #1`). */
+export function formatRoofSurfaceCanvasLabel(room: RoomPolygon, indexZeroBased: number): string {
+  const raw = (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? '').trim()
+  if (/^S\d+$/i.test(raw)) {
+    const m = /^S(\d+)$/i.exec(raw)
+    const n = m ? parseInt(m[1], 10) : indexZeroBased
+    return `Dach-Basis #${n + 1}`
+  }
+  if (/^Dach-Basis\s*#\s*\d+$/i.test(raw)) return raw
+  if (!raw) return `Dach-Basis #${indexZeroBased + 1}`
+  return raw
 }
 
 const HANDLE_R = 6
@@ -185,6 +241,13 @@ export function DetectionsPolygonCanvas({
   newDoorType = 'door',
   className = '',
   layoutActive = true,
+  layoutRevealKey = 0,
+  blendAufstockungPhase1Overlays = false,
+  useAufstockungsBasisDemolitionLabels = false,
+  hideBasemap = false,
+  roofOverlayRooms = [],
+  stackedView = null,
+  onStackedViewChange,
 }: PolygonCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [fit, setFit] = useState<{ scale: number; offX: number; offY: number; cw: number; ch: number } | null>(null)
@@ -213,10 +276,12 @@ export function DetectionsPolygonCanvas({
   demolitionRef.current = demolitionPolys
   stairRectsRef.current = stairOpeningRects
 
+  const zoomModel = stackedView != null ? stackedView.zoom : userZoom
+  const panModel = stackedView != null ? stackedView.pan : userPan
   const effective = fit ? {
-    scale: fit.scale * userZoom,
-    offX: fit.offX + userPan.x,
-    offY: fit.offY + userPan.y,
+    scale: fit.scale * zoomModel,
+    offX: fit.offX + panModel.x,
+    offY: fit.offY + panModel.y,
   } : null
 
   const toImage = useCallback((cx: number, cy: number): Point | null => {
@@ -294,9 +359,29 @@ export function DetectionsPolygonCanvas({
 
   /** Zoom/pan nur bei neuem Plan/Bild zurücksetzen — nicht bei Canvas-Resize (Werkzeug-Zeilen ändern die Höhe). */
   useEffect(() => {
+    if (stackedView != null) return
     setUserZoom(1)
     setUserPan({ x: 0, y: 0 })
-  }, [imageUrl, imageWidth, imageHeight])
+  }, [imageUrl, imageWidth, imageHeight, stackedView])
+
+  /** După Aufstockung Dach-Stack (zoom/pan partajat), refit evită `fit` vechi când containerul/layout-ul se schimbă. */
+  const prevStackedViewRef = useRef(stackedView)
+  useEffect(() => {
+    const prev = prevStackedViewRef.current
+    prevStackedViewRef.current = stackedView
+    if (prev != null && stackedView == null) {
+      requestAnimationFrame(() => {
+        recomputeFit()
+      })
+    }
+  }, [stackedView, recomputeFit])
+
+  useLayoutEffect(() => {
+    if (!layoutRevealKey) return
+    requestAnimationFrame(() => {
+      recomputeFit()
+    })
+  }, [layoutRevealKey, recomputeFit])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -328,16 +413,20 @@ export function DetectionsPolygonCanvas({
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     const img = imgRef.current
-    if (!ctx || !effective || !img || !canvas) return
+    if (!ctx || !effective || !canvas) return
+    if (!hideBasemap && (!img || !imageLoaded)) return
 
     ctx.save()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.fillStyle = '#1a1a1a'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.restore()
-
-    ctx.drawImage(img, effective.offX, effective.offY, imageWidth * effective.scale, imageHeight * effective.scale)
+    if (!hideBasemap) {
+      ctx.fillStyle = '#1a1a1a'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.restore()
+      ctx.drawImage(img!, effective.offX, effective.offY, imageWidth * effective.scale, imageHeight * effective.scale)
+    } else {
+      ctx.restore()
+    }
 
     const roomColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
     // Clasificare identică cu LiveFeed (detections_review_doors.png): doors_types.json (Gemini) + euristică aspect în backend.
@@ -360,6 +449,40 @@ export function DetectionsPolygonCanvas({
     const stairPreviewStyle = { fill: '#a855f7', stroke: '#7c3aed' }
     const rectsForDoorTab = tab === 'stair_opening' ? stairOpeningRects : doors
     if (tab === 'rooms') {
+      /** Bestand + Dach-Tab: Aufstandsfläche + Treppenöffnung als Kontext unter dem Dach-Plan (gleiche Optik wie Phase-1-Blend). */
+      if (
+        blendAufstockungPhase1Overlays &&
+        (demolitionPolys.length > 0 || stairOpeningRects.length > 0 || roofOverlayRooms.length > 0)
+      ) {
+        demolitionPolys.forEach((d) => {
+          const pts = d.points
+          if (pts.length < 2) return
+          ctx.fillStyle = '#dc2626'
+          ctx.globalAlpha = 0.14
+          ctx.beginPath()
+          ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+          for (let k = 1; k < pts.length; k++) {
+            ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = 'rgba(248,113,113,0.55)'
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+        })
+        stairOpeningRects.forEach((st) => {
+          const [x1, y1, x2, y2] = st.bbox
+          ctx.fillStyle = stairPreviewStyle.fill
+          ctx.globalAlpha = 0.2
+          ctx.fillRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = stairPreviewStyle.stroke
+          ctx.lineWidth = 1.5
+          ctx.strokeRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
+        })
+        drawAufstockungRoofOverlayPreview(ctx, ox, oy, s, roofOverlayRooms)
+      }
       rooms.forEach((room, i) => {
         const pts = room.points
         if (pts.length < 2) return
@@ -381,7 +504,11 @@ export function DetectionsPolygonCanvas({
         ctx.strokeStyle = selected ? '#E5B800' : useDimOthers ? 'rgba(255,255,255,0.35)' : ctx.fillStyle
         ctx.lineWidth = selected ? 3 : useDimOthers ? 1.5 : 2
         ctx.stroke()
-        const label = (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? `R${i}`).trim() || `R${i}`
+        const rawLabel = (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? '').trim()
+        const label =
+          /^S\d+$/i.test(rawLabel) || /^Dach-Basis\s*#\s*\d+$/i.test(rawLabel)
+            ? formatRoofSurfaceCanvasLabel(room, i)
+            : rawLabel || `R${i}`
         if (pts.length > 0 && label) {
           let cx = 0, cy = 0
           pts.forEach((p) => { cx += p[0]; cy += p[1] })
@@ -438,6 +565,37 @@ export function DetectionsPolygonCanvas({
         })
       }
     } else if (tab === 'demolition') {
+      const demolBaseLabel = useAufstockungsBasisDemolitionLabels ? 'Aufstockungs-Basis' : 'Rückbau'
+      if (blendAufstockungPhase1Overlays) {
+        rooms.forEach((room, ri) => {
+          const pts = room.points
+          if (pts.length < 2) return
+          ctx.fillStyle = roomColors[ri % roomColors.length]
+          ctx.globalAlpha = 0.12
+          ctx.beginPath()
+          ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+          for (let k = 1; k < pts.length; k++) {
+            ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+          ctx.lineWidth = 1.25
+          ctx.stroke()
+        })
+        stairOpeningRects.forEach((st) => {
+          const [x1, y1, x2, y2] = st.bbox
+          ctx.fillStyle = stairPreviewStyle.fill
+          ctx.globalAlpha = 0.2
+          ctx.fillRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = stairPreviewStyle.stroke
+          ctx.lineWidth = 1.5
+          ctx.strokeRect(ox + Math.min(x1, x2) * s, oy + Math.min(y1, y2) * s, Math.abs(x2 - x1) * s, Math.abs(y2 - y1) * s)
+        })
+        drawAufstockungRoofOverlayPreview(ctx, ox, oy, s, roofOverlayRooms)
+      }
       demolitionPolys.forEach((d, i) => {
         const pts = d.points
         if (pts.length < 2) return
@@ -465,7 +623,7 @@ export function DetectionsPolygonCanvas({
           cx /= pts.length
           cy /= pts.length
           const m2 = typeof d.area_m2 === 'number' && d.area_m2 > 0 ? `${d.area_m2.toFixed(2)} m²` : ''
-          const label = m2 ? `Rückbau #${i + 1} · ${m2}` : `Rückbau #${i + 1}`
+          const label = m2 ? `${demolBaseLabel} #${i + 1} · ${m2}` : `${demolBaseLabel} #${i + 1}`
           ctx.font = 'bold 13px sans-serif'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -517,6 +675,43 @@ export function DetectionsPolygonCanvas({
         })
       }
     } else {
+      if (blendAufstockungPhase1Overlays && tab === 'stair_opening') {
+        rooms.forEach((room, ri) => {
+          const pts = room.points
+          if (pts.length < 2) return
+          ctx.fillStyle = roomColors[ri % roomColors.length]
+          ctx.globalAlpha = 0.12
+          ctx.beginPath()
+          ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+          for (let k = 1; k < pts.length; k++) {
+            ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+          ctx.lineWidth = 1.25
+          ctx.stroke()
+        })
+        demolitionPolys.forEach((d) => {
+          const pts = d.points
+          if (pts.length < 2) return
+          ctx.fillStyle = '#dc2626'
+          ctx.globalAlpha = 0.14
+          ctx.beginPath()
+          ctx.moveTo(ox + pts[0][0] * s, oy + pts[0][1] * s)
+          for (let k = 1; k < pts.length; k++) {
+            ctx.lineTo(ox + pts[k][0] * s, oy + pts[k][1] * s)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.strokeStyle = 'rgba(248,113,113,0.55)'
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+        })
+        drawAufstockungRoofOverlayPreview(ctx, ox, oy, s, roofOverlayRooms)
+      }
       if (showRoomPolygonsUnderDoors && tab === 'doors') {
         const underlayColors = ['#3b82f6', '#22c55e', '#eab308', '#8b5cf6', '#06b6d4']
         rooms.forEach((room, i) => {
@@ -544,9 +739,7 @@ export function DetectionsPolygonCanvas({
             })
             cx /= pts.length
             cy /= pts.length
-            const label =
-              (room.roomName ?? (room as { room_name?: string }).room_name ?? room.roomType ?? `S${i + 1}`).trim() ||
-              `S${i + 1}`
+            const label = formatRoofSurfaceCanvasLabel(room, i)
             ctx.font = 'bold 12px sans-serif'
             ctx.textAlign = 'center'
             ctx.textBaseline = 'middle'
@@ -635,6 +828,10 @@ export function DetectionsPolygonCanvas({
     dimUnselectedRoomPolygons,
     showRoomPolygonsUnderDoors,
     highlightRoofSurfaceUnderlay,
+    blendAufstockungPhase1Overlays,
+    useAufstockungsBasisDemolitionLabels,
+    hideBasemap,
+    roofOverlayRooms,
   ])
 
   useEffect(() => { draw() }, [draw])
@@ -848,11 +1045,12 @@ export function DetectionsPolygonCanvas({
     if (tool === 'select' && pt) {
       ;(e.target as Element).setPointerCapture(e.pointerId)
       setPanning(true)
-      setPanStart({ x: e.clientX - userPan.x, y: e.clientY - userPan.y })
+      const panNow = stackedView?.pan ?? userPan
+      setPanStart({ x: e.clientX - panNow.x, y: e.clientY - panNow.y })
     } else {
       onSelect(null)
     }
-  }, [effective, tool, tab, newPoints, userPan, hitTest, toImage, toImageForPlacement, onSelect, onAddPoint, onCloseNewPolygon, onRemoveSelected, onInsertVertex, onRoomTypeLabelClick, onEditStart, rooms, doors, demolitionPolys, stairOpeningRects])
+  }, [effective, tool, tab, newPoints, userPan, stackedView, hitTest, toImage, toImageForPlacement, onSelect, onAddPoint, onCloseNewPolygon, onRemoveSelected, onInsertVertex, onRoomTypeLabelClick, onEditStart, rooms, doors, demolitionPolys, stairOpeningRects])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current
@@ -888,7 +1086,12 @@ export function DetectionsPolygonCanvas({
     }
 
     if (panning && panStart) {
-      setUserPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y })
+      const nextPan = { x: e.clientX - panStart.x, y: e.clientY - panStart.y }
+      if (onStackedViewChange && stackedView != null) {
+        onStackedViewChange({ zoom: stackedView.zoom, pan: nextPan })
+      } else {
+        setUserPan(nextPan)
+      }
       return
     }
 
@@ -1030,7 +1233,7 @@ export function DetectionsPolygonCanvas({
         }
       }
     }
-  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, toImageForPlacement, hitTest, onDoorHover, onRoomsChange, onDoorsChange, onDemolitionPolysChange, onStairOpeningRectsChange, onEditStart])
+  }, [panning, panStart, dragging, effective, tool, tab, newPoints, imageWidth, imageHeight, toImage, toImageForPlacement, hitTest, onDoorHover, onRoomsChange, onDoorsChange, onDemolitionPolysChange, onStairOpeningRectsChange, onEditStart, stackedView, onStackedViewChange])
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     const pendingTap = doorTapPendingRef.current
@@ -1077,12 +1280,18 @@ export function DetectionsPolygonCanvas({
     const imgX = (cx - effective.offX) / effective.scale
     const imgY = (cy - effective.offY) / effective.scale
     const factor = wheelEventToZoomFactor(e)
-    const newZoom = Math.max(0.3, Math.min(5, userZoom * factor))
+    const curZoom = stackedView?.zoom ?? userZoom
+    const newZoom = Math.max(0.3, Math.min(5, curZoom * factor))
     const newOffX = cx - imgX * fit.scale * newZoom
     const newOffY = cy - imgY * fit.scale * newZoom
+    const newPan = { x: newOffX - fit.offX, y: newOffY - fit.offY }
+    if (stackedView != null) {
+      if (onStackedViewChange) onStackedViewChange({ zoom: newZoom, pan: newPan })
+      return
+    }
     setUserZoom(newZoom)
-    setUserPan({ x: newOffX - fit.offX, y: newOffY - fit.offY })
-  }, [effective, fit, userZoom])
+    setUserPan(newPan)
+  }, [effective, fit, userZoom, stackedView, onStackedViewChange])
 
   useEffect(() => {
     const canvas = canvasRef.current

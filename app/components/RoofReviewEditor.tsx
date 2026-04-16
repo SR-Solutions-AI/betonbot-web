@@ -14,7 +14,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, MousePointer2, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react'
-import { DetectionsPolygonCanvas, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
+import { DetectionsPolygonCanvas, formatRoofSurfaceCanvasLabel, type Point, type RoomPolygon, type DoorRect } from './DetectionsPolygonCanvas'
+import { nextRoofLabel } from '../lib/roofReviewHelpers'
 import { apiFetch } from '../lib/supabaseClient'
 import { displayFloorTabLabelDe } from '@/lib/displayFloorTabLabelDe'
 import {
@@ -36,18 +37,99 @@ type PlanData = {
   doors: DoorRect[]
 }
 
+type ImageDimsSeed = { imageWidth: number; imageHeight: number }
+
+/**
+ * Embedded Aufstockung: roof-review-data poate declara alte imageWidth/Height decât detections-review.
+ * Canvas-ul de fază 1 folosește dimensiunile din detections — scalăm poligoanele și bbox-urile la același spațiu.
+ */
+function alignRoofPlanToSeedDims(plan: PlanData, seed: ImageDimsSeed): PlanData {
+  const toW = Number(seed.imageWidth) || 0
+  const toH = Number(seed.imageHeight) || 0
+  const fromW = Number(plan.imageWidth) || 0
+  const fromH = Number(plan.imageHeight) || 0
+  if (toW <= 0 || toH <= 0) return plan
+  if (fromW <= 0 || fromH <= 0) {
+    return { ...plan, imageWidth: toW, imageHeight: toH }
+  }
+  if (fromW === toW && fromH === toH) return { ...plan, imageWidth: toW, imageHeight: toH }
+  const sx = toW / fromW
+  const sy = toH / fromH
+  return {
+    ...plan,
+    imageWidth: toW,
+    imageHeight: toH,
+    rectangles: plan.rectangles.map((r) => ({
+      ...r,
+      points: r.points.map((pt) => [pt[0] * sx, pt[1] * sy] as Point),
+    })),
+    doors: plan.doors.map((d) => {
+      const [x1, y1, x2, y2] = d.bbox
+      return {
+        ...d,
+        bbox: [x1 * sx, y1 * sy, x2 * sx, y2 * sy] as [number, number, number, number],
+      }
+    }),
+  }
+}
+
+function alignRoofPlansToEmbeddedSeeds(plans: PlanData[], seeds: ImageDimsSeed[] | undefined): PlanData[] {
+  if (!seeds?.length) return plans
+  return plans.map((p, i) => {
+    const seed = seeds[i]
+    if (!seed || !(Number(seed.imageWidth) > 0) || !(Number(seed.imageHeight) > 0)) return p
+    return alignRoofPlanToSeedDims(p, seed)
+  })
+}
+
+/** Potrivește rândul roof-review la etajul detections după dimensiuni imagine (nu doar după index). */
+function matchRoofRowToSeedIndex(
+  plan: Pick<PlanData, 'imageWidth' | 'imageHeight'>,
+  seeds: ImageDimsSeed[],
+  rowIndex: number,
+): number {
+  if (!seeds?.length) return rowIndex
+  const fromW = Number(plan.imageWidth) || 0
+  const fromH = Number(plan.imageHeight) || 0
+  if (fromW <= 0 || fromH <= 0) return rowIndex
+  const exact = seeds.findIndex(
+    (s) => Number(s.imageWidth) === fromW && Number(s.imageHeight) === fromH,
+  )
+  if (exact >= 0) return exact
+  let best = rowIndex
+  let bestD = Infinity
+  for (let j = 0; j < seeds.length; j++) {
+    const sw = Number(seeds[j].imageWidth) || 0
+    const sh = Number(seeds[j].imageHeight) || 0
+    if (sw <= 0 || sh <= 0) continue
+    const d = Math.abs(sw - fromW) + Math.abs(sh - fromH)
+    if (d < bestD) {
+      bestD = d
+      best = j
+    }
+  }
+  return best
+}
+
+function reorderRoofPlansToEmbeddedSlots(plans: PlanData[], seeds: ImageDimsSeed[]): PlanData[] {
+  if (!seeds.length) return plans
+  const nSlots = Math.max(plans.length, seeds.length)
+  const slots: PlanData[] = Array.from({ length: nSlots }, (_, k) => ({
+    imageWidth: Number(seeds[k]?.imageWidth) || 0,
+    imageHeight: Number(seeds[k]?.imageHeight) || 0,
+    rectangles: [],
+    doors: [],
+  }))
+  for (let i = 0; i < plans.length; i++) {
+    const si = matchRoofRowToSeedIndex(plans[i], seeds, i)
+    if (si >= 0 && si < slots.length) slots[si] = plans[i]
+  }
+  return slots
+}
+
 export type RoofSurfaceTab = 'surfaces' | 'windows'
 
 type Tool = 'select' | 'add' | 'remove' | 'edit'
-
-function nextRoofLabel(rects: RoomPolygon[]): string {
-  let max = -1
-  for (const r of rects) {
-    const m = /^S(\d+)$/.exec((r.roomName || '').trim())
-    if (m) max = Math.max(max, parseInt(m[1], 10))
-  }
-  return `S${max + 1}`
-}
 
 function clampRoofOverhangM(v: number): number {
   return Math.max(0, Math.min(5, v))
@@ -370,12 +452,29 @@ type RoofReviewEditorProps = {
    * Cere `tool` / `setTool` / `roofSurfaceTab` / `setRoofSurfaceTab` din părinte.
    */
   chromeInParent?: boolean
+  /**
+   * Aufstockung Bestand: strat vectorial peste același blueprint ca DetectionsReviewEditor — canvas fără basemap (nu dublăm planul).
+   */
+  vectorOverlayOnly?: boolean
+  /** Aufstockung Dach-Stack: zoom/pan partajat cu canvas-ul de fundal din DetectionsReviewEditor. */
+  stackedView?: { zoom: number; pan: { x: number; y: number } } | null
+  onStackedViewChange?: (next: { zoom: number; pan: { x: number; y: number } }) => void
   /** Când e setat (editor unificat), Maße Dachfenster se randă aici (sub Hinweis), nu sub rândul Räume. */
   dimsToolbarPortalTarget?: HTMLElement | null
   tool?: Tool
   setTool?: Dispatch<SetStateAction<Tool>>
   roofSurfaceTab?: RoofSurfaceTab
   setRoofSurfaceTab?: Dispatch<SetStateAction<RoofSurfaceTab>>
+  /**
+   * Aufstockung embedded: trimite dreptunghiurile Dach actuale către părinte ca overlay pe canvas-ul de fază 1
+   * (în loc de singurul poll roof-review-data, care poate întârzia față de editări).
+   */
+  onRoofRectanglesOverlaySync?: (
+    planIndex: number,
+    rectangles: RoomPolygon[],
+    /** Dimensiuni spațiului în care sunt `rectangles` (din `plansData` roof); părintele scalează la planul detections dacă diferă. */
+    sourceImageDims?: { imageWidth: number; imageHeight: number },
+  ) => void
 }
 
 export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEditorProps>(function RoofReviewEditor(
@@ -390,11 +489,15 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     embeddedPlanSeeds,
     layoutActive = true,
     chromeInParent = false,
+    vectorOverlayOnly = false,
+    stackedView = null,
+    onStackedViewChange,
     dimsToolbarPortalTarget,
     tool: toolProp,
     setTool: setToolProp,
     roofSurfaceTab: roofSurfaceTabProp,
     setRoofSurfaceTab: setRoofSurfaceTabProp,
+    onRoofRectanglesOverlaySync,
   },
   ref,
 ) {
@@ -583,6 +686,27 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
   )
 
   useEffect(() => {
+    if (!embedded || typeof embedPlanIndex !== 'number' || embedPlanIndex < 0) return
+    const fn = onRoofRectanglesOverlaySync
+    if (!fn) return
+    const plan = plansData[embedPlanIndex]
+    const rects = plan?.rectangles
+    const iw = plan ? Number(plan.imageWidth) || 0 : 0
+    const ih = plan ? Number(plan.imageHeight) || 0 : 0
+    const sourceImageDims = iw > 0 && ih > 0 ? { imageWidth: iw, imageHeight: ih } : undefined
+    fn(
+      embedPlanIndex,
+      Array.isArray(rects)
+        ? rects.map((r) => ({
+            ...r,
+            points: r.points.map((p) => [...p] as Point),
+          }))
+        : [],
+      sourceImageDims,
+    )
+  }, [embedded, embedPlanIndex, plansData, onRoofRectanglesOverlaySync])
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey
       if (!isUndo) return
@@ -665,6 +789,11 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 rectangles: [],
                 doors: [],
               }))
+            } else if (canSeedEmbedded && toSet.length > 0) {
+              toSet = alignRoofPlansToEmbeddedSeeds(
+                reorderRoofPlansToEmbeddedSlots(toSet, embeddedPlanSeeds!),
+                embeddedPlanSeeds!,
+              )
             }
             setPlansData(toSet)
             setLoading(false)
@@ -682,7 +811,14 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                 })),
               )
             } else {
-              setPlansData(lastPlans)
+              setPlansData(
+                canSeedEmbedded && lastPlans.length > 0
+                  ? alignRoofPlansToEmbeddedSeeds(
+                      reorderRoofPlansToEmbeddedSlots(lastPlans, embeddedPlanSeeds!),
+                      embeddedPlanSeeds!,
+                    )
+                  : lastPlans,
+              )
             }
             setLoading(false)
             return
@@ -1038,6 +1174,28 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
       </div>
     ) : null
 
+  /** Aufstockung vector overlay: același dreptunghi ca DetectionsPolygonCanvas de dedesubt ca `fit`/`wheel` să coincidă. */
+  const stackedVectorOverlay = Boolean(vectorOverlayOnly)
+  const roofMetaPanelPaddingClass =
+    compactUi ? 'p-1.5 max-h-[min(28vh,240px)] overflow-y-auto overflow-x-hidden' : 'p-2'
+  const roofBlueprintShellClass = vectorOverlayOnly
+    ? stackedVectorOverlay
+      ? 'relative flex h-full w-full min-h-0 flex-1 overflow-hidden rounded-lg border-0 bg-transparent ring-0'
+      : 'relative flex min-h-0 w-full flex-1 overflow-hidden rounded-lg border-0 bg-transparent ring-0'
+    : 'relative flex min-h-0 w-full flex-1 overflow-hidden rounded-lg border border-[#E5B800]/50 bg-black/30 ring-1 ring-[#E5B800]/30'
+  const roofMetaOuterClass = stackedVectorOverlay
+    ? `pointer-events-auto relative z-20 mb-0 w-full rounded-xl border border-coffee-600 bg-coffee-800 space-y-2 shadow-soft ${roofMetaPanelPaddingClass}`
+    : `relative z-10 mb-1.5 shrink-0 -translate-y-0.5 rounded-xl border border-coffee-600 bg-coffee-800 space-y-2 shadow-soft ${roofMetaPanelPaddingClass}`
+  const blueprintRootClass = stackedVectorOverlay
+    ? 'relative flex min-h-0 min-w-0 flex-1 overflow-hidden'
+    : 'flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden px-2'
+  const blueprintAreaWrapClass = stackedVectorOverlay
+    ? 'absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden'
+    : 'flex min-h-0 flex-1 flex-col gap-1 overflow-hidden'
+  const metaWrapClass = stackedVectorOverlay
+    ? 'pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center'
+    : 'shrink-0'
+
   return (
     <div
       className={`relative w-full flex flex-col flex-1 min-h-0 h-full max-h-full overflow-hidden ${
@@ -1196,11 +1354,11 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
         </div>
       )}
 
-      {/* Blueprint: ocupă tot spațiul rămas (flex-basis 0) ca imaginea să fie cât mai mare, fără scroll */}
-      <div className="flex-[1_1_0%] min-h-0 flex flex-col gap-1.5 min-w-0 overflow-hidden px-2">
-        <div className="flex-[1_1_0%] min-h-0 flex flex-col overflow-hidden gap-1">
+      {/* Blueprint: flex-1 + min-h-0 pe tot lanțul ca panoul de jos să nu „taie” peste canvas (min-height:auto). */}
+      <div className={blueprintRootClass}>
+        <div className={blueprintAreaWrapClass}>
           {currentPlan && getBaseImageUrl(planIndexClamped) && (
-              <div className="relative w-full flex-[1_1_0%] min-h-[96px] rounded-lg overflow-hidden border border-[#E5B800]/50 ring-1 ring-[#E5B800]/30 bg-black/30">
+              <div className={roofBlueprintShellClass}>
                 {pendingNewRoofWindowBbox && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 rounded-lg">
                     <div className="w-[300px] rounded-xl border border-[#E5B800]/60 bg-[#1a1a1a] p-3 space-y-2">
@@ -1270,6 +1428,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                   <DetectionsPolygonCanvas
                     key={`roof-plan-${planIndexClamped}-surf`}
                     className="block h-full w-full min-h-0"
+                    hideBasemap={vectorOverlayOnly}
                     layoutActive={layoutActive}
                     imageUrl={getBaseImageUrl(planIndexClamped)!}
                     imageWidth={currentPlan.imageWidth}
@@ -1311,11 +1470,14 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                     onRoomsChange={(rooms) => setRectangles(planIndexClamped, rooms.map((r) => normalizeRect(r)))}
                     onDoorsChange={() => {}}
                     onEditStart={pushHistory}
+                    stackedView={stackedView}
+                    onStackedViewChange={onStackedViewChange}
                   />
                 ) : (
                   <DetectionsPolygonCanvas
                     key={`roof-plan-${planIndexClamped}-win`}
                     className="block h-full w-full min-h-0"
+                    hideBasemap={vectorOverlayOnly}
                     layoutActive={layoutActive}
                     imageUrl={getBaseImageUrl(planIndexClamped)!}
                     imageWidth={currentPlan.imageWidth}
@@ -1371,18 +1533,17 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
                     onRoomsChange={() => {}}
                     onDoorsChange={(doors) => setPlanDoors(planIndexClamped, doors)}
                     onEditStart={pushHistory}
+                    stackedView={stackedView}
+                    onStackedViewChange={onStackedViewChange}
                   />
                 )}
               </div>
           )}
         </div>
 
-        {/* Unter dem Plan: Dachflächen (Neigung/Typ) oder Dachfenster-Hinweis */}
-        <div
-          className={`shrink-0 rounded-xl border border-[#E5B800]/40 bg-black/25 space-y-2 ${
-            compactUi ? 'p-1.5 max-h-[min(30vh,260px)] overflow-y-auto overflow-x-hidden' : 'p-2'
-          }`}
-        >
+        <div className={metaWrapClass}>
+        {/* Unter dem Plan: Dachflächen (Neigung/Typ) — fundal coffee (temă), ușor mai jos față de varianta anterioară. */}
+        <div className={roofMetaOuterClass}>
           {roofSurfaceTab === 'windows' ? (
             <div className="text-sm text-white space-y-1">
               <p className="text-sand/80 text-xs font-normal leading-snug">
@@ -1396,7 +1557,13 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
             <div className="text-sm text-white font-medium min-w-0 flex-1 pr-1">
               {selectedRect ? (
                 <div className="space-y-0.5">
-                  <div>Dachfläche {selectedRect.roomName ?? `S${selectedPolygonIndex}`}</div>
+                  <div>
+                    Dachfläche{' '}
+                    {formatRoofSurfaceCanvasLabel(
+                      selectedRect,
+                      typeof selectedPolygonIndex === 'number' ? selectedPolygonIndex : 0,
+                    )}
+                  </div>
                   <div className="text-sand/80 text-xs font-normal">
                     {roofTypeLabelDe((selectedRect.roofType ?? DEFAULT_ROOF_TYPE) as RoofTypeId)}
                   </div>
@@ -1549,6 +1716,7 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
           </div>
             </>
           )}
+        </div>
         </div>
       </div>
 

@@ -477,6 +477,7 @@ const BETONBOT_LICENSE_FEATURES = [
 ] as const
 
 const BETONBOT_PRICE_TIERS = [
+  { label: '5 Projekte / Monat', price: '190 €' },
   { label: '10 Projekte / Monat', price: '390 €' },
   { label: '25 Projekte / Monat', price: '590 €' },
   { label: 'Unbegrenzte Projekte', price: '990 €', highlight: true },
