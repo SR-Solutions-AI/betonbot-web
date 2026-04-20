@@ -4389,12 +4389,26 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
     lastRoofListaIdx >= 0 &&
     (lastEtaj === 'pod' || lastEtaj.startsWith('mansarda')) &&
     isBestandAtListaIdx(lastRoofListaIdx)
+  /** `newext` sits to the right of the existing slice; avoid clipping it inside the rounded frame. */
+  const showNewextBesideExistingSlice = useMemo(
+    () =>
+      isAufstockungFlow &&
+      intermediarListaIndices.some(
+        (listaIdx) =>
+          listaIdx >= 0 &&
+          String(aufstockungFloorKinds[listaIdx] ?? '').toLowerCase() === 'new',
+      ),
+    [isAufstockungFlow, intermediarListaIndices, aufstockungFloorKinds],
+  )
 
   return (
     <div className="w-full flex flex-col items-start">
       <div className="flex flex-col gap-4 !pb-0 w-full max-w-full">
         <div className="flex gap-10 items-center w-full">
-        <div className="relative flex-shrink-0 border-2 border-white/20 rounded-xl overflow-hidden bg-panel/50" style={{ width: `${containerWidth}px`, height: `${frameHeight}px` }}>
+        <div
+          className={`relative flex-shrink-0 border-2 border-white/20 rounded-xl bg-panel/50 ${showNewextBesideExistingSlice ? 'overflow-visible' : 'overflow-hidden'}`}
+          style={{ width: `${containerWidth}px`, height: `${frameHeight}px` }}
+        >
           <div
             className="relative w-full h-full betonbot-building-structure-illus"
             style={{ paddingTop: `${paddingTopValue}px` }}
@@ -4427,6 +4441,30 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
                 />
               )
             })}
+            {isAufstockungFlow &&
+              upImages.map((_, i) => {
+                const listaIdx = intermediarListaIndices[i] ?? -1
+                if (listaIdx < 0) return null
+                if (String(aufstockungFloorKinds[listaIdx] ?? '').toLowerCase() !== 'new') return null
+                const wUp = getScaledWidth(`up-${i}`)
+                const nw = Math.min(Math.max(Math.round(wUp * 0.42), 32), 96)
+                return (
+                  <img
+                    key={`aufstock-newext-illu-${i}`}
+                    src="/builder/newext.png"
+                    alt=""
+                    className="absolute pointer-events-none select-none"
+                    style={{
+                      left: `calc(50% + ${wUp / 2 + 4}px)`,
+                      bottom: `${upBottoms[i] ?? 0}px`,
+                      width: `${nw}px`,
+                      height: 'auto',
+                      zIndex: 48 + i,
+                      filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))',
+                    }}
+                  />
+                )
+              })}
             {hasPod && roofBottom >= 0 && (
               <img
                 src="/builder/roof.png"

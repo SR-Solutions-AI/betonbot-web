@@ -69,30 +69,13 @@
         {
           "type": "select",
           "name": "accesSantier",
-          "label": "Baustellenzufahrt",
+          "label": "Baustelleneinrichtung",
           "options": [
-            "Leicht (LKW 40t)",
-            "Mittel",
-            "Schwierig"
+            "Standard",
+            "Erschwert",
+            "Sondertransport / Kranlogistik"
           ],
-          "tag": "site_access"
-        },
-        {
-          "type": "select",
-          "name": "teren",
-          "label": "Gelände: eben oder Hang?",
-          "options": [
-            "Eben",
-            "Leichte Hanglage",
-            "Starke Hanglage"
-          ],
-          "tag": "terrain"
-        },
-        {
-          "type": "bool",
-          "name": "utilitati",
-          "label": "Strom-/Wasseranschluss vorhanden",
-          "tag": "utilities_connection"
+          "tag": "baustelleneinrichtung"
         }
       ],
       "priceSections": [
