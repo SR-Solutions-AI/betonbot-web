@@ -29,6 +29,12 @@ type Errors = Record<string, string | undefined>
 // Timpul minim (în ms) pentru care afișăm animația de loading/progres
 const MIN_ANIMATION_TIME = 5000;
 
+/** Nur diese Konten: Aufstockung- und Zubau-Wizard (Vollangebot + Mengenübersicht). Alle anderen sehen „In Entwicklung“. */
+const AUFSTOCKUNG_ZUBAU_ALLOWED_EMAILS = new Set(['holzbau@holzbot.com', 'betonbau@betonbot.com'])
+function isAufstockungZubauAllowed(email: string | null | undefined): boolean {
+  return typeof email === 'string' && AUFSTOCKUNG_ZUBAU_ALLOWED_EMAILS.has(email.toLowerCase().trim())
+}
+
 /** Preview-uri modale „Angebot bearbeiten” (`public/images/btnform.png`, `btneditor.png`). */
 const EDIT_OFFER_DLG_IMG_FORM = '/images/btnform.png'
 const EDIT_OFFER_DLG_IMG_EDITOR = '/images/btneditor.png'
@@ -215,7 +221,8 @@ const DE = {
     'Choose File': 'Datei auswählen',
     'no file selected': 'keine Datei ausgewählt',
 
-    inaltimeEtaje: 'Raumhöhe',
+    raumhoeheCm: 'Durchschnittliche Raumhöhe im Haus',
+    tuerhoeheCm: 'Türhöhe',
   },
 
   optionsGlobal: {
@@ -342,7 +349,8 @@ function tStepLabel(key: string, fallback: string) {
   return fromJson ? fallback : (DE.steps as any)?.[key] ?? key
 }
 function tFieldLabel(stepKey: string, fieldName: string, fallback: string | undefined) {
-  if (fieldName === 'inaltimeEtaje') return 'Raumhöhe'
+  if (fieldName === 'raumhoeheCm') return 'Durchschnittliche Raumhöhe im Haus'
+  if (fieldName === 'tuerhoeheCm') return 'Türhöhe'
   const fromJson = typeof fallback === 'string' && fallback.trim()
   if (fromJson) return fallback
   const fb = fieldName ?? ''
@@ -373,7 +381,7 @@ const STEP_FIELD_PREFIXES: Record<string, string[]> = {
 const STEP_FIELD_NAMES: Record<string, string[]> = {
   projektdaten: ['projektumfang', 'nutzungDachraum', 'deckenInnenausbau'],
   wintergaertenBalkone: ['wintergartenTyp', 'balkonTyp'],
-  structuraCladirii: ['tipFundatieBeci', 'inaltimeEtaje', 'listaEtaje', 'pilons', 'hasWintergarden', 'hasBalkone', 'treppeTyp', 'floorsNumber'],
+  structuraCladirii: ['tipFundatieBeci', 'raumhoeheCm', 'listaEtaje', 'pilons', 'hasWintergarden', 'hasBalkone', 'treppeTyp', 'floorsNumber'],
 }
 
 function extractStepData(stepKey: string, source: Record<string, any>, fields: Field[] = []): Record<string, any> {
@@ -468,10 +476,21 @@ function validateGeneric(stepKey: string, fields: Field[], form: Record<string, 
       }
     }
     const wizardPackage = String((form as any).wizardPackage ?? '').toLowerCase()
-    if (wizardPackage === 'aufstockung') {
+    if (wizardPackage === 'aufstockung' || wizardPackage === 'zubau' || wizardPackage === 'zubau_aufstockung') {
       const floorKinds = Array.isArray((form as any).aufstockungFloorKinds) ? (form as any).aufstockungFloorKinds : []
-      const hasNewFloor = floorKinds.some((k: unknown) => String(k).toLowerCase() === 'new')
-      if (!hasNewFloor) e.aufstockungFloorKinds = 'Bitte markieren Sie mindestens ein neues Geschoss.'
+      const groundKind = String((form as any).groundFloorKind ?? '').toLowerCase()
+      const hasWorkFloor = floorKinds.some((k: unknown) => {
+        const v = String(k).toLowerCase()
+        return v === 'new' || v === 'zubau' || v === 'aufstockung'
+      }) || ['new', 'zubau'].includes(groundKind)
+      if (!hasWorkFloor) {
+        e.aufstockungFloorKinds =
+          wizardPackage === 'zubau'
+            ? 'Bitte markieren Sie mindestens ein Geschoss als Zubau.'
+            : wizardPackage === 'zubau_aufstockung'
+              ? 'Bitte markieren Sie mindestens ein Geschoss als Zubau oder Aufstockung.'
+              : 'Bitte markieren Sie mindestens ein neues Geschoss.'
+      }
     }
   }
 
@@ -724,12 +743,16 @@ export default function StepWizard() {
   /** null = closed; delete_offer = bisheriges Verhalten (Angebot löschen); abort_edit = Bearbeiten verlassen, PDF zurück */
   const [cancelDialog, setCancelDialog] = useState<null | 'delete_offer' | 'abort_edit'>(null)
 
-  const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | 'aufstockung' | null>(null)
+  const [selectedPackage, setSelectedPackage] = useState<'mengen' | 'dachstuhl' | 'neubau' | 'aufstockung' | 'zubau' | 'zubau_aufstockung' | null>(null)
   const [packagePickerMengenSub, setPackagePickerMengenSub] = useState(false)
   /** Monatslimit für Projekte erreicht; Paket-Karten nicht klickbar. */
   const [tokensBlocked, setTokensBlocked] = useState(false)
   /** Pachet WIP: click pe Aufstockung/Zubau afișează banner „în dezvoltare". */
   const [wipNotice, setWipNotice] = useState<string | null>(null)
+  /** Email cont curent — pentru gating Aufstockung/Zubau. */
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  /** Sincron cu `/me`: ofertă Aufstockung/Zubau din listă/URL doar pentru allowed accounts. */
+  const aufstockungZubauDevAccessRef = useRef(false)
 
   /** „Angebot bearbeiten“: ohne Upload-Schritt (Variablen / Variablen+Erkennungen). */
   const [editOfferSkipUpload, setEditOfferSkipUpload] = useState(false)
@@ -870,7 +893,8 @@ export default function StepWizard() {
       nivelRaw.includes('completă') ||
       nivelRaw.includes('completa') ||
       nivelRaw.includes('schlüsselfertig') ||
-      nivelRaw.includes('schlüsselfertiges haus')
+      nivelRaw.includes('schlüsselfertiges haus') ||
+      nivelRaw.includes('schlüsselfertig haus')
     const isOnlyStructure =
       !hasOpeningsInScope &&
       !isFullHouse &&
@@ -1070,14 +1094,14 @@ export default function StepWizard() {
       const uploadOnly = (formStepsDachstuhl as any[]).filter((s) => s.key === 'upload')
       setDynamicSteps(uploadOnly.length ? uploadOnly : (formStepsDachstuhl as any[]))
       setIdx(0)
-    } else if (measurementsOnlyFlow && (selectedPackage === 'neubau' || selectedPackage === 'aufstockung')) {
+    } else if (measurementsOnlyFlow && (selectedPackage === 'neubau' || selectedPackage === 'aufstockung' || selectedPackage === 'zubau' || selectedPackage === 'zubau_aufstockung')) {
       const uploadOnly = (formStepsFromJson as any[]).filter((s) => s.key === 'upload')
       setDynamicSteps(uploadOnly.length ? uploadOnly : (formStepsFromJson as any[]))
       setIdx(0)
     } else if (selectedPackage === 'dachstuhl') {
       setDynamicSteps(formStepsDachstuhl as any[])
       setIdx(0)
-    } else if ((selectedPackage === 'neubau' || selectedPackage === 'mengen' || selectedPackage === 'aufstockung') && formStepsFromJson.length > 0) {
+    } else if ((selectedPackage === 'neubau' || selectedPackage === 'mengen' || selectedPackage === 'aufstockung' || selectedPackage === 'zubau' || selectedPackage === 'zubau_aufstockung') && formStepsFromJson.length > 0) {
       setDynamicSteps(formStepsFromJson as any[])
       setIdx(0)
     }
@@ -1161,7 +1185,10 @@ export default function StepWizard() {
       setComputeStartTime(null)
       setSaveStatus('idle')
       setSelectedPackage(null)
-      setMeasurementsOnlyFlow(false)
+      setPackagePickerMengenSub(false)
+      // Keep current mode until we read offer meta; otherwise a freshly created
+      // measurements-only offer can briefly fall back to full-form flow.
+      setMeasurementsOnlyFlow(measurementsOnlyFlowRef.current)
       roofOnlyOfferRef.current = false
       setActiveRoofOnlyOffer(false)
       creatingRef.current = false
@@ -1184,13 +1211,13 @@ export default function StepWizard() {
         if (fromUrl == null && offerIdRef.current !== detail.offerId) return
       }
       const explicitFlow = detail.flow
-      // Doar Aufstockung / Dachstuhl din eveniment sunt aplicate imediat; `neubau` explicit poate fi fals
+      // Doar Aufstockung / Zubau / Dachstuhl din eveniment sunt aplicate imediat; `neubau` explicit poate fi fals
       // (sessionStorage / default LiveFeed) și trebuie confirmat din meta la GET /offers.
-      if (explicitFlow === 'aufstockung' || explicitFlow === 'dachstuhl') {
+      if (explicitFlow === 'aufstockung' || explicitFlow === 'zubau' || explicitFlow === 'zubau_aufstockung' || explicitFlow === 'dachstuhl') {
         const roFlow = explicitFlow === 'dachstuhl'
         roofOnlyOfferRef.current = roFlow
         setActiveRoofOnlyOffer(roFlow)
-        const wp = explicitFlow === 'dachstuhl' ? 'dachstuhl' : 'aufstockung'
+        const wp = explicitFlow === 'dachstuhl' ? 'dachstuhl' : explicitFlow === 'zubau_aufstockung' ? 'zubau_aufstockung' : explicitFlow === 'zubau' ? 'zubau' : 'aufstockung'
         setForm((prev) => ({ ...prev, wizardPackage: wp }))
         setSelectedPackage(explicitFlow)
       }
@@ -1221,11 +1248,19 @@ export default function StepWizard() {
               ? 'dachstuhl'
               : resolvedWizardPackage === 'aufstockung'
                 ? 'aufstockung'
-                : 'neubau'
+              : resolvedWizardPackage === 'zubau_aufstockung'
+                ? 'zubau_aufstockung'
+                : resolvedWizardPackage === 'zubau'
+                  ? 'zubau'
+              : 'neubau'
           setForm((prev) => ({ ...prev, wizardPackage: wpSet }))
           setSelectedPackage(
             resolvedWizardPackage === 'aufstockung'
               ? 'aufstockung'
+              : resolvedWizardPackage === 'zubau_aufstockung'
+                ? 'zubau_aufstockung'
+              : resolvedWizardPackage === 'zubau'
+                ? 'zubau'
               : ro
                 ? 'dachstuhl'
                 : 'neubau',
@@ -1300,6 +1335,9 @@ export default function StepWizard() {
     const load = async () => {
       try {
         const me = await apiFetch('/me')
+        const email = typeof me?.user?.email === 'string' ? me.user.email.toLowerCase().trim() : null
+        setCurrentUserEmail(email)
+        aufstockungZubauDevAccessRef.current = isAufstockungZubauAllowed(email)
         const t = me?.tokens as { unlimited?: boolean; limit?: number | null; used?: number } | undefined
         if (!t) {
           setTokensBlocked(false)
@@ -1310,6 +1348,7 @@ export default function StepWizard() {
         setTokensBlocked(blocked)
       } catch {
         setTokensBlocked(false)
+        aufstockungZubauDevAccessRef.current = false
       }
     }
     void load()
@@ -1570,11 +1609,15 @@ export default function StepWizard() {
         const u = new URL(window.location.href).searchParams.get('offerId')
         if (u && u !== id) return
       }
+      // Gleiches Angebot ist schon aktiv (z. B. nach POST /offers in ensureOffer). Kein Wizard-Reset —
+      // sonst kurz Paketwahl/„Hauptseite" und dann erneut Formular.
+      if (id === offerIdRef.current) return
       offerSelectNonceRef.current += 1
       const selNonce = offerSelectNonceRef.current
       stepLoadNonceRef.current += 1
       // Clean current wizard state before loading the newly selected offer
       setSelectedPackage(null)
+      setPackagePickerMengenSub(false)
       setWipNotice(null)
       setMeasurementsOnlyFlow(false)
       setEditOfferSkipUpload(false)
@@ -1595,10 +1638,24 @@ export default function StepWizard() {
       setProcessStatus('')
       setSaveStatus('idle')
       setIdx(0)
+      setOfferId(null)
+      offerIdRef.current = null
 
-      setOfferId(id)
-      offerIdRef.current = id
       try {
+        const me = await apiFetch('/me')
+        const em = typeof me?.user?.email === 'string' ? me.user.email.toLowerCase().trim() : null
+        setCurrentUserEmail(em)
+        const aufstockungZubauAllowed = isAufstockungZubauAllowed(em)
+        aufstockungZubauDevAccessRef.current = aufstockungZubauAllowed
+        const t = me?.tokens as { unlimited?: boolean; limit?: number | null; used?: number } | undefined
+        if (!t) {
+          setTokensBlocked(false)
+        } else {
+          const blocked =
+            !t.unlimited && t.limit != null && typeof t.used === 'number' && t.used >= t.limit
+          setTokensBlocked(blocked)
+        }
+
         const offerRow = (await apiFetch(`/offers/${id}`)) as {
           meta?: { roof_only_offer?: boolean; wizard_package?: string | null; measurements_only_offer?: boolean }
           offer?: {
@@ -1617,6 +1674,8 @@ export default function StepWizard() {
           ...(offerMeta as OfferFlowMeta | null),
           offer_type_slug: slug ?? undefined,
         })
+        setOfferId(id)
+        offerIdRef.current = id
         const ro = resolvedWizardPackage === 'dachstuhl'
         roofOnlyOfferRef.current = ro
         setActiveRoofOnlyOffer(ro)
@@ -1624,10 +1683,15 @@ export default function StepWizard() {
         setSelectedPackage(
           resolvedWizardPackage === 'aufstockung'
             ? 'aufstockung'
-            : ro
-              ? 'dachstuhl'
-              : 'neubau',
+            : resolvedWizardPackage === 'zubau_aufstockung'
+              ? 'zubau_aufstockung'
+            : resolvedWizardPackage === 'zubau'
+              ? 'zubau'
+              : ro
+                ? 'dachstuhl'
+                : 'neubau',
         )
+        setMeasurementsOnlyFlow(offerMeta?.measurements_only_offer === true)
         setCurrentOfferMeasurementsOnly(offerMeta?.measurements_only_offer === true)
       } catch {
         if (selNonce !== offerSelectNonceRef.current) return
@@ -1758,19 +1822,19 @@ export default function StepWizard() {
             setDrafts(prev => ({ ...prev, [key]: scopedStepData }))
             setForm(prev => loadIntoForm(prev, scopedStepData))
           } else {
-            const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
+            const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', raumhoeheCm: 270 } : {}
             setForm(prev => loadIntoForm(prev, defaultForStep))
           }
           if (loadNonce === stepLoadNonceRef.current) finishEditBootstrap()
         })
         .catch(() => {
           if (loadNonce !== stepLoadNonceRef.current) return
-          const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
+          const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', raumhoeheCm: 270 } : {}
           setForm(prev => loadIntoForm(prev, defaultForStep))
           finishEditBootstrap()
         })
     } else {
-      const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', inaltimeEtaje: 'Standard (2,50 m)' } : {}
+      const defaultForStep = key === 'structuraCladirii' ? { tipFundatieBeci: 'Kein Keller (nur Bodenplatte)', raumhoeheCm: 270 } : {}
       setForm(prev => loadIntoForm(prev, defaultForStep))
       scheduleFinishBootstrap(loadNonce)
     }
@@ -2049,11 +2113,13 @@ export default function StepWizard() {
         const selectedPackageOfferTypeId =
           selectedPackage === 'aufstockung'
             ? (offerTypesBySlug['aufstockung'] ?? null)
-            : selectedPackage === 'dachstuhl'
-              ? (offerTypesBySlug['dachstuhl'] ?? null)
-              : selectedPackage === 'neubau'
-                ? (offerTypesBySlug['neubau'] ?? null)
-                : null
+            : selectedPackage === 'zubau'
+              ? (offerTypesBySlug['zubau'] ?? offerTypesBySlug['aufstockung'] ?? null)
+              : selectedPackage === 'dachstuhl'
+                ? (offerTypesBySlug['dachstuhl'] ?? null)
+                : selectedPackage === 'neubau'
+                  ? (offerTypesBySlug['neubau'] ?? null)
+                  : null
         const offer_type_id =
           selectedPackageOfferTypeId ||
           pendingOfferTypeIdRef.current ||
@@ -2070,12 +2136,14 @@ export default function StepWizard() {
         if (roofOnlyOfferRef.current) {
           metaPatch.roof_only_offer = true
           metaPatch.wizard_package = 'dachstuhl'
-        } else if (selectedPackage === 'aufstockung') {
+        } else if (selectedPackage === 'aufstockung' || selectedPackage === 'zubau') {
           metaPatch.roof_only_offer = false
-          metaPatch.wizard_package = 'aufstockung'
-          const floorKinds = Array.isArray(form.aufstockungFloorKinds)
-            ? form.aufstockungFloorKinds.map((k: unknown) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing'))
-            : []
+          metaPatch.wizard_package = selectedPackage
+          const floorKindsRaw = Array.isArray(form.aufstockungFloorKinds) ? form.aufstockungFloorKinds : []
+          const floorKinds = floorKindsRaw.map((k: unknown) => {
+            const v = String(k).toLowerCase()
+            return v === 'new' || v === 'zubau' ? v : 'existing'
+          })
           metaPatch.aufstockung_floor_kinds = floorKinds
         }
         if (measurementsOnlyFlowRef.current) {
@@ -2553,7 +2621,7 @@ export default function StepWizard() {
 
   // 3. Main Wizard UI — direct Paket auswählen; după Haus-Angebot starten → wizard
   const showPackagePicker = !computing && !pdfUrl && !offerId && selectedPackage === null
-  const showForm = (selectedPackage === 'neubau' || selectedPackage === 'dachstuhl' || selectedPackage === 'mengen' || selectedPackage === 'aufstockung' || offerId) && !computing && !pdfUrl
+  const showForm = (selectedPackage === 'neubau' || selectedPackage === 'dachstuhl' || selectedPackage === 'mengen' || selectedPackage === 'aufstockung' || selectedPackage === 'zubau' || offerId) && !computing && !pdfUrl
   const showProgressHeader = !computing && !pdfUrl && !showPackagePicker && showForm
   const centerWizardSteps = progressBarSteps.length > 0 && progressBarSteps.length <= 5
   const effectiveWizardPackage =
@@ -2727,7 +2795,7 @@ export default function StepWizard() {
                 aria-hidden={packagePickerMengenSub || wipNotice !== null}
               >
                 <div
-                  className={`grid grid-cols-1 sm:grid-cols-2 gap-3 w-full ${
+                  className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(320px,320px))] gap-4 w-full max-w-[992px] mx-auto justify-center justify-items-stretch items-stretch ${
                     tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
                   }`}
                 >
@@ -2760,23 +2828,24 @@ export default function StepWizard() {
                   </button>
                 </div>
 
-                {/* 2) Aufstockung */}
+                {/* 2) Aufstockung / Zubau — combined */}
                 <div className="bg-black/40 rounded-2xl p-4 flex flex-col border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
                   <div className="flex items-center justify-center mb-3">
                     <img
                       src="/images/aufstockung.png"
-                      alt="Aufstockung"
+                      alt="Aufstockung / Zubau"
                       className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/35"
                     />
                   </div>
-                  <div className="text-white font-extrabold text-lg text-center">Aufstockung</div>
-                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer Preisschätzung für Aufstockungen</div>
+                  <div className="text-white font-extrabold text-lg text-center">Aufstockung / Zubau</div>
+                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer kombinierten Preisschätzung für Aufstockung und Zubau</div>
                   <div className="flex-1" />
                   <button
                     type="button"
                     disabled={tokensBlocked}
                     onClick={() => {
                       if (tokensBlocked) return
+                      if (!aufstockungZubauDevAccessRef.current) { setWipNotice('aufstockung'); return }
                       setMeasurementsOnlyFlow(false)
                       roofOnlyOfferRef.current = false
                       setForm(prev => ({ ...prev, wizardPackage: 'aufstockung' }))
@@ -2789,28 +2858,7 @@ export default function StepWizard() {
                   </button>
                 </div>
 
-                {/* 3) Zubau */}
-                <div className="bg-black/40 rounded-2xl p-4 flex flex-col border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
-                  <div className="flex items-center justify-center mb-3">
-                    <img
-                      src="/images/zubau.png"
-                      alt="Zubau"
-                      className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
-                    />
-                  </div>
-                  <div className="text-white font-extrabold text-lg text-center">Zubau</div>
-                  <div className="text-sand/80 text-sm text-center mt-1.5 px-1">Erstellung einer Preisschätzung für Zubauten</div>
-                  <div className="flex-1" />
-                  <button
-                    type="button"
-                    onClick={() => setWipNotice('zubau')}
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
-                  >
-                    Kalkulation starten
-                  </button>
-                </div>
-
-                {/* 4) Mengenübersicht */}
+                {/* 3) Mengenübersicht */}
                 <div className="bg-black/40 rounded-2xl p-4 flex flex-col border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
                   <div className="flex items-center justify-center mb-3">
                     <img
@@ -2841,17 +2889,17 @@ export default function StepWizard() {
 
               <div
                 className={`flex flex-col flex-1 min-h-0 transition-all duration-300 ease-out ${
-                  packagePickerMengenSub
-                    ? 'opacity-100 scale-100 relative'
-                    : 'opacity-0 scale-[0.97] pointer-events-none absolute inset-0 translate-y-3'
+                  packagePickerMengenSub && wipNotice === null
+                    ? 'opacity-100 scale-100 relative z-0'
+                    : 'opacity-0 scale-[0.97] pointer-events-none absolute inset-0 translate-y-3 z-0'
                 }`}
-                aria-hidden={!packagePickerMengenSub}
+                aria-hidden={!(packagePickerMengenSub && wipNotice === null)}
               >
                 <div className="flex-1 flex flex-col items-center justify-center px-2 py-8 sm:py-10 min-h-[280px]">
-                  <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(320px,320px))] gap-4 w-full max-w-[1024px] justify-center justify-items-stretch items-stretch ${
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(2,minmax(320px,320px))] gap-4 w-full max-w-[680px] justify-center justify-items-stretch items-stretch ${
                     tokensBlocked ? 'opacity-[0.38] pointer-events-none saturate-50' : ''
                   }`}>
-                  <div className="sm:col-span-2 lg:col-span-3">
+                  <div className="col-span-full">
                     <button
                       type="button"
                       onClick={() => setPackagePickerMengenSub(false)}
@@ -2862,6 +2910,7 @@ export default function StepWizard() {
                     </button>
                   </div>
 
+                  {/* Neubau Mengenübersicht */}
                   <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
                     <div className="flex items-center justify-center mb-3">
                       <img
@@ -2874,7 +2923,7 @@ export default function StepWizard() {
                     <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
                       Nur Maß-/Mengen-PDF – ohne Preisangebot
                     </div>
-                      <button
+                    <button
                       type="button"
                       disabled={tokensBlocked}
                       onClick={() => {
@@ -2886,50 +2935,38 @@ export default function StepWizard() {
                         setSelectedPackage('neubau')
                       }}
                       className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-                      >
-                        Kalkulation starten
-                      <ChevronRight size={18} className="opacity-85" />
-                    </button>
-                  </div>
-
-                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
-                    <div className="flex items-center justify-center mb-3">
-                      <img
-                        src="/images/aufstockung.png"
-                        alt="Aufstockung Mengenübersicht"
-                        className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
-                      />
-                    </div>
-                    <div className="text-white font-extrabold text-lg text-center">Aufstockung Mengenübersicht</div>
-                    <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
-                      Nur Maß-/Mengen-PDF – ohne Preisangebot
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {}}
-                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
                     >
                       Kalkulation starten
                       <ChevronRight size={18} className="opacity-85" />
                     </button>
                   </div>
 
-                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/25 shadow-[0_0_20px_rgba(229,184,0,0.18)]">
+                  {/* Aufstockung / Zubau Mengenübersicht — combined */}
+                  <div className="bg-black/40 rounded-2xl p-4 flex flex-col w-full max-w-[320px] mx-auto h-full border border-[#E5B800]/40 shadow-[0_0_24px_rgba(229,184,0,0.22)]">
                     <div className="flex items-center justify-center mb-3">
                       <img
-                        src="/images/zubau.png"
-                        alt="Zubau Mengenübersicht"
+                        src="/images/aufstockung.png"
+                        alt="Aufstockung / Zubau Mengenübersicht"
                         className="w-20 h-20 rounded-full object-cover border-2 border-[#E5B800]/30"
                       />
                     </div>
-                    <div className="text-white font-extrabold text-lg text-center">Zubau Mengenübersicht</div>
+                    <div className="text-white font-extrabold text-lg text-center">Aufstockung / Zubau Mengenübersicht</div>
                     <div className="text-sand/80 text-sm text-center mt-1.5 flex-1">
                       Nur Maß-/Mengen-PDF – ohne Preisangebot
                     </div>
                     <button
                       type="button"
-                      onClick={() => {}}
-                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95"
+                      disabled={tokensBlocked}
+                      onClick={() => {
+                        if (tokensBlocked) return
+                        if (!aufstockungZubauDevAccessRef.current) { setPackagePickerMengenSub(false); setWipNotice('aufstockung'); return }
+                        setMeasurementsOnlyFlow(true)
+                        roofOnlyOfferRef.current = false
+                        setPackagePickerMengenSub(false)
+                        setForm(prev => ({ ...prev, wizardPackage: 'aufstockung' }))
+                        setSelectedPackage('aufstockung')
+                      }}
+                      className="mt-4 w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[1px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-[1px] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                     >
                       Kalkulation starten
                       <ChevronRight size={18} className="opacity-85" />
@@ -3507,7 +3544,7 @@ function ProjektdatenStepContent({
   paramLabelOverrides?: Record<string, string>
   displayCurrency?: DisplayCurrency
 }) {
-  const deckenInnenausbauOptions = preisdatenbankOptionsByTag['decke_innenausbau'] ?? ['Standard', 'Premium', 'Exklusiv']
+  const deckenInnenausbauOptions = preisdatenbankOptionsByTag['decke_innenausbau'] ?? []
   const displayDeckenInnenausbau = (opt: string) =>
     adaptCurrencyCopy(paramLabelOverrides[optionValueToPriceKey['decke_innenausbau']?.[opt] ?? ''] ?? opt, displayCurrency)
 
@@ -3537,7 +3574,7 @@ function ProjektdatenStepContent({
         </div>
         {errors.nutzungDachraum && <span className="text-xs text-orange-400">{errors.nutzungDachraum}</span>}
       </label>
-      {form.nutzungDachraum === 'Wohnraum / ausgebaut' && (
+      {form.nutzungDachraum === 'Wohnraum / ausgebaut' && deckenInnenausbauOptions.length > 0 && (
         <label className="flex flex-col gap-1" data-field="deckenInnenausbau">
           <span className="wiz-label text-sun/90">Decken-Innenausbau</span>
           <div className={errors.deckenInnenausbau ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
@@ -3644,7 +3681,8 @@ function isAufstockungNewBuildStandardFloorIdx(standardFloorIdx: number, kinds: 
 }
 
 function resolveAufstockungFlow(form: Record<string, any>, wizardPackageProp?: string): boolean {
-  return String(wizardPackageProp ?? form.wizardPackage ?? '').toLowerCase() === 'aufstockung'
+  const wp = String(wizardPackageProp ?? form.wizardPackage ?? '').toLowerCase()
+  return wp === 'aufstockung' || wp === 'zubau'
 }
 
 function WandaufbauStep({
@@ -4172,13 +4210,11 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
 
   const tipFundatieBeci = form.tipFundatieBeci || 'Kein Keller (nur Bodenplatte)'
   const pilons = form.pilons === true
-  const inaltimeEtaje = form.inaltimeEtaje || 'Standard (2,50 m)'
   const listaEtaje = Array.isArray(form.listaEtaje) ? form.listaEtaje : []
   const aufstockungFloorKinds = Array.isArray(form.aufstockungFloorKinds) ? form.aufstockungFloorKinds : []
   const resolvedWizardPackage = String(wizardPackage ?? form.wizardPackage ?? '').toLowerCase()
   const isAufstockungFlow = resolvedWizardPackage === 'aufstockung'
   const foundationOptions = preisdatenbankOptionsByTag['foundation_type'] ?? []
-  const floorHeightOptions = preisdatenbankOptionsByTag['floor_height'] ?? []
   const stairTypeOptions = preisdatenbankOptionsByTag['stairs_type'] ?? []
   const hasBasement = tipFundatieBeci.includes('Keller') && !tipFundatieBeci.includes('Kein Keller')
   const hasBase = true
@@ -4189,12 +4225,6 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when hidden options change; form used only for merge
   }, [foundationOptions.length, foundationOptions.join(','), tipFundatieBeci])
-  useEffect(() => {
-    if (floorHeightOptions.length > 0 && !floorHeightOptions.includes(inaltimeEtaje)) {
-      setForm(prev => ({ ...prev, inaltimeEtaje: floorHeightOptions[0] }))
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when hidden options change
-  }, [floorHeightOptions.length, floorHeightOptions.join(','), inaltimeEtaje])
   const etajeIntermediare = listaEtaje.filter((e: string) => e === 'intermediar').length
   const hasFloorAboveGround = listaEtaje.some((e: string) => e !== 'parter')
   const stairOptsEffective = stairTypeOptions.length > 0 ? stairTypeOptions : Array.from(STAIR_TYPE_OPTIONS)
@@ -4534,22 +4564,66 @@ function BuildingStructureStep({ form, setForm, errors, hiddenKeysForm = new Set
         </div>
 
       <div className="flex-1 min-w-0 relative z-10 space-y-4 !pb-0 !mb-0">
-        <label className="flex flex-col gap-1" data-field="inaltimeEtaje">
+        <label className="flex flex-col gap-1.5" data-field="raumhoeheCm">
           <span className="wiz-label text-sun/90">
-            {adaptCurrencyCopy(tFieldLabel('structuraCladirii', 'inaltimeEtaje', undefined), displayCurrency)}
+            {adaptCurrencyCopy(tFieldLabel('structuraCladirii', 'raumhoeheCm', undefined), displayCurrency)}
           </span>
-          <div className={errors.inaltimeEtaje ? 'ring-2 ring-orange-400/60 rounded-lg' : ''}>
-            <SelectSun
-              value={inaltimeEtaje}
-              onChange={(v) => setForm(prev => ({ ...prev, inaltimeEtaje: v }))}
-              options={floorHeightOptions}
-              placeholder="Wählen Sie eine Option"
-              displayFor={(opt) =>
-                adaptCurrencyCopy(paramLabelOverrides[optionValueToPriceKey['floor_height']?.[opt] ?? ''] ?? opt, displayCurrency)
-              }
-            />
+          <div className={errors.raumhoeheCm ? 'ring-2 ring-orange-400/70 rounded-xl' : ''}>
+            <div className="relative h-9 rounded-xl border border-white/25 bg-[#ececec] transition-colors focus-within:border-[#E5C347]/70">
+              <input
+                type="number"
+                min={200}
+                max={400}
+                step={1}
+                className="wiz-input h-9 w-full rounded-xl border-0 bg-transparent px-3 pr-20 text-[15px] font-normal text-black outline-none focus:ring-0 placeholder:text-black/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                value={form.raumhoeheCm != null && form.raumhoeheCm !== '' ? String(form.raumhoeheCm) : ''}
+                placeholder="270"
+                onChange={(e) => {
+                  const raw = e.target.value
+                  setForm((prev: Record<string, any>) => ({
+                    ...prev,
+                    raumhoeheCm: raw === '' ? '' : Number(raw),
+                  }))
+                }}
+              />
+              <div className="absolute right-0 top-0 bottom-0 flex items-stretch overflow-hidden rounded-r-xl border-l border-[#E5B800]/45">
+                <div className="flex h-full w-7 flex-col bg-[#E5B800]">
+                  <button
+                    type="button"
+                    className="flex h-1/2 items-center justify-center text-[10px] leading-none text-white hover:bg-black/15"
+                    onClick={() =>
+                      setForm((prev: Record<string, any>) => {
+                        const cur = Number(prev.raumhoeheCm ?? 270)
+                        const safe = Number.isFinite(cur) ? cur : 270
+                        return { ...prev, raumhoeheCm: Math.min(400, safe + 1) }
+                      })
+                    }
+                    aria-label="Durchschnittliche Raumhöhe im Haus erhöhen"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-1/2 items-center justify-center border-t border-white/30 text-[10px] leading-none text-white hover:bg-black/15"
+                    onClick={() =>
+                      setForm((prev: Record<string, any>) => {
+                        const cur = Number(prev.raumhoeheCm ?? 270)
+                        const safe = Number.isFinite(cur) ? cur : 270
+                        return { ...prev, raumhoeheCm: safe - 1 }
+                      })
+                    }
+                    aria-label="Durchschnittliche Raumhöhe im Haus verringern"
+                  >
+                    ▼
+                  </button>
+                </div>
+                <span className="pointer-events-none flex h-full min-w-10 items-center justify-center bg-[#C9A200] px-2 text-[11px] font-medium tracking-wide text-white">
+                  cm
+                </span>
+              </div>
+            </div>
           </div>
-          {errors.inaltimeEtaje && <span className="text-xs text-orange-400">{errors.inaltimeEtaje}</span>}
+          {errors.raumhoeheCm && <span className="text-xs text-orange-400">{errors.raumhoeheCm}</span>}
         </label>
 
         <label className="flex flex-col gap-1" data-field="tipFundatieBeci">
@@ -4884,8 +4958,9 @@ function DynamicFields({
                   options={
                     (() => {
                       const tag = (f as any).tag || FIELD_TAG_FALLBACK_BY_NAME[f.name]
+                      const preisdatenbankManaged = tag != null && Object.prototype.hasOwnProperty.call(preisdatenbankOptionsByTag, tag)
                       const fromPreisdatenbank = tag && preisdatenbankOptionsByTag[tag]
-                      const schemaOptions = (((f as any).options ?? []) as string[]).filter((o) => o != null && String(o).trim() !== '')
+                      const schemaOptions = preisdatenbankManaged ? [] : (((f as any).options ?? []) as string[]).filter((o) => o != null && String(o).trim() !== '')
                       return mergeSelectOptions({
                         tag,
                         schemaOptions,
@@ -4973,6 +5048,69 @@ function DynamicFields({
             setForm(prev => ({ ...prev, [f.name]: val }))
           },
           onKeyDown: (e: React.KeyboardEvent) => handleInputEnter(e, onEnter)
+        }
+
+        if (f.type === 'number' && f.name === 'tuerhoeheCm') {
+          return (
+            <label key={f.name} className="flex flex-col gap-1.5" data-field={f.name}>
+              <span className="wiz-label text-sun/90">{displayLabel}</span>
+              <div className={errors[f.name] ? 'ring-2 ring-orange-400/70 rounded-xl' : ''}>
+                <div className="relative h-9 rounded-xl border border-white/25 bg-[#ececec] transition-colors focus-within:border-[#E5C347]/70">
+                  <input
+                    type="number"
+                    min={'min' in f && f.min != null ? f.min : 180}
+                    max={'max' in f && f.max != null ? f.max : 280}
+                    step={1}
+                    className="wiz-input h-9 w-full rounded-xl border-0 bg-transparent px-3 pr-20 text-[15px] font-normal text-black outline-none focus:ring-0 placeholder:text-black/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    value={inputValue}
+                    placeholder={displayPlaceholder || '210'}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      setForm(prev => ({ ...prev, [f.name]: raw === '' ? '' : Number(raw) }))
+                    }}
+                    onKeyDown={(e) => handleInputEnter(e, onEnter)}
+                  />
+                  <div className="absolute right-0 top-0 bottom-0 flex items-stretch overflow-hidden rounded-r-xl border-l border-[#E5B800]/45">
+                    <div className="flex h-full w-7 flex-col bg-[#E5B800]">
+                      <button
+                        type="button"
+                        className="flex h-1/2 items-center justify-center text-[10px] leading-none text-white hover:bg-black/15"
+                        onClick={() =>
+                          setForm((prev: Record<string, any>) => {
+                            const cur = Number(prev[f.name] ?? 210)
+                            const safe = Number.isFinite(cur) ? cur : 210
+                            const maxVal = typeof f.max === 'number' ? f.max : 280
+                            return { ...prev, [f.name]: Math.min(maxVal, safe + 1) }
+                          })
+                        }
+                        aria-label="Türhöhe erhöhen"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-1/2 items-center justify-center border-t border-white/30 text-[10px] leading-none text-white hover:bg-black/15"
+                        onClick={() =>
+                          setForm((prev: Record<string, any>) => {
+                            const cur = Number(prev[f.name] ?? 210)
+                            const safe = Number.isFinite(cur) ? cur : 210
+                            return { ...prev, [f.name]: safe - 1 }
+                          })
+                        }
+                        aria-label="Türhöhe verringern"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                    <span className="pointer-events-none flex h-full min-w-10 items-center justify-center bg-[#C9A200] px-2 text-[11px] font-medium tracking-wide text-white">
+                      cm
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {errors[f.name] && <span className="text-xs text-orange-400">{errors[f.name]}</span>}
+            </label>
+          )
         }
 
         return (

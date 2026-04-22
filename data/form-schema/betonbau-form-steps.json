@@ -182,15 +182,11 @@
           "tag": "pilings_required"
         },
         {
-          "type": "select",
-          "name": "inaltimeEtaje",
-          "label": "Raumhöhe",
-          "options": [
-            "Standard (2,50 m)",
-            "Komfort (2,70 m)",
-            "Hoch (2,85+ m)"
-          ],
-          "tag": "floor_height"
+          "type": "number",
+          "name": "raumhoeheCm",
+          "label": "Durchschnittliche Raumhöhe im Haus",
+          "min": 200,
+          "max": 400
         },
         {
           "type": "bool",
@@ -641,13 +637,20 @@
         {
           "type": "select",
           "name": "windowQuality",
-          "label": "Fensterart (Preis: 2- oder 3-fach)",
+          "label": "Glasflächen / Fensterart (€/m²)",
           "options": [
             "2-fach verglast",
             "3-fach verglast",
             "3-fach verglast, Passiv"
           ],
           "tag": "window_quality"
+        },
+        {
+          "type": "number",
+          "name": "tuerhoeheCm",
+          "label": "Türhöhe",
+          "min": 180,
+          "max": 280
         },
         {
           "type": "select",

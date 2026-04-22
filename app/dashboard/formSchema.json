@@ -283,39 +283,15 @@
           }
         },
         {
-          "name": "inaltimeEtaje",
-          "type": "select",
+          "name": "raumhoeheCm",
+          "type": "number",
           "labels": {
-            "ro": "Raumhöhe",
-            "de": "Raumhöhe",
-            "en": "Floor height"
+            "ro": "Durchschnittliche Raumhöhe im Haus",
+            "de": "Durchschnittliche Raumhöhe im Haus",
+            "en": "Average room height"
           },
-          "options": [
-            {
-              "value": "Standard (2,50 m)",
-              "labels": {
-                "ro": "Standard (2,50 m)",
-                "de": "Standard (2,50 m)",
-                "en": "Standard (2.50 m)"
-              }
-            },
-            {
-              "value": "Komfort (2,70 m)",
-              "labels": {
-                "ro": "Komfort (2,70 m)",
-                "de": "Komfort (2,70 m)",
-                "en": "Comfort (2.70 m)"
-              }
-            },
-            {
-              "value": "Hoch (2,85+ m)",
-              "labels": {
-                "ro": "Hoch (2,85+ m)",
-                "de": "Hoch (2,85+ m)",
-                "en": "High (2.85+ m)"
-              }
-            }
-          ]
+          "min": 200,
+          "max": 400
         }
       ]
     },
@@ -536,6 +512,17 @@
               }
             }
           ]
+        },
+        {
+          "name": "tuerhoeheCm",
+          "type": "number",
+          "labels": {
+            "ro": "Türhöhe",
+            "de": "Türhöhe",
+            "en": "Door height"
+          },
+          "min": 180,
+          "max": 280
         },
         {
           "name": "garagentorGewuenscht",

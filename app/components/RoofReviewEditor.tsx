@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -898,10 +899,27 @@ export const RoofReviewEditor = forwardRef<RoofReviewEditorHandle, RoofReviewEdi
     img.src = url
   }, [loading, images.length])
 
-  const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
+  /** Aliniat cu DetectionsReviewEditor: batch-ul poate include base+rooms+doors per plan. */
+  const blueprintBaseImages = useMemo(() => {
+    const isBase = (f: ReviewImage) => {
+      const c = String(f.caption ?? '').toLowerCase()
+      const u = String(f.url ?? '').toLowerCase()
+      return (
+        c.endsWith('detections_review_base.png') ||
+        u.includes('/detections_review_base.png') ||
+        u.endsWith('detections_review_base.png')
+      )
+    }
+    const bases = images.filter(isBase)
+    if (bases.length > 0) return bases
+    return images
+  }, [images])
+
+  const n = plansData.length > 0 ? plansData.length : Math.max(1, blueprintBaseImages.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
   const currentPlan = plansData[planIndexClamped]
-  const getBaseImageUrl = (planIdx: number) => images[planIdx]?.url ?? images[0]?.url
+  const getBaseImageUrl = (planIdx: number) =>
+    blueprintBaseImages[planIdx]?.url ?? blueprintBaseImages[0]?.url ?? images[0]?.url
 
   const setRectangles = useCallback((planIdx: number, rectangles: RoomPolygon[]) => {
     setPlansData((prev) => {

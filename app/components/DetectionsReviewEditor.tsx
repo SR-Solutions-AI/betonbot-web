@@ -675,7 +675,27 @@ export function DetectionsReviewEditor({
     })
   }, [editorConstraints.allowRoofWindows])
 
-  const n = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
+  /**
+   * LiveFeed trimite câte un batch cu base+rooms+doors per plan; lista `images` este intercalată
+   * ([base₁, rooms₁, doors₁, base₂, …]). Tab-urile trebuie să folosească doar `detections_review_base.png`
+   * per etaj, altfel planIdx 1 ar lua rooms₁ (sau toate cad pe fallback la images[0]).
+   */
+  const blueprintBaseImages = useMemo(() => {
+    const isBase = (f: { url?: string; caption?: string }) => {
+      const c = String(f.caption ?? '').toLowerCase()
+      const u = String(f.url ?? '').toLowerCase()
+      return (
+        c.endsWith('detections_review_base.png') ||
+        u.includes('/detections_review_base.png') ||
+        u.endsWith('detections_review_base.png')
+      )
+    }
+    const bases = images.filter(isBase)
+    if (bases.length > 0) return bases
+    return images
+  }, [images])
+
+  const n = plansData.length > 0 ? plansData.length : Math.max(1, blueprintBaseImages.length)
   const planIndexClamped = n > 0 ? Math.max(0, Math.min(planIndex, n - 1)) : 0
   const currentPlan = plansData[planIndexClamped]
 
@@ -687,9 +707,11 @@ export function DetectionsReviewEditor({
   }, [planIndexClamped])
 
   // O imagine de bază per plan (fără poligoane); canvas-ul desenează rooms/doors din API
-  const getBaseImageUrl = (planIdx: number) => images[planIdx]?.url ?? images[0]?.url
+  const getBaseImageUrl = (planIdx: number) =>
+    blueprintBaseImages[planIdx]?.url ?? blueprintBaseImages[0]?.url ?? images[0]?.url
   // Același blueprint ca Räume / Fenster; roofImages poate veni mai târziu sau cu alt URL → încărcare lentă / refresh.
-  const roofImgs = roofOnlyOffer && roofImages?.length ? roofImages : images
+  const roofImgs = roofOnlyOffer && roofImages?.length ? roofImages : blueprintBaseImages
+  const roofEditorBasemapImages = blueprintBaseImages.length > 0 ? blueprintBaseImages : roofImgs
 
   const plansDimKey =
     plansData.length === 0
@@ -706,7 +728,7 @@ export function DetectionsReviewEditor({
     forceAufstockungFlow || String(wizardPackageFromApi).toLowerCase().trim() === 'aufstockung'
   const effectiveFloorKinds = useMemo(() => {
     const normalizedRaw = floorKinds.map((k) => (String(k).toLowerCase() === 'new' ? 'new' : 'existing')) as ('new' | 'existing')[]
-    const hintN = plansData.length > 0 ? plansData.length : Math.max(1, images.length)
+    const hintN = plansData.length > 0 ? plansData.length : Math.max(1, blueprintBaseImages.length)
     const forceExistingByLabel = (kinds: ('new' | 'existing')[]) =>
       kinds.map((kind, idx) =>
         isFixedExistingFloorLabel(displayFloorTabLabelDe(floorLabels[idx] ?? `Plan ${idx + 1}`)) ? 'existing' : kind,
@@ -724,7 +746,7 @@ export function DetectionsReviewEditor({
     // Fallback when no floor-kinds saved yet: all floors default to 'existing'.
     // User can mark specific floors as Aufstockung in the reorder panel.
     return forceExistingByLabel(Array.from({ length: hintN }, (): 'existing' => 'existing'))
-  }, [floorKinds, effectiveForceAufstockung, plansData.length, images.length, floorLabels])
+  }, [floorKinds, effectiveForceAufstockung, plansData.length, blueprintBaseImages.length, floorLabels])
 
   /** Aufstockung: m/px per etaj; dacă lipsește, din uși/ferestre pe același plan, apoi orice etaj cu scară. */
   const resolveMppForPlanIndex = useCallback(
@@ -1649,9 +1671,9 @@ export function DetectionsReviewEditor({
     (activeTab !== 'roof' && activeTab !== 'roof_windows' || existingFloorEditing)
 
   const stackRoofOverPhase1 =
-    existingFloorEditing && showRoofWorkspace && Boolean(offerId) && roofImgs.length > 0
+    existingFloorEditing && showRoofWorkspace && Boolean(offerId) && roofEditorBasemapImages.length > 0
 
-  const stackBlueprintImageUrl = images[planIndexClamped]?.url ?? images[0]?.url ?? ''
+  const stackBlueprintImageUrl = blueprintBaseImages[planIndexClamped]?.url ?? blueprintBaseImages[0]?.url ?? ''
   useEffect(() => {
     if (!stackRoofOverPhase1) return
     setRoofStackView({ zoom: 1, pan: { x: 0, y: 0 } })
@@ -2258,8 +2280,8 @@ export function DetectionsReviewEditor({
         {loading && plansData.length === 0 ? (
           <div className="w-full flex-1 min-h-0 flex flex-col gap-2">
             <div className="relative w-full flex-1 min-h-[200px] rounded-lg overflow-hidden border border-[#E5B800]/50 bg-black/30 flex items-center justify-center">
-              {images[0]?.url && (
-                <img src={images[0].url} alt="" className="absolute inset-0 w-full h-full object-contain opacity-40" />
+              {blueprintBaseImages[0]?.url && (
+                <img src={blueprintBaseImages[0].url} alt="" className="absolute inset-0 w-full h-full object-contain opacity-40" />
               )}
               <div className="relative z-10 flex flex-col items-center gap-2 text-sand/80">
                 <div className="w-8 h-8 border-2 border-[#E5B800]/60 border-t-[#E5B800] rounded-full animate-spin" />
@@ -2272,7 +2294,7 @@ export function DetectionsReviewEditor({
           <div className="flex-1 min-h-0 flex flex-col w-full gap-2 overflow-y-auto overflow-x-hidden preisdatenbank-scroll">
             <div className="shrink-0 flex flex-col gap-2 w-full flex-1 min-h-0">
               <div className="flex flex-wrap gap-4 justify-center pb-1">
-                {images.slice(0, n).map((img, i) => (
+                {blueprintBaseImages.slice(0, n).map((img, i) => (
                   <div key={`img-${i}`} className="flex flex-col items-center gap-1">
                     <img
                       src={img.url}
@@ -2604,7 +2626,7 @@ export function DetectionsReviewEditor({
                   />
                 </div>
                 )}
-                {offerId && roofImgs.length > 0 && (
+                {offerId && roofEditorBasemapImages.length > 0 && (
                   <div
                     className={`${
                       stackRoofOverPhase1
@@ -2630,7 +2652,7 @@ export function DetectionsReviewEditor({
                       setRoofSurfaceTab={setRoofSurfaceTabForEditor}
                       embedPlanIndex={planIndexClamped}
                       offerId={offerId}
-                      images={roofImgs}
+                      images={roofEditorBasemapImages}
                       embeddedPlanSeeds={roofEmbeddedSeeds}
                       layoutActive={showRoofWorkspace}
                       onConfirm={() => {}}

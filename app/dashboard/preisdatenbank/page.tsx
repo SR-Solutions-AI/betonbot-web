@@ -79,11 +79,11 @@ function isProtectedVariable(id: string): boolean {
 }
 
 function canAddOptionsForFieldTag(fieldTag?: string): boolean {
-  return !!fieldTag && fieldTag !== 'foundation_type' && fieldTag !== 'visible_roof_structure_fixed' && fieldTag !== 'haustechnik_basis'
+  return !!fieldTag && fieldTag !== 'foundation_type' && fieldTag !== 'visible_roof_structure_fixed' && fieldTag !== 'haustechnik_basis' && fieldTag !== 'profit_margin'
 }
 
 function isValueOnlyFieldTag(fieldTag?: string): boolean {
-  return fieldTag === 'haustechnik_basis'
+  return fieldTag === 'haustechnik_basis' || fieldTag === 'profit_margin'
 }
 
 function isBlockedOption(variable: { id: string; label: string }): boolean {
@@ -136,6 +136,7 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Wintergarten': 'Wandpreise anpassen',
   'Balkone': 'Allgemeiner Quadratmeterpreis, Balkonboden + Geländer',
   'Klempnerarbeiten': 'Aufschlag der Klempnerarbeiten zum Dachpreis anpassen',
+  'Profitmarge': 'Bitte geben Sie Ihre gewünschte Profitmarge ein. Diese wird auf alle Preise und Positionen im Projekt verteilt.',
 }
 
 function cardSubtitle(cardTitle: string, currency: DisplayCurrency, _rawSubtitle?: string | null): string {
@@ -156,7 +157,6 @@ const STEP_SUBTITLES: Record<string, string> = {
 }
 
 export default function PreisdatenbankPage() {
-  const [activeCatalog, setActiveCatalog] = useState<'neubau' | 'dachstuhl'>('neubau')
   const [ready, setReady] = useState(false)
   const [sections, setSections] = useState<PreisdatenbankSection[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -673,26 +673,9 @@ export default function PreisdatenbankPage() {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 mb-6">
-        <button
-          type="button"
-          onClick={() => setActiveCatalog('neubau')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'neubau' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
-        >
-          Neubau
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveCatalog('dachstuhl')}
-          className={`px-4 py-2 rounded-lg border text-sm font-semibold ${activeCatalog === 'dachstuhl' ? 'bg-[#E5B800] text-white border-[#E5B800]' : 'border-white/20 text-white/90 hover:border-[#E5B800]/70'}`}
-        >
-          Dachstuhl
-        </button>
-      </div>
       <div className="flex flex-col gap-10 md:gap-12">
         {sections
           .map((section, originalIndex) => ({ section, originalIndex }))
-          .filter(({ section }) => (activeCatalog === 'dachstuhl' ? section.stepKey === 'projektdaten' : section.stepKey !== 'projektdaten'))
           .map(({ section, originalIndex: sectionIndex }) => {
           // Grupăm cardurile cu un singur element (unu sub altul)
           const items: Array<

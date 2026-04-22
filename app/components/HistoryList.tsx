@@ -1,18 +1,24 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiFetch } from '../lib/supabaseClient'
 import { inferOfferFlow } from '../lib/offerFlow'
-import { Plus, Loader2, Search, Filter, Trash2, ChevronDown, Check, X } from 'lucide-react'
-import { DatePickerPopover } from './DatePickerPopover'
+import { Plus, Loader2, Search, Filter, Trash2, X } from 'lucide-react'
+import { OfferHistoryFilterForm, WIZARD_OFFER_SLUGS, offerTypeLabel } from './OfferHistoryFilterForm'
 
 type OfferListItem = {
   id: string
   title?: string | null
   status?: string | null
-  meta?: { referinta?: string | null; roof_only_offer?: boolean | null; wizard_package?: string | null; measurements_only_offer?: boolean | null } | null
+  meta?: {
+    referinta?: string | null
+    offer_no?: string | null
+    roof_only_offer?: boolean | null
+    wizard_package?: string | null
+    measurements_only_offer?: boolean | null
+    aufstockung_floor_kinds?: unknown
+  } | null
   created_at: string
   created_by?: string | null
   offer_type_slug?: string | null
@@ -37,34 +43,24 @@ function translateText(text?: string | null): string {
   return (DE.translations as Record<string, string>)[t] || t
 }
 
-/** Same wizard package types as Step Wizard package picker. */
-const WIZARD_OFFER_SLUGS = ['mengenermittlung', 'mengen', 'dachstuhl', 'neubau', 'aufstockung', 'full_house'] as const
-const SLUG_TO_LABEL: Record<string, string> = {
-  mengenermittlung: 'Mengenermittlung',
-  mengen: 'Mengenermittlung',
-  dachstuhl: 'Dachstuhl Angebot',
-  neubau: 'Neubau Angebot',
-  aufstockung: 'Aufstockung Angebot',
-  full_house: 'Neubau Angebot',
-}
-
-function offerTypeLabel(slug: string | null | undefined): string {
-  if (!slug) return ''
-  return SLUG_TO_LABEL[slug] ?? slug
-}
-
 function getOfferTypeBadgeLabel(item: OfferListItem): string {
-  const wizardPkg = (item.meta?.wizard_package || '').toString().toLowerCase()
-  const isRoofOffer = item.meta?.roof_only_offer === true || wizardPkg === 'dachstuhl'
+  const flow = inferOfferFlow({
+    roof_only_offer: item.meta?.roof_only_offer,
+    wizard_package: item.meta?.wizard_package,
+    offer_type_slug: item.offer_type_slug,
+    aufstockung_floor_kinds: item.meta?.aufstockung_floor_kinds,
+  })
   const isMeasurementsOnly = item.meta?.measurements_only_offer === true
 
   if (isMeasurementsOnly) {
-    if (isRoofOffer) return 'Dachstuhl Mengenübersicht'
-    if (wizardPkg === 'aufstockung') return 'Aufstockung Mengenübersicht'
+    if (flow === 'zubau_aufstockung') return 'Zubau / Aufstockung Mengenübersicht'
+    if (flow === 'aufstockung') return 'Aufstockung Mengenübersicht'
+    if (flow === 'zubau') return 'Zubau Mengenübersicht'
     return 'Neubau Mengenübersicht'
   }
-  if (isRoofOffer) return 'Dachstuhl Angebot'
-  if (wizardPkg === 'aufstockung') return 'Aufstockung Angebot'
+  if (flow === 'zubau_aufstockung') return 'Zubau / Aufstockung Angebot'
+  if (flow === 'aufstockung') return 'Aufstockung Angebot'
+  if (flow === 'zubau') return 'Zubau Angebot'
   return offerTypeLabel(item.offer_type_slug)
 }
 
@@ -83,7 +79,7 @@ function statusLabelAndColor(status?: string | null): { label: string; className
       className: 'bg-yellow-400/15 text-yellow-300 border border-yellow-400/40',
     }
   }
-  if (s === 'done' || s === 'finished' || s === 'fertig') {
+  if (s === 'done' || s === 'finished' || s === 'fertig' || s === 'ready') {
     return {
       label: 'Fertig',
       className: 'bg-[#E5B800]/15 text-[#E5B800] border border-[#E5B800]/60',
@@ -122,20 +118,11 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const filterWrapRef = useRef<HTMLDivElement>(null)
-  const [offerTypeDropdownOpen, setOfferTypeDropdownOpen] = useState(false)
-  const offerTypeTriggerRef = useRef<HTMLDivElement>(null)
-  const offerTypeMenuRef = useRef<HTMLDivElement>(null)
-  const [offerTypeMenuPosition, setOfferTypeMenuPosition] = useState({ top: 0, left: 0, width: 200 })
   const loadGenerationRef = useRef(0)
 
   const wizardOfferTypes = offerTypes.filter((ot) =>
     WIZARD_OFFER_SLUGS.includes(ot.slug as (typeof WIZARD_OFFER_SLUGS)[number])
   )
-  // Betonbot: fără oferta doar acoperiș (Dachstuhl)
-  const orderedWizardTypes = [
-    wizardOfferTypes.find((o) => o.slug === 'mengenermittlung' || o.slug === 'mengen'),
-    wizardOfferTypes.find((o) => o.slug === 'neubau' || o.slug === 'full_house'),
-  ].filter(Boolean) as OfferType[]
 
   async function load() {
     const gen = ++loadGenerationRef.current
@@ -241,52 +228,13 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      // Filter panel should stay open while interacting with portal-based dropdown
-      if (offerTypeTriggerRef.current?.contains(target)) return
-      if (offerTypeMenuRef.current?.contains(target)) return
-      if (filterWrapRef.current && !filterWrapRef.current.contains(target)) setFilterOpen(false)
+      const el = e.target as HTMLElement
+      if (el.closest?.('[data-offer-history-offer-type-menu]')) return
+      if (filterWrapRef.current && !filterWrapRef.current.contains(e.target as Node)) setFilterOpen(false)
     }
     if (filterOpen) document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [filterOpen])
-
-  useEffect(() => {
-    if (!offerTypeDropdownOpen || !offerTypeTriggerRef.current) return
-    const MIN_W = 200
-    const MENU_H = 220
-    const GAP = 6
-    const update = () => {
-      if (!offerTypeTriggerRef.current) return
-      const rect = offerTypeTriggerRef.current.getBoundingClientRect()
-      const width = Math.max(rect.width, MIN_W)
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const left = Math.max(GAP, Math.min(rect.left, vw - width - GAP))
-      const wouldOverflowBottom = rect.bottom + GAP + MENU_H > vh
-      const top = wouldOverflowBottom ? Math.max(GAP, rect.top - GAP - MENU_H) : rect.bottom + GAP
-      setOfferTypeMenuPosition({ top, left, width })
-    }
-    update()
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
-    return () => {
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
-    }
-  }, [offerTypeDropdownOpen])
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        offerTypeTriggerRef.current?.contains(e.target as Node) ||
-        offerTypeMenuRef.current?.contains(e.target as Node)
-      ) return
-      setOfferTypeDropdownOpen(false)
-    }
-    if (offerTypeDropdownOpen) document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
-  }, [offerTypeDropdownOpen])
 
   const loadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -375,125 +323,23 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: -8 }}
                 transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="absolute right-0 top-full mt-2 z-30 w-[280px] rounded-2xl bg-coffee-850/95 border border-white/20 shadow-2xl shadow-black/30 backdrop-blur-sm overflow-hidden"
+                className="absolute right-0 top-full z-30 mt-2 w-[280px] overflow-hidden rounded-2xl border border-white/20 bg-coffee-850/95 shadow-2xl shadow-black/30 backdrop-blur-sm"
               >
-                <div className="p-4 space-y-5">
-                  <div>
-                    <label className="block text-xs font-medium text-sand/70 uppercase tracking-wider mb-2">Angebot</label>
-                    <div ref={offerTypeTriggerRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setOfferTypeDropdownOpen((o) => !o)}
-                        className="w-full flex items-center justify-between gap-2 sun-input text-sm py-2.5 px-3 rounded-xl bg-white/5 border border-white/15 text-left text-white hover:border-white/25 focus:border-[#E5B800]/50 focus:ring-2 focus:ring-[#E5B800]/20"
-                      >
-                        <span>
-                          {(() => {
-                            if (!draftOfferTypeId) return 'Alle'
-                            const selectedType = orderedWizardTypes.find((ot) => ot.id === draftOfferTypeId)
-                            return offerTypeLabel(selectedType?.slug) || 'Alle'
-                          })()}
-                        </span>
-                        <ChevronDown size={16} className={`text-sand/50 shrink-0 transition-transform ${offerTypeDropdownOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                      {typeof document !== 'undefined' &&
-                        offerTypeDropdownOpen &&
-                        createPortal(
-                          <div
-                            ref={offerTypeMenuRef}
-                            onClick={(e) => e.stopPropagation()}
-                            className="fixed z-[9998] rounded-xl bg-coffee-850 border border-white/20 shadow-xl shadow-black/40 overflow-hidden py-1.5"
-                            style={{
-                              top: offerTypeMenuPosition.top,
-                              left: offerTypeMenuPosition.left,
-                              width: offerTypeMenuPosition.width,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => { setDraftOfferTypeId(''); setOfferTypeDropdownOpen(false) }}
-                              className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${!draftOfferTypeId ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/90 hover:bg-white/10 hover:text-white'}`}
-                            >
-                              {draftOfferTypeId ? <span className="w-5" /> : <Check size={16} className="shrink-0" />}
-                              Alle
-                            </button>
-                            {orderedWizardTypes.map((ot) => {
-                              const isSelected = draftOfferTypeId === ot.id
-                              return (
-                                <button
-                                  key={ot.id}
-                                  type="button"
-                                  onClick={() => { setDraftOfferTypeId(ot.id); setOfferTypeDropdownOpen(false) }}
-                                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'bg-[#E5B800]/20 text-[#E5B800]' : 'text-sand/90 hover:bg-white/10 hover:text-white'}`}
-                                >
-                                  {isSelected ? <Check size={16} className="shrink-0" /> : <span className="w-5" />}
-                                  {offerTypeLabel(ot.slug)}
-                                </button>
-                              )
-                            })}
-                          </div>,
-                          document.body
-                        )}
-                    </div>
-                  </div>
-                  <div className="border-t border-white/10 pt-4">
-                    <label className="block text-xs font-medium text-sand/70 uppercase tracking-wider mb-2">Zeitraum</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <DatePickerPopover
-                        value={draftDateFrom}
-                        onChange={setDraftDateFrom}
-                        placeholder="Von"
-                        label="Von"
-                      />
-                      <DatePickerPopover
-                        value={draftDateTo}
-                        onChange={setDraftDateTo}
-                        placeholder="Bis"
-                        label="Bis"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-t border-white/10 pt-4">
-                    <label className="block text-xs font-medium text-sand/70 uppercase tracking-wider mb-2">Benutzer</label>
-                    <div className="max-h-36 overflow-y-auto rounded-xl bg-white/5 border border-white/10 p-2 space-y-1.5">
-                      {orgMembers.map((m) => (
-                        <label key={m.id} className="flex items-center gap-3 cursor-pointer py-1.5 px-2 rounded-lg hover:bg-white/5 text-sm text-sand/90 hover:text-white transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={draftSelectedUserIds.includes(m.id)}
-                            onChange={() => toggleUserFilter(m.id)}
-                            className="rounded border-white/30 text-[#E5B800] focus:ring-2 focus:ring-[#E5B800]/40 size-4 shrink-0"
-                          />
-                          <span className="truncate">{m.full_name || m.email || m.id}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {draftSelectedUserIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setDraftSelectedUserIds([])}
-                        className="mt-2 text-xs text-[#E5B800] hover:text-[#F5D030] font-medium transition-colors"
-                      >
-                        Zurücksetzen
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="px-4 pb-4 pt-0 space-y-2">
-                  <button
-                    type="button"
-                    onClick={applyFilters}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#E5B800] hover:bg-[#F5D030] border border-black/20 text-white text-sm font-semibold transition-colors"
-                  >
-                    Filter anwenden
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetDraftFilters}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-sand/90 hover:text-white text-sm font-medium transition-colors"
-                  >
-                    Zurücksetzen
-                  </button>
-                </div>
+                <OfferHistoryFilterForm
+                  offerTypeOptions={wizardOfferTypes}
+                  orgMembers={orgMembers}
+                  draftOfferTypeId={draftOfferTypeId}
+                  setDraftOfferTypeId={setDraftOfferTypeId}
+                  draftDateFrom={draftDateFrom}
+                  setDraftDateFrom={setDraftDateFrom}
+                  draftDateTo={draftDateTo}
+                  setDraftDateTo={setDraftDateTo}
+                  draftSelectedUserIds={draftSelectedUserIds}
+                  toggleUserFilter={toggleUserFilter}
+                  onClearUserSelection={() => setDraftSelectedUserIds([])}
+                  onApply={applyFilters}
+                  onReset={resetDraftFilters}
+                />
               </motion.div>
             )}
             </AnimatePresence>
@@ -556,16 +402,22 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
       <div className="flex-1 overflow-y-auto hide-scroll min-h-0 space-y-2 pr-0.5">
         {items.length === 0 && !apiError && (
           <div className="py-6 text-center text-sand/60 text-sm">
-            Keine Angebote. Klicken Sie auf „Neues Projekt“ und wählen Sie einen Typ.
+            Keine Angebote. Klicken Sie auf „Neues Projekt" und wählen Sie einen Typ.
           </div>
         )}
         {items.map((it) => {
-          const rawDisplay = it?.meta?.referinta?.trim() || it?.title || DE.fallbackProject
+          const statusLower = (it.status || '').toLowerCase()
+          const isDraftStatus = statusLower === 'draft' || statusLower === 'entwurf'
+          const isRunningStatus = statusLower === 'processing' || statusLower === 'running' || statusLower === 'laufend'
+          const generatedOfferCode = (it?.meta?.offer_no || '').trim()
+          const rawDisplay =
+            (!isDraftStatus && !isRunningStatus && generatedOfferCode) ||
+            it?.meta?.referinta?.trim() ||
+            it?.title ||
+            DE.fallbackProject
           const display = translateText(rawDisplay)
           const canDelete = isAdmin || it.created_by === userId
           const isSelected = selected === it.id
-          const statusLower = (it.status || '').toLowerCase()
-          const isDraftStatus = statusLower === 'draft' || statusLower === 'entwurf'
 
           return (
             <div
@@ -577,16 +429,31 @@ export default function HistoryList({ variant = 'wood' }: { variant?: 'wood' | '
                 disabled={isCreating}
                 onClick={() => {
                   if (isCreating) return
+                  if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href)
+                    url.searchParams.set('offerId', it.id)
+                    url.searchParams.delete('runId')
+                    window.history.pushState(null, '', url.toString())
+                  }
                   setSelected(it.id)
                   // Actualizare instantă: resetează panoul și încarcă oferta; apoi, în background, verificăm dacă rulează
                   window.dispatchEvent(new CustomEvent('offer:selected', { detail: { offerId: it.id } }))
                   if (!isDraftStatus) {
                     apiFetch(`/calc-events/history?offer_id=${encodeURIComponent(it.id)}`)
                       .then((hist: any) => {
+                        if (typeof window !== 'undefined') {
+                          const cur = new URL(window.location.href).searchParams.get('offerId')
+                          if (cur !== it.id) return
+                        }
                         if (hist?.run_id && hist?.run_status === 'running') {
+                          const flow = inferOfferFlow({
+                            roof_only_offer: it.meta?.roof_only_offer,
+                            wizard_package: it.meta?.wizard_package,
+                            offer_type_slug: it.offer_type_slug,
+                          })
                           window.dispatchEvent(
                             new CustomEvent('offer:compute-started', {
-                              detail: { offerId: it.id, runId: hist.run_id },
+                              detail: { offerId: it.id, runId: hist.run_id, flow },
                             })
                           )
                         }

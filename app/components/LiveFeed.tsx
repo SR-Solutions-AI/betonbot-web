@@ -917,11 +917,11 @@ export default function LiveFeed() {
       const runId = e.detail.runId
       const detailFlow = e.detail?.flow as OfferFlow | undefined
       const explicitFlow: OfferFlow | undefined =
-        detailFlow === 'neubau' || detailFlow === 'dachstuhl' || detailFlow === 'aufstockung'
+        detailFlow === 'neubau' || detailFlow === 'dachstuhl' || detailFlow === 'aufstockung' || detailFlow === 'zubau'
           ? detailFlow
           : undefined
       const provisional: OfferFlow =
-        explicitFlow === 'aufstockung' || explicitFlow === 'dachstuhl' ? explicitFlow : 'neubau'
+        explicitFlow === 'aufstockung' || explicitFlow === 'zubau' || explicitFlow === 'dachstuhl' ? explicitFlow : 'neubau'
       flowModeRef.current = provisional
       setOfferFlow(provisional)
       setIsMeasurementsOnlyOffer(e?.detail?.measurementsOnlyOffer === true)
@@ -1980,12 +1980,16 @@ export default function LiveFeed() {
                     ? 'Dachstuhl Mengenermittlung'
                     : offerFlow === 'aufstockung'
                       ? 'Aufstockung Mengenermittlung'
-                      : 'Neubau Mengenermittlung'
+                      : offerFlow === 'zubau'
+                        ? 'Zubau Mengenermittlung'
+                        : 'Neubau Mengenermittlung'
                   : offerFlow === 'dachstuhl'
                     ? 'Dachstuhl Angebot'
                     : offerFlow === 'aufstockung'
                       ? 'Aufstockung Angebot'
-                      : 'Neubau Angebot'}
+                      : offerFlow === 'zubau'
+                        ? 'Zubau Angebot'
+                        : 'Neubau Angebot'}
               </span>
               <div className="text-xs font-medium text-sand/80 truncate">
                 {currentStageName || 'Verarbeitung...'}

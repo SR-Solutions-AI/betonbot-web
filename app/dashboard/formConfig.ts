@@ -73,7 +73,7 @@ export const formSteps: Step[] = [
     fields: [
       { type: 'select', name: 'tipFundatieBeci', label: 'Untergeschoss / Fundament', options: ['Kein Keller (nur Bodenplatte)', 'Keller (ohne Ausbau)', 'Keller (mit Ausbau)'] },
       { type: 'bool', name: 'pilons', label: 'Pfahlgründung erforderlich' },
-      { type: 'select', name: 'inaltimeEtaje', label: 'Raumhöhe', options: ['Standard (2,50 m)', 'Komfort (2,70 m)', 'Hoch (2,85+ m)'] },
+      { type: 'number', name: 'raumhoeheCm', label: 'Durchschnittliche Raumhöhe im Haus', min: 200, max: 400 },
       { type: 'bool', name: 'hasWintergarden', label: 'Wintergarten vorhanden' },
       { type: 'bool', name: 'hasBalkone', label: 'Balkone vorhanden' },
     ],
@@ -107,7 +107,8 @@ export const formSteps: Step[] = [
     key: 'ferestreUsi',
     label: 'Fenster & Türen',
     fields: [
-      { type: 'select', name: 'windowQuality', label: 'Fensterart (Preis 2-/3-fach)', options: ['2-fach verglast', '3-fach verglast', '3-fach verglast, Passiv'] },
+      { type: 'select', name: 'windowQuality', label: 'Glasflächen / Fensterart (€/m²)', options: ['2-fach verglast', '3-fach verglast', '3-fach verglast, Passiv'] },
+      { type: 'number', name: 'tuerhoeheCm', label: 'Türhöhe', min: 180, max: 280 },
       { type: 'select', name: 'doorMaterialInterior', label: 'Innentüren (Preis pro Stück)', options: ['Standard', 'Holz', 'Glas', 'Weiß lackiert'], tag: 'door_material_interior' },
       { type: 'select', name: 'doorMaterialExterior', label: 'Außentüren (Preis pro Stück)', options: ['Standard', 'Holz', 'Aluminium', 'Kunststoff'], tag: 'door_material_exterior' },
       { type: 'bool', name: 'garagentorGewuenscht', label: 'Garagentor gewünscht' },
