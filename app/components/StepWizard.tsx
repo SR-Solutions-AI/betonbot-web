@@ -439,7 +439,8 @@ function validateGeneric(stepKey: string, fields: Field[], form: Record<string, 
     const listaEtaje = Array.isArray(form.listaEtaje) ? form.listaEtaje : []
     const hasFloorAboveGround = listaEtaje.some((e: string) => e !== 'parter')
     if (stepKey === 'projektdaten' && fieldName === 'deckenInnenausbau') {
-      return (form.nutzungDachraum ?? '') !== 'Wohnraum / ausgebaut'
+      // Optional in validation: this field may be hidden when no tenant options exist.
+      return true
     }
     if (stepKey === 'structuraCladirii' && fieldName === 'treppeTyp' && !hasFloorAboveGround) return true
     if (stepKey === 'daemmungDachdeckung' && fieldName === 'dachfensterTyp' && !asBool(form.dachfensterImDach)) return true
