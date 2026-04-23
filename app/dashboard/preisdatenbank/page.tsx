@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Save, Loader2, CheckCircle2, AlertCircle, Trash2, Plus, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabaseClient'
 import { apiFetch } from '../../lib/supabaseClient'
@@ -79,7 +80,19 @@ function isProtectedVariable(id: string): boolean {
 }
 
 function canAddOptionsForFieldTag(fieldTag?: string): boolean {
-  return !!fieldTag && fieldTag !== 'foundation_type' && fieldTag !== 'visible_roof_structure_fixed' && fieldTag !== 'haustechnik_basis' && fieldTag !== 'profit_margin'
+  return (
+    !!fieldTag &&
+    fieldTag !== 'foundation_type' &&
+    fieldTag !== 'pfahlgrundung' &&
+    fieldTag !== 'visible_roof_structure_fixed' &&
+    fieldTag !== 'haustechnik_basis' &&
+    fieldTag !== 'profit_margin'
+  )
+}
+
+/** Variabile fixe: fără adăugare ștergere rânduri (doar editare preț / etichetă). */
+function isPricingSubsectionVariablesLocked(fieldTag?: string): boolean {
+  return fieldTag === 'foundation_type' || fieldTag === 'pfahlgrundung'
 }
 
 function isValueOnlyFieldTag(fieldTag?: string): boolean {
@@ -99,6 +112,7 @@ function isBlockedOption(variable: { id: string; label: string }): boolean {
 /** Titlu card în UI (alias pentru redenumiri; cheile din JSON pot rămâne vechi în cache). */
 function displayPriceCardTitle(title: string): string {
   if (title === 'Geschosshöhe') return 'Raumhöhe'
+  if (title === 'Untergeschoss / Fundament') return 'Fundament'
   return title
 }
 
@@ -107,7 +121,8 @@ const CARD_SUBTITLES: Record<string, string> = {
   'Baustellenzufahrt': 'Leicht, Mittel, Schwierig',
   'Gelände': 'Eben, Leichte oder Starke Hanglage',
   'Strom-/Wasseranschluss': 'Pauschalpreis für Anschlusskosten',
-  'Untergeschoss / Fundament': 'Bodenplatte, Keller ohne oder mit Ausbau – €/m²',
+  Fundament: 'Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.',
+  'Untergeschoss / Fundament': 'Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.',
   'Pfahlgründung': 'Preis €/m² bei Pfahlgründung',
   'Fläche & Treppe': 'Preis pro Stück',
   'Treppe': 'Preis pro Stück',
@@ -157,6 +172,7 @@ const STEP_SUBTITLES: Record<string, string> = {
 }
 
 export default function PreisdatenbankPage() {
+  const router = useRouter()
   const [ready, setReady] = useState(false)
   const [sections, setSections] = useState<PreisdatenbankSection[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -178,14 +194,79 @@ export default function PreisdatenbankPage() {
   const [pendingLabelUpdates, setPendingLabelUpdates] = useState<Record<string, string>>({})
   /** Are modificări nesalvate (butonul Save devine galben și activ). */
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const hasUnsavedChangesRef = useRef(false)
+  const [pendingLeaveHref, setPendingLeaveHref] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStartY = useRef(0)
   const dragStartScrollTop = useRef(0)
-  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingSaveRef = useRef<Record<string, number>>({})
   /** Doar chei prezente în holzbau-form-steps.json (priceSections.variables[].key) – nimic în plus. */
   const allowedPricingKeysRef = useRef<Set<string>>(new Set())
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('EUR')
+
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges
+  }, [hasUnsavedChanges])
+
+  const dismissLeaveGuard = useCallback(() => {
+    setPendingLeaveHref(null)
+  }, [])
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedChangesRef.current) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
+  useEffect(() => {
+    const isInternalNavigationAway = (href: string): boolean => {
+      try {
+        const u = new URL(href, window.location.origin)
+        if (u.origin !== window.location.origin) return false
+        const next = `${u.pathname}${u.search}${u.hash}`
+        const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`
+        return next !== cur
+      } catch {
+        return false
+      }
+    }
+
+    const onDocumentClickCapture = (e: MouseEvent) => {
+      if (!hasUnsavedChangesRef.current || pendingLeaveHref) return
+      if (e.defaultPrevented) return
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('[data-preisdatenbank-leave-guard="dialog"]')) return
+
+      const anchor = target.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return
+      if (anchor.getAttribute('target') === '_blank' || anchor.download) return
+      if (!isInternalNavigationAway(href)) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      const u = new URL(href, window.location.origin)
+      setPendingLeaveHref(`${u.pathname}${u.search}${u.hash}`)
+    }
+
+    document.addEventListener('click', onDocumentClickCapture, true)
+    return () => document.removeEventListener('click', onDocumentClickCapture, true)
+  }, [pendingLeaveHref])
+
+  useEffect(() => {
+    if (!pendingLeaveHref) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismissLeaveGuard()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pendingLeaveHref, dismissLeaveGuard])
 
   useEffect(() => {
     let cancelled = false
@@ -401,20 +482,6 @@ export default function PreisdatenbankPage() {
     el.scrollTop = ratio * maxScroll
   }
 
-  const flushSave = useRef(() => {
-    const allowed = allowedPricingKeysRef.current
-    const params: Record<string, number> = {}
-    for (const [id, value] of Object.entries(pendingSaveRef.current)) {
-      if (allowed.has(id)) params[id] = value
-    }
-    pendingSaveRef.current = {}
-    if (Object.keys(params).length === 0) return
-    apiFetch('/pricing-parameters', {
-      method: 'PATCH',
-      body: JSON.stringify({ params }),
-    }).catch(() => {})
-  })
-
   const updateValue = (
     sectionIndex: number,
     subsectionIndex: number,
@@ -437,19 +504,9 @@ export default function PreisdatenbankPage() {
         }
       })
     )
-    pendingSaveRef.current = { ...pendingSaveRef.current, [id]: value }
-    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current)
-    saveDebounceRef.current = setTimeout(() => {
-      saveDebounceRef.current = null
-      flushSave.current()
-    }, 600)
   }
 
-  const handleSave = async () => {
-    if (saveDebounceRef.current) {
-      clearTimeout(saveDebounceRef.current)
-      saveDebounceRef.current = null
-    }
+  const handleSave = async (): Promise<boolean> => {
     const allowed = allowedPricingKeysRef.current
     const params: Record<string, number> = {}
     for (const sec of sections) {
@@ -488,7 +545,6 @@ export default function PreisdatenbankPage() {
         rawUpdated && typeof rawUpdated === 'object' && !Array.isArray(rawUpdated)
           ? (rawUpdated as Record<string, number>)
           : {}
-      pendingSaveRef.current = {}
       setDeletedKeys([])
       setPendingNewOptions([])
       setPendingLabelUpdates({})
@@ -508,9 +564,11 @@ export default function PreisdatenbankPage() {
       setSaveMessage('success')
       window.dispatchEvent(new CustomEvent('pricing-parameters:saved'))
       setTimeout(() => setSaveMessage(null), 3000)
+      return true
     } catch (err: any) {
       setSaveMessage('error')
       setSaveErrorMessage(err?.message || 'Fehler beim Speichern')
+      return false
     } finally {
       setSaving(false)
     }
@@ -773,7 +831,7 @@ export default function PreisdatenbankPage() {
                                     <>
                                       <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
                                       {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
-                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
+                                      {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && !isPricingSubsectionVariablesLocked(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                     </>
                                   )}
                                 </div>
@@ -851,7 +909,7 @@ export default function PreisdatenbankPage() {
                                       <>
                                         <span className="flex-1 min-w-0 truncate">{labelWithoutUnit(v.label)}</span>
                                         {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => setEditingLabelId(v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-[#E5B800]" title="Bezeichnung bearbeiten" aria-label="Bezeichnung bearbeiten"><Pencil size={14} /></button>}
-                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
+                                        {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(sub.fieldTag) && !isPricingSubsectionVariablesLocked(sub.fieldTag) && <button type="button" onClick={() => handleDelete(sectionIndex, subsectionIndex, v.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400" title="Option entfernen" aria-label="Option entfernen"><Trash2 size={14} /></button>}
                                       </>
                                     )}
                                   </div>
@@ -941,7 +999,7 @@ export default function PreisdatenbankPage() {
                                 >
                                   <Pencil size={14} />
                                 </button>}
-                                {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && <button
+                                {!isLockedRoofOnlyVariable(v.id) && !isProtectedVariable(v.id) && !isValueOnlyFieldTag(item.sub.fieldTag) && !isPricingSubsectionVariablesLocked(item.sub.fieldTag) && <button
                                   type="button"
                                   onClick={() => handleDelete(sectionIndex, item.subsectionIndex, v.id)}
                                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-sand/70 hover:text-red-400"
@@ -1124,6 +1182,81 @@ export default function PreisdatenbankPage() {
           {pageContent}
         </div>
       )}
+
+      {pendingLeaveHref ? (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-5 sm:p-8 bg-black/65 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) dismissLeaveGuard()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preisdb-leave-title"
+            data-preisdatenbank-leave-guard="dialog"
+            className="w-full max-w-lg rounded-2xl border border-white/12 bg-coffee-850 shadow-2xl px-8 py-8 sm:px-10 sm:py-9 text-left"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="preisdb-leave-title" className="text-xl sm:text-2xl font-bold text-white tracking-tight pr-2">
+              Ungespeicherte Änderungen
+            </h2>
+            <p className="mt-4 text-sm sm:text-[15px] text-sand/80 leading-relaxed max-w-prose">
+              Sie haben Änderungen an der Preisdatenbank vorgenommen, die noch nicht gespeichert wurden. Wie möchten Sie
+              fortfahren?
+            </p>
+            <div className="mt-8 flex flex-col gap-3">
+              <button
+                type="button"
+                disabled={saving}
+                className="w-full min-h-[3rem] px-5 py-3 rounded-xl bg-[#E5B800] hover:bg-[#CC9900] text-white text-[15px] font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition-colors inline-flex items-center justify-center gap-2"
+                onClick={async () => {
+                  const href = pendingLeaveHref
+                  if (!href) return
+                  const ok = await handleSave()
+                  if (ok) {
+                    setPendingLeaveHref(null)
+                    router.push(href)
+                  }
+                }}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin shrink-0" aria-hidden />
+                    <span>Wird gespeichert…</span>
+                  </>
+                ) : (
+                  <span>Speichern</span>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                className="w-full min-h-[3rem] px-5 py-3 rounded-xl border border-[#E5B800]/40 text-[#F5E6A8] text-[15px] font-semibold hover:bg-[#E5B800]/12 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => {
+                  const href = pendingLeaveHref
+                  if (!href) return
+                  hasUnsavedChangesRef.current = false
+                  setHasUnsavedChanges(false)
+                  setPendingLeaveHref(null)
+                  router.push(href)
+                }}
+              >
+                Nicht speichern
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                className="w-full min-h-[2.75rem] px-5 py-2.5 rounded-xl text-sand/70 text-sm font-medium hover:text-sand hover:bg-white/5 transition-colors disabled:opacity-40"
+                onClick={() => dismissLeaveGuard()}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }

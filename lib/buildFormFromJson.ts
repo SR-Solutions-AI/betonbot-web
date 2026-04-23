@@ -116,6 +116,7 @@ function normalizeField(f: Record<string, unknown>): FormField | null {
         type: 'number',
         min: f.min != null ? ensureNumber(f.min) : undefined,
         max: f.max != null ? ensureNumber(f.max) : undefined,
+        ...(f.optional ? { optional: true } : {}),
       }
     case 'bool':
       return { ...base, type: 'bool' }
@@ -124,7 +125,7 @@ function normalizeField(f: Record<string, unknown>): FormField | null {
         ? f.options.map((o) => (typeof o === 'string' ? o : String(o)))
         : []
       const tag = f.tag != null ? ensureString(f.tag) : undefined
-      return { ...base, type: 'select', options, tag }
+      return { ...base, type: 'select', options, tag, ...(f.optional ? { optional: true } : {}) }
     }
     case 'upload':
       return {

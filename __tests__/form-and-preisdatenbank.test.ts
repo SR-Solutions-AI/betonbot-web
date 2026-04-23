@@ -135,7 +135,6 @@ describe('Preisdatenbank – acoperire completă', () => {
       'ventilation_base_price',
       'unit_price_placa',
       'acces_santier_leicht_factor',
-      'unit_price_keller_nutzkeller',
       'window_2_fach_price',
       // Innentüren are split by type (piece prices)
       'door_interior_standard',

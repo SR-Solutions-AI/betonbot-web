@@ -202,39 +202,28 @@
       ],
       "priceSections": [
         {
-          "title": "Untergeschoss / Fundament",
-          "subtitle": "Preise je nach Feld „Untergeschoss / Fundament“",
-          "fieldTag": "foundation_type",
-          "variables": [
-            {
-              "key": "unit_price_placa",
-              "label": "Kein Keller (nur Bodenplatte) (€/m²)",
-              "unit": "€/m²",
-              "value": 120
-            },
-            {
-              "key": "unit_price_keller_nutzkeller",
-              "label": "Keller (ohne Ausbau) (€/m²)",
-              "unit": "€/m²",
-              "value": 145
-            },
-            {
-              "key": "unit_price_keller_ausbau",
-              "label": "Keller (mit Ausbau) (€/m²)",
-              "unit": "€/m²",
-              "value": 185
-            }
-          ]
-        },
-        {
           "title": "Pfahlgründung",
           "subtitle": "Feld „Pfahlgründung erforderlich“",
+          "fieldTag": "pfahlgrundung",
           "variables": [
             {
               "key": "unit_price_piloti",
               "label": "Pfahlgründung (€/m²)",
               "unit": "€/m²",
               "value": 180
+            }
+          ]
+        },
+        {
+          "title": "Fundament",
+          "subtitle": "Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.",
+          "fieldTag": "foundation_type",
+          "variables": [
+            {
+              "key": "unit_price_placa",
+              "label": "Bodenplatte (€/m²)",
+              "unit": "€/m²",
+              "value": 120
             }
           ]
         },
@@ -1153,31 +1142,6 @@
         "title": "Gebäudestruktur",
         "subsections": [
           {
-            "title": "Untergeschoss / Fundament",
-            "subtitle": "Preise je nach Feld „Untergeschoss / Fundament“",
-            "fieldTag": "foundation_type",
-            "variables": [
-              {
-                "key": "unit_price_placa",
-                "label": "Kein Keller (nur Bodenplatte) (€/m²)",
-                "unit": "€/m²",
-                "value": 120
-              },
-              {
-                "key": "unit_price_keller_nutzkeller",
-                "label": "Keller (ohne Ausbau) (€/m²)",
-                "unit": "€/m²",
-                "value": 145
-              },
-              {
-                "key": "unit_price_keller_ausbau",
-                "label": "Keller (mit Ausbau) (€/m²)",
-                "unit": "€/m²",
-                "value": 185
-              }
-            ]
-          },
-          {
             "title": "Pfahlgründung",
             "subtitle": "Feld „Pfahlgründung erforderlich“",
             "fieldTag": "pfahlgrundung",
@@ -1187,6 +1151,19 @@
                 "label": "Pfahlgründung (€/m²)",
                 "unit": "€/m²",
                 "value": 180
+              }
+            ]
+          },
+          {
+            "title": "Fundament",
+            "subtitle": "Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.",
+            "fieldTag": "foundation_type",
+            "variables": [
+              {
+                "key": "unit_price_placa",
+                "label": "Bodenplatte (€/m²)",
+                "unit": "€/m²",
+                "value": 120
               }
             ]
           },
