@@ -61,6 +61,8 @@
   --bg1: var(--color-coffee-900);
   --bg2: var(--color-panel);
   --grain: radial-gradient(60% 60% at 50% 40%, rgba(255,255,255,.045), transparent 60%);
+  /* Betonbot global UI scale: make interface feel slightly zoomed out like Holzbot. */
+  --ui-scale: 0.93;
 }
 html, body {
   height: 100%;
@@ -68,6 +70,16 @@ html, body {
     linear-gradient(180deg, var(--bg1), var(--bg2)),
     var(--grain);
   color: #F8F6F3;
+}
+
+html {
+  font-size: calc(16px * var(--ui-scale));
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --ui-scale: 1;
+  }
 }
 
 /* ====== Card / panel look ====== */
