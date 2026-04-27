@@ -76,12 +76,6 @@ html {
   font-size: calc(16px * var(--ui-scale));
 }
 
-@media (max-width: 1024px) {
-  :root {
-    --ui-scale: 1;
-  }
-}
-
 /* ====== Card / panel look ====== */
 .bg-panel {
   @apply bg-coffee-800/90 backdrop-blur-xs shadow-soft shadow-black/40;
