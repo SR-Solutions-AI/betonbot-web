@@ -1138,99 +1138,6 @@
         ]
       },
       {
-        "stepKey": "structuraCladirii",
-        "title": "Gebäudestruktur",
-        "subsections": [
-          {
-            "title": "Pfahlgründung",
-            "subtitle": "Feld „Pfahlgründung erforderlich“",
-            "fieldTag": "pfahlgrundung",
-            "variables": [
-              {
-                "key": "unit_price_piloti",
-                "label": "Pfahlgründung (€/m²)",
-                "unit": "€/m²",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "title": "Fundament",
-            "subtitle": "Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.",
-            "fieldTag": "foundation_type",
-            "variables": [
-              {
-                "key": "unit_price_placa",
-                "label": "Bodenplatte (€/m²)",
-                "unit": "€/m²",
-                "value": 120
-              }
-            ]
-          },
-          {
-            "title": "Treppe",
-            "subtitle": "Preis pro Stück",
-            "fieldTag": "flache_treppe",
-            "variables": [
-              {
-                "key": "floor_coeff_per_m2",
-                "label": "Boden (€/m²)",
-                "unit": "€/m²",
-                "value": 45
-              },
-              {
-                "key": "ceiling_coeff_per_m2",
-                "label": "Decke (€/m²)",
-                "unit": "€/m²",
-                "value": 55
-              },
-              {
-                "key": "price_per_stair_unit",
-                "label": "Treppe pro Stück (€)",
-                "unit": "€",
-                "value": 4500
-              },
-              {
-                "key": "railing_price_per_stair",
-                "label": "Geländer pro Stück (€)",
-                "unit": "€",
-                "value": 800
-              },
-              {
-                "key": "stairs_type_standard_piece_price",
-                "label": "Treppentyp Standard (€/Stück)",
-                "unit": "€/Stück",
-                "value": 4500
-              },
-              {
-                "key": "stairs_type_holz_piece_price",
-                "label": "Treppentyp Holz (€/Stück)",
-                "unit": "€/Stück",
-                "value": 5200
-              },
-              {
-                "key": "stairs_type_beton_piece_price",
-                "label": "Treppentyp Beton (€/Stück)",
-                "unit": "€/Stück",
-                "value": 5800
-              },
-              {
-                "key": "stairs_type_metall_piece_price",
-                "label": "Treppentyp Metall (€/Stück)",
-                "unit": "€/Stück",
-                "value": 5600
-              },
-              {
-                "key": "stairs_type_sonder_piece_price",
-                "label": "Treppentyp Sonder (€/Stück)",
-                "unit": "€/Stück",
-                "value": 6500
-              }
-            ]
-          }
-        ]
-      },
-      {
         "stepKey": "ferestreUsi",
         "title": "Fenster & Türen",
         "subsections": [
@@ -1592,6 +1499,93 @@
         "title": "Geschossdecken und Bodenaufbauten",
         "subsections": [
           {
+            "title": "Pfahlgründung",
+            "subtitle": "Feld „Pfahlgründung erforderlich“",
+            "fieldTag": "pfahlgrundung",
+            "variables": [
+              {
+                "key": "unit_price_piloti",
+                "label": "Pfahlgründung (€/m²)",
+                "unit": "€/m²",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "title": "Fundament",
+            "subtitle": "Bitte geben Sie die Preise für Bodenplatte und Pfahlgründung ein.",
+            "fieldTag": "foundation_type",
+            "variables": [
+              {
+                "key": "unit_price_placa",
+                "label": "Bodenplatte (€/m²)",
+                "unit": "€/m²",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "title": "Treppe",
+            "subtitle": "Preis pro Stück",
+            "fieldTag": "flache_treppe",
+            "variables": [
+              {
+                "key": "floor_coeff_per_m2",
+                "label": "Boden (€/m²)",
+                "unit": "€/m²",
+                "value": 45
+              },
+              {
+                "key": "ceiling_coeff_per_m2",
+                "label": "Decke (€/m²)",
+                "unit": "€/m²",
+                "value": 55
+              },
+              {
+                "key": "price_per_stair_unit",
+                "label": "Treppe pro Stück (€)",
+                "unit": "€",
+                "value": 4500
+              },
+              {
+                "key": "railing_price_per_stair",
+                "label": "Geländer pro Stück (€)",
+                "unit": "€",
+                "value": 800
+              },
+              {
+                "key": "stairs_type_standard_piece_price",
+                "label": "Treppentyp Standard (€/Stück)",
+                "unit": "€/Stück",
+                "value": 4500
+              },
+              {
+                "key": "stairs_type_holz_piece_price",
+                "label": "Treppentyp Holz (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5200
+              },
+              {
+                "key": "stairs_type_beton_piece_price",
+                "label": "Treppentyp Beton (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5800
+              },
+              {
+                "key": "stairs_type_metall_piece_price",
+                "label": "Treppentyp Metall (€/Stück)",
+                "unit": "€/Stück",
+                "value": 5600
+              },
+              {
+                "key": "stairs_type_sonder_piece_price",
+                "label": "Treppentyp Sonder (€/Stück)",
+                "unit": "€/Stück",
+                "value": 6500
+              }
+            ]
+          },
+          {
             "title": "Bodenaufbau",
             "subtitle": "Geschossdecke / tragende Ebene (€/m²)",
             "fieldTag": "bodenaufbau",
@@ -1649,7 +1643,7 @@
             ]
           }
         ],
-        "subtitle": "Welche Arten von Bodenaufbau, Deckenaufbau und Bodenbelägen bietet Ihr Unternehmen an?"
+        "subtitle": "Pfahlgründung, Fundament, Treppen, Boden- und Deckenaufbau sowie Bodenbeläge – passen Sie die Preise an."
       },
       {
         "stepKey": "performantaEnergetica",

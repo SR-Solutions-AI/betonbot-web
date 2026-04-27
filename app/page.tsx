@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { motion, Variants } from 'framer-motion'
-import { LogIn, ArrowRight, Hammer, XCircle, CheckCircle2, FileText, Clock, TrendingUp, Shield, Users, Briefcase, Download, Check, Plus, Lightbulb, Mail, Play, Pause, RotateCcw, SkipBack, SkipForward } from 'lucide-react'
+import { LogIn, ArrowRight, Hammer, XCircle, CheckCircle2, FileText, Clock, TrendingUp, Shield, Users, Briefcase, Download, Check, Plus, Lightbulb, Mail, Play, Pause, RotateCcw, SkipBack, SkipForward, FileSearch } from 'lucide-react'
 
 // --- CONFIG ---
 const BACKGROUND_IMAGE_URL = '/images/landing-bg.png'
@@ -179,7 +179,7 @@ function BenefitsSection() {
             <div className="h-1.5 w-24 bg-[#E5B800] rounded-full mx-auto" />
         </motion.div>
 
-        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10">
+        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10">
             {/* Cards... */}
             <motion.div variants={fadeInUp} className="group relative p-6 md:p-8 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-md hover:border-[#E5B800]/50 transition-all duration-300">
                <div className="flex justify-center mb-6">
@@ -207,6 +207,15 @@ function BenefitsSection() {
                </div>
                <h3 className="text-xl md:text-2xl font-bold text-white mb-3">Modernes Auftreten</h3>
                <p className="text-sand/80 text-base md:text-lg leading-relaxed">Überzeugen Sie Kunden professionell und digital ab der ersten Sekunde.</p>
+            </motion.div>
+            <motion.div variants={fadeInUp} className="group relative p-6 md:p-8 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-md hover:border-[#E5B800]/50 transition-all duration-300">
+               <div className="flex justify-center mb-6">
+                  <div className="bg-[#E5B800]/10 p-4 rounded-2xl text-[#E5B800]">
+                     <FileSearch size={32} className="md:w-10 md:h-10" />
+                  </div>
+               </div>
+               <h3 className="text-xl md:text-2xl font-bold text-white mb-3">Fehler vermeiden</h3>
+               <p className="text-sand/80 text-base md:text-lg leading-relaxed">Ausschreibungen automatisch überprüfen und Fehler hervorheben.</p>
             </motion.div>
         </motion.div>
       </div>

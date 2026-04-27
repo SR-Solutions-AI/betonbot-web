@@ -43,23 +43,30 @@ describe('Preisdatenbank – acoperire completă', () => {
   describe('Fiecare secțiune Preisdatenbank', () => {
     const expectedSectionTitles = [
       'Allgemeine Projektinformationen',
-      'Gebäudestruktur',
-      'Wintergärten & Balkone',
-      'Dämmung & Dachdeckung',
       'Fenster & Türen',
       'Wandaufbau',
       'Materialien & Ausbaustufe',
       'Geschossdecken und Bodenaufbauten',
       'Energieeffizienz & Heizung',
+      'Dachstuhl, Dämmung und Dachdeckung',
     ]
 
-    expectedSectionTitles.forEach((title, index) => {
+    expectedSectionTitles.forEach((title) => {
       it(`secțiunea "${title}" există și are subsections`, () => {
         const section = priceSections.find((s) => s.title === title)
         expect(section).toBeDefined()
         expect(Array.isArray(section!.subsections)).toBe(true)
         expect(section!.subsections.length).toBeGreaterThan(0)
       })
+    })
+
+    it('Geschossdecken und Bodenaufbauten include Pfahlgründung, Fundament și Treppe (fost Gebäudestruktur)', () => {
+      const section = priceSections.find((s) => s.title === 'Geschossdecken und Bodenaufbauten')
+      expect(section).toBeDefined()
+      const titles = section!.subsections.map((s) => s.title)
+      expect(titles).toContain('Pfahlgründung')
+      expect(titles).toContain('Fundament')
+      expect(titles).toContain('Treppe')
     })
   })
 
@@ -132,14 +139,13 @@ describe('Preisdatenbank – acoperire completă', () => {
       'tip_semineu_holzofen_price',
       'electricity_base_price',
       'sewage_base_price',
-      'ventilation_base_price',
+      'unit_price_piloti',
       'unit_price_placa',
-      'acces_santier_leicht_factor',
       'window_2_fach_price',
       // Innentüren are split by type (piece prices)
       'door_interior_standard',
       'wandaufbau_aussen_clt_35',
-      'nivel_energetic_standard_price',
+      'tip_incalzire_gas_price',
       'bodenaufbau_holz_standard_price',
     ]
 
