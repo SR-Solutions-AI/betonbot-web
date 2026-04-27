@@ -62,7 +62,7 @@
   --bg2: var(--color-panel);
   --grain: radial-gradient(60% 60% at 50% 40%, rgba(255,255,255,.045), transparent 60%);
   /* Betonbot global UI scale: make interface feel slightly zoomed out like Holzbot. */
-  --ui-scale: 0.93;
+  --ui-scale: 0.88;
 }
 html, body {
   height: 100%;
