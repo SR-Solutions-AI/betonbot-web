@@ -1477,7 +1477,7 @@ export function DetectionsReviewEditor({
   const activeTab = getTabForPlan(planIndexClamped)
   const isAufstockungFlow = effectiveFloorKinds.length > 0
   const currentFloorKind = String(effectiveFloorKinds[planIndexClamped] ?? 'new').toLowerCase() === 'new' ? 'new' : 'existing'
-  /** Bestand etaj în Aufstockung: Dach-Rückbau + Treppenöffnung; Zubau: Räume / Türen / Dach wie Neubau. */
+  /** Bestand etaj în Aufstockung: Dach-Rückbau + Treppenöffnung; Zubau: Räume / Türen / Dach wie Einfamilienhaus. */
   const existingFloorEditing = isAufstockungFlow && currentFloorKind === 'existing'
   const hasUpperConstructionFloorAtIndex = useCallback((planIdx: number): boolean => {
     if (!isAufstockungFlow) return false
@@ -1797,7 +1797,7 @@ export function DetectionsReviewEditor({
           }
         }}
         disabled={isConfirming}
-        className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#ffffff] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#e08414] to-[#f79116] hover:brightness-110 hover:-translate-y-[0.5px] active:translate-y-0"
+        className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold text-[#ffffff] shadow-md transition-all duration-200 ease-out bg-gradient-to-b from-[#CC9900] to-[#E5B800] hover:brightness-110 hover:-translate-y-[0.5px] hover:shadow-[0_4px_14px_rgba(229,184,0,0.35)] active:translate-y-0"
       >
         <Check size={16} strokeWidth={2.25} />
         {isConfirming ? 'Speichern…' : 'Erkennung bestätigen – weiter'}

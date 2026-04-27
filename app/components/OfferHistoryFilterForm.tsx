@@ -12,6 +12,7 @@ export type OfferHistoryOrgMember = { id: string; email: string | null; full_nam
 export const WIZARD_OFFER_SLUGS = [
   'mengenermittlung',
   'mengen',
+  'einfamilienhaus',
   'neubau',
   'aufstockung',
   'zubau',
@@ -22,11 +23,12 @@ export const WIZARD_OFFER_SLUGS = [
 const SLUG_TO_LABEL: Record<string, string> = {
   mengenermittlung: 'Mengenermittlung',
   mengen: 'Mengenermittlung',
-  neubau: 'Neubau Angebot',
+  einfamilienhaus: 'Einfamilienhaus Angebot',
+  neubau: 'Einfamilienhaus Angebot',
   aufstockung: 'Aufstockung Angebot',
   zubau: 'Zubau Angebot',
   zubau_aufstockung: 'Zubau / Aufstockung Angebot',
-  full_house: 'Neubau Angebot',
+  full_house: 'Einfamilienhaus Angebot',
 }
 
 export function offerTypeLabel(slug: string | null | undefined): string {
@@ -73,7 +75,7 @@ export function OfferHistoryFilterForm({
   // Betonbot: fără oferta doar acoperiș (Dachstuhl)
   const orderedWizardTypes = [
     offerTypeOptions.find((o) => o.slug === 'mengenermittlung' || o.slug === 'mengen'),
-    offerTypeOptions.find((o) => o.slug === 'neubau' || o.slug === 'full_house'),
+    offerTypeOptions.find((o) => o.slug === 'einfamilienhaus' || o.slug === 'neubau' || o.slug === 'full_house'),
     offerTypeOptions.find((o) => o.slug === 'aufstockung'),
     offerTypeOptions.find((o) => o.slug === 'zubau'),
     offerTypeOptions.find((o) => o.slug === 'zubau_aufstockung'),

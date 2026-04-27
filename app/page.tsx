@@ -249,7 +249,7 @@ function FAQSection() {
                         <ul className="space-y-3 ml-7">
                             <li className="flex items-start gap-3">
                                 <div className="mt-1.5 w-2 h-2 rounded-full bg-[#E5B800] shrink-0" />
-                                <span className="text-lg md:text-xl text-sand/90"><span className="font-semibold text-white">Neubauten</span> zu Ihren Hauptleistungen zählen</span>
+                                <span className="text-lg md:text-xl text-sand/90"><span className="font-semibold text-white">Einfamilienhausten</span> zu Ihren Hauptleistungen zählen</span>
                             </li>
                             <li className="flex items-start gap-3">
                                 <div className="mt-1.5 w-2 h-2 rounded-full bg-[#E5B800] shrink-0" />
@@ -473,7 +473,7 @@ function LogoSection() {
 const BETONBOT_LICENSE_FEATURES = [
   {
     title: 'Automatische Plananalyse',
-    text: 'Betonbot erkennt Bauelemente, Flächen und Maße direkt aus dem Bauplan – für Neubau, Dachstuhl, Zubau und Aufstockung.',
+    text: 'Betonbot erkennt Bauelemente, Flächen und Maße direkt aus dem Bauplan – für Einfamilienhaus, Dachstuhl, Zubau und Aufstockung.',
   },
   {
     title: 'Preisschätzung in Minuten',

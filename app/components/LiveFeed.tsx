@@ -677,9 +677,9 @@ export default function LiveFeed() {
   const [canDownloadAdminPdf, setCanDownloadAdminPdf] = useState(false)
   const [progress, setProgress] = useState(0) // 0-100
   const [currentStageName, setCurrentStageName] = useState<string | null>(null)
-  const [offerFlow, setOfferFlow] = useState<OfferFlow>('neubau')
+  const [offerFlow, setOfferFlow] = useState<OfferFlow>('einfamilienhaus')
   const [isMeasurementsOnlyOffer, setIsMeasurementsOnlyOffer] = useState(false)
-  const flowModeRef = useRef<OfferFlow>('neubau')
+  const flowModeRef = useRef<OfferFlow>('einfamilienhaus')
 
   const filesByStage = useRef<Record<string, FeedFile[]>>({})
   const processedStages = useRef<Set<string>>(new Set())
@@ -730,7 +730,7 @@ export default function LiveFeed() {
 
   const STORAGE_KEY_OFFER = 'holzbot_dashboard_offer'
   const STORAGE_KEY_RUNNING = 'holzbot_dashboard_running'
-  const persistOfferState = (offerId: string | null, runId: string | null, isComputing: boolean, flow: OfferFlow = 'neubau') => {
+  const persistOfferState = (offerId: string | null, runId: string | null, isComputing: boolean, flow: OfferFlow = 'einfamilienhaus') => {
     try {
       if (typeof window === 'undefined') return
       if (!offerId) {
@@ -903,8 +903,8 @@ export default function LiveFeed() {
       setComputing(false)
       setProgress(0)
       setCurrentStageName(null)
-      flowModeRef.current = 'neubau'
-      setOfferFlow('neubau')
+      flowModeRef.current = 'einfamilienhaus'
+      setOfferFlow('einfamilienhaus')
       setIsMeasurementsOnlyOffer(false)
     }
     
@@ -917,11 +917,11 @@ export default function LiveFeed() {
       const runId = e.detail.runId
       const detailFlow = e.detail?.flow as OfferFlow | undefined
       const explicitFlow: OfferFlow | undefined =
-        detailFlow === 'neubau' || detailFlow === 'dachstuhl' || detailFlow === 'aufstockung' || detailFlow === 'zubau'
+        detailFlow === 'einfamilienhaus' || detailFlow === 'dachstuhl' || detailFlow === 'aufstockung' || detailFlow === 'zubau'
           ? detailFlow
           : undefined
       const provisional: OfferFlow =
-        explicitFlow === 'aufstockung' || explicitFlow === 'zubau' || explicitFlow === 'dachstuhl' ? explicitFlow : 'neubau'
+        explicitFlow === 'aufstockung' || explicitFlow === 'zubau' || explicitFlow === 'dachstuhl' ? explicitFlow : 'einfamilienhaus'
       flowModeRef.current = provisional
       setOfferFlow(provisional)
       setIsMeasurementsOnlyOffer(e?.detail?.measurementsOnlyOffer === true)
@@ -1120,7 +1120,7 @@ export default function LiveFeed() {
 
       const id = e.detail.offerId as string
 
-      let offerFlowResolved: OfferFlow = 'neubau'
+      let offerFlowResolved: OfferFlow = 'einfamilienhaus'
       try {
         const o = await apiFetch(`/offers/${encodeURIComponent(id)}`)
         const meta = o?.meta ?? o?.offer?.meta
@@ -1982,14 +1982,14 @@ export default function LiveFeed() {
                       ? 'Aufstockung Mengenermittlung'
                       : offerFlow === 'zubau'
                         ? 'Zubau Mengenermittlung'
-                        : 'Neubau Mengenermittlung'
+                        : 'Einfamilienhaus Mengenermittlung'
                   : offerFlow === 'dachstuhl'
                     ? 'Dachstuhl Angebot'
                     : offerFlow === 'aufstockung'
                       ? 'Aufstockung Angebot'
                       : offerFlow === 'zubau'
                         ? 'Zubau Angebot'
-                        : 'Neubau Angebot'}
+                        : 'Einfamilienhaus Angebot'}
               </span>
               <div className="text-xs font-medium text-sand/80 truncate">
                 {currentStageName || 'Verarbeitung...'}

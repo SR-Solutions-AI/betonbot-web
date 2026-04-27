@@ -306,9 +306,9 @@ export const preisdatenbankSteps: Step[] = [
     ],
   },
   {
-    key: 'preis_dachfenster_neubau',
-    label: 'Dachfenster (Neubau)',
-    priceSectionKey: 'stueck_dachfenster_neubau',
+    key: 'preis_dachfenster_einfamilienhaus',
+    label: 'Dachfenster (Einfamilienhaus)',
+    priceSectionKey: 'stueck_dachfenster_einfamilienhaus',
     priceSectionTitle: 'Stückpreise – Dachfenster (Hausbau)',
     priceSectionSubtitle: 'Entspricht Formular „Dachfenster-Ausführung“; Anzahl aus Dach-Editor',
     fields: [
@@ -324,7 +324,7 @@ export const preisdatenbankSteps: Step[] = [
     label: 'Dachfenster (nur Dach)',
     priceSectionKey: 'stueck_dachfenster_roofonly',
     priceSectionTitle: 'Stückpreise – Dachfenster (nur Dach)',
-    priceSectionSubtitle: 'Gleiche Logik wie Neubau, eigene Keys für Dachstuhl-Paket',
+    priceSectionSubtitle: 'Gleiche Logik wie Einfamilienhaus, eigene Keys für Dachstuhl-Paket',
     fields: [
       { type: 'price', name: 'roofonly_dachfenster_stueck_standard', label: 'Standard', unit: '€/Stück', default: 650 },
       { type: 'price', name: 'roofonly_dachfenster_stueck_velux', label: 'Velux', unit: '€/Stück', default: 890 },

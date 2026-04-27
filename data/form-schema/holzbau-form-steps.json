@@ -2,7 +2,7 @@
   "_comment_tags": "Fiecare field poate avea 'tag': identificator stabil pentru formula de preț. Formula folosește tag-ul, nu name-ul câmpului, astfel că schimbări de label/opțiuni sau formulare per client nu stric calculul.",
   "schemaVersion": "1",
   "tenant": "holzbau",
-  "flow": "neubau",
+  "flow": "einfamilienhaus",
   "steps": [
     {
       "key": "dateGenerale",
