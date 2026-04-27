@@ -52,6 +52,9 @@ function calculateProgress(
   currentStage: string | null,
   flow: OfferFlow,
 ): { progress: number; currentStageName: string | null } {
+  if (processedStages.has('computation_complete') || currentStage === 'computation_complete') {
+    return { progress: 100, currentStageName: null }
+  }
   const totalStages = flow === 'dachstuhl' ? TOTAL_STAGES_DACHSTUHL : TOTAL_STAGES_NEUBAU
 
   if (processedStages.size === 0 && !currentStage) {
