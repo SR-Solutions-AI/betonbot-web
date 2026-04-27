@@ -62,7 +62,7 @@ export default function Home() {
         offerId?: string
         runId?: string | null
         isComputing?: boolean
-        flow?: OfferFlow
+        flow?: OfferFlow | 'neubau'
       }
       const offerId = data?.offerId
       if (!offerId) return
